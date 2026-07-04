@@ -55,6 +55,7 @@ class Image(Base):
             "camera_model": meta.camera_model if meta else None,
             "lens_model": meta.lens_model if meta else None,
             "f_number": meta.f_number if meta else None,
+            "focal_length": meta.focal_length if meta else None,
             "shutter_speed": meta.shutter_speed if meta else None,
             "iso": meta.iso if meta else None,
             "capture_date": meta.capture_date.isoformat() if meta and meta.capture_date else None,
@@ -103,6 +104,7 @@ class ImageMetadata(Base):
     camera_model = Column(String(100), nullable=True)
     lens_model = Column(String(100), nullable=True)
     f_number = Column(Float, nullable=True)
+    focal_length = Column(Float, nullable=True)
     shutter_speed = Column(String(30), nullable=True)
     iso = Column(Integer, nullable=True)
     capture_date = Column(DateTime, index=True, nullable=True)

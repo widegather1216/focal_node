@@ -20,6 +20,7 @@ interface PhotoDetail {
     camera_model: string | null;
     lens_model: string | null;
     f_number: number | null;
+    focal_length: number | null;
     shutter_speed: string | null;
     iso: number | null;
     capture_date: string | null;
@@ -50,6 +51,11 @@ const PhotoExif = ({ metadata }: { metadata: PhotoDetail['metadata'] }) => (
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#333', padding: '6px 12px', borderRadius: '4px', fontSize: '12px' }}>
         <Aperture size={14} />
         f/{metadata.f_number}
+      </div>
+    )}
+    {metadata?.focal_length && (
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#333', padding: '6px 12px', borderRadius: '4px', fontSize: '12px' }}>
+        {metadata.focal_length}mm
       </div>
     )}
     {metadata?.shutter_speed && (

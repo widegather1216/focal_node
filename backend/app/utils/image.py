@@ -110,6 +110,7 @@ def extract_metadata(file_path: str) -> dict:
         "camera_model": None,
         "lens_model": None,
         "f_number": None,
+        "focal_length": None,
         "shutter_speed": None,
         "iso": None,
         "capture_date": None,
@@ -155,6 +156,12 @@ def extract_metadata(file_path: str) -> dict:
             if f_tag:
                 val = f_tag.values[0] if isinstance(f_tag.values, list) else f_tag.values
                 metadata["f_number"] = _parse_ratio(val)
+
+            # Focal Length
+            fl_tag = tags.get("EXIF FocalLength")
+            if fl_tag:
+                val = fl_tag.values[0] if isinstance(fl_tag.values, list) else fl_tag.values
+                metadata["focal_length"] = _parse_ratio(val)
 
             # Shutter speed
             shutter_tag = tags.get("EXIF ExposureTime")

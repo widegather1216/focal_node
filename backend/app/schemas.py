@@ -19,6 +19,7 @@ class PhotoMetadataSchema(BaseModel):
     camera_model: Optional[str] = None
     lens_model: Optional[str] = None
     f_number: Optional[float] = None
+    focal_length: Optional[float] = None
     shutter_speed: Optional[str] = None
     iso: Optional[int] = None
     capture_date: Optional[str] = None

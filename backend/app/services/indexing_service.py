@@ -156,6 +156,7 @@ def index_single_file_sync(file_path: str) -> dict | str:
             "camera_model": metadata.get("camera_model"),
             "lens_model": metadata.get("lens_model"),
             "f_number": metadata.get("f_number"),
+            "focal_length": metadata.get("focal_length"),
             "shutter_speed": metadata.get("shutter_speed"),
             "iso": metadata.get("iso"),
             "capture_date": metadata.get("capture_date")
@@ -222,6 +223,7 @@ async def reindex_single_photo_inplace(photo_id: str) -> dict:
         db_meta.camera_model = metadata.get("camera_model")
         db_meta.lens_model = metadata.get("lens_model")
         db_meta.f_number = metadata.get("f_number")
+        db_meta.focal_length = metadata.get("focal_length")
         db_meta.shutter_speed = metadata.get("shutter_speed")
         db_meta.iso = metadata.get("iso")
         db_meta.capture_date = metadata.get("capture_date")
