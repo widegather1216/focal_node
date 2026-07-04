@@ -1,0 +1,54 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Python backend
+venv/
+__pycache__/
+*.py[cod]
+*.so
+
+# Database
+*.db
+*.db-wal
+*.db-shm
+
+# PyInstaller
+build/
+backend/build/
+backend/dist/
+focal_node_backend.spec
+
+# Tauri Binaries
+src-tauri/binaries/focal_node_backend-*
+src-tauri/target/
+
+# Local cache
+.agents/
+.pytest_cache/
+
+# Environment Variables
+.env
+.env.*
+!.env.example

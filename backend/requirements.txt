@@ -1,0 +1,13 @@
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+sqlalchemy>=2.0.28
+rawpy>=0.21.0
+chromadb>=0.4.24
+pydantic>=2.6.4
+exifread>=3.0.0
+Pillow>=10.0.0
+mlx-lm
+torch>=2.2.0
+transformers>=4.49.0
+mlx-vlm
+pyinstaller>=6.5.0
