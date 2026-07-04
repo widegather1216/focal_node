@@ -1,7 +1,7 @@
 # Focal Node
 
 Focal Node는 프라이버시를 완벽히 보호하며, 클라우드 전송 없이 로컬에서 동작하는 AI 기반 자연어 사진 검색 데스크탑 애플리케이션입니다.
-Apple Silicon(M 시리즈)의 GPU 자원을 활용하여, 수만 장의 사진 속 시각적 정보와 메타데이터를 초고속으로 인덱싱하고 분석합니다.
+Apple Silicon(M 시리즈)의 GPU 자원을 활용하여, 수만 장의 사진 속 시각적 정보와 메타데이터를 인덱싱하고 분석합니다.
 
 ## ✨ 주요 기능
 * **자연어 시맨틱 검색:** "비 오는 날 카페에서 커피 마시는 고양이"와 같은 자연어로 로컬의 사진을 검색합니다.
@@ -47,23 +47,7 @@ npm install
 npm run tauri dev
 ```
 
-> **참고:** 최초 실행 시 AI 모델 가중치(약 2GB)가 로컬 Hugging Face 캐시에 다운로드 되므로 인터넷 연결과 시간이 필요합니다. 이후부터는 완전 오프라인으로 작동합니다.
-
-## 📦 앱 패키징 빌드 방법 (.dmg)
-
-독립 실행형 앱(App Bundle 및 DMG)으로 빌드하려면 Python 백엔드를 먼저 단일 바이너리로 컴파일해야 합니다.
-
-```bash
-# 1. PyInstaller로 백엔드 빌드 (가상환경 활성화 상태)
-python3 backend/build_backend.py
-
-# 2. 빌드된 바이너리를 Tauri 사이드카 디렉토리로 이동 (Apple Silicon 기준)
-cp dist/focal_node_backend src-tauri/binaries/focal_node_backend-aarch64-apple-darwin
-
-# 3. Tauri 앱 빌드
-npm run tauri build
-```
-빌드가 완료되면 `src-tauri/target/release/bundle/dmg/` 경로에 배포용 `.dmg` 파일이 생성됩니다.
+> **참고:** 최초 실행 시 백그라운드에서 AI 모델 다운로드 및 초기 세팅이 진행되므로 인터넷 연결 상태에 따라 다소 시간이 걸릴 수 있습니다. 세팅이 완료된 이후부터는 완전한 오프라인으로 작동합니다.
 
 ## ⚖️ 라이선스 및 AI 모델 정책
 
