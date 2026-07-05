@@ -46,6 +46,10 @@ def _execute_search_query(db: Session, photo_ids_from_chroma: list[str] | None, 
             q = q.filter(models.ImageMetadata.f_number >= f.f_number_min)
         if getattr(f, 'f_number_max', None) is not None:
             q = q.filter(models.ImageMetadata.f_number <= f.f_number_max)
+        if getattr(f, 'focal_length_min', None) is not None:
+            q = q.filter(models.ImageMetadata.focal_length >= f.focal_length_min)
+        if getattr(f, 'focal_length_max', None) is not None:
+            q = q.filter(models.ImageMetadata.focal_length <= f.focal_length_max)
         if getattr(f, 'date_from', None) is not None:
             q = q.filter(models.ImageMetadata.capture_date >= f.date_from)
         if getattr(f, 'date_to', None) is not None:

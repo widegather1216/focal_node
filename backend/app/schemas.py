@@ -77,6 +77,8 @@ class SearchFilter(BaseModel):
     iso_max: Optional[int] = None
     f_number_min: Optional[float] = None
     f_number_max: Optional[float] = None
+    focal_length_min: Optional[float] = None
+    focal_length_max: Optional[float] = None
     date_from: Optional[datetime] = None
     date_to: Optional[datetime] = None
 

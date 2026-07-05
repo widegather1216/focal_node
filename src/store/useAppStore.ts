@@ -19,6 +19,8 @@ export interface SearchFilters {
   iso_max?: number;
   f_number_min?: number;
   f_number_max?: number;
+  focal_length_min?: number;
+  focal_length_max?: number;
   date_from?: string;
   date_to?: string;
 }

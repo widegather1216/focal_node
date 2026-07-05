@@ -16,6 +16,8 @@ export function SearchFilterMenu() {
     if (localFilters.iso_max) cleaned.iso_max = Number(localFilters.iso_max);
     if (localFilters.f_number_min) cleaned.f_number_min = Number(localFilters.f_number_min);
     if (localFilters.f_number_max) cleaned.f_number_max = Number(localFilters.f_number_max);
+    if (localFilters.focal_length_min) cleaned.focal_length_min = Number(localFilters.focal_length_min);
+    if (localFilters.focal_length_max) cleaned.focal_length_max = Number(localFilters.focal_length_max);
     if (localFilters.date_from) cleaned.date_from = localFilters.date_from;
     if (localFilters.date_to) cleaned.date_to = localFilters.date_to;
 
@@ -112,6 +114,17 @@ export function SearchFilterMenu() {
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
                 <label style={{ fontSize: '12px', color: '#aaa' }}>f/ Max</label>
                 <input type="number" step="0.1" value={localFilters.f_number_max || ''} onChange={e => setLocalFilters({...localFilters, f_number_max: parseFloat(e.target.value) || undefined})} style={inputStyle} />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'row', gap: '8px' }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <label style={{ fontSize: '12px', color: '#aaa' }}>Focal Length Min (mm)</label>
+                <input type="number" step="0.1" value={localFilters.focal_length_min || ''} onChange={e => setLocalFilters({...localFilters, focal_length_min: parseFloat(e.target.value) || undefined})} style={inputStyle} />
+              </div>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <label style={{ fontSize: '12px', color: '#aaa' }}>Focal Length Max (mm)</label>
+                <input type="number" step="0.1" value={localFilters.focal_length_max || ''} onChange={e => setLocalFilters({...localFilters, focal_length_max: parseFloat(e.target.value) || undefined})} style={inputStyle} />
               </div>
             </div>
 
