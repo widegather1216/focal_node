@@ -269,14 +269,29 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(move |app_handle, event| {
-        if let tauri::RunEvent::Exit = event {
-            let state = app_handle.state::<Arc<AppState>>();
-            let mut child_guard = state.child.lock().unwrap();
-            if let Some(mut child) = child_guard.take() {
-                println!("[Tauri Rust] Killing backend process...");
-                let _ = child.kill();
-                let _ = child.wait(); // 좀비 프로세스 방지를 위한 회수(Reap) 추가
+        match event {
+            tauri::RunEvent::WindowEvent {
+                event: tauri::WindowEvent::Destroyed,
+                ..
+            } => {
+                // macOS에서는 기본적으로 창을 닫아도 앱이 종료되지 않지만,
+                // 백엔드 프로세스가 계속 살아있는 문제를 해결하기 위해 창이 닫히면 앱을 종료합니다.
+                let windows = app_handle.webview_windows();
+                if windows.is_empty() {
+                    println!("[Tauri Rust] All windows closed. Exiting app to kill backend...");
+                    app_handle.exit(0);
+                }
             }
+            tauri::RunEvent::Exit => {
+                let state = app_handle.state::<Arc<AppState>>();
+                let mut child_guard = state.child.lock().unwrap();
+                if let Some(mut child) = child_guard.take() {
+                    println!("[Tauri Rust] Killing backend process...");
+                    let _ = child.kill();
+                    let _ = child.wait(); // 좀비 프로세스 방지를 위한 회수(Reap) 추가
+                }
+            }
+            _ => {}
         }
     });
 }

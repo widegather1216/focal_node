@@ -4,8 +4,6 @@ import json
 import time
 import threading
 from PIL import Image
-import torch
-from transformers import AutoProcessor, AutoModel
 
 # For Gemma 4 (MLX)
 # We import mlx and mlx_lm dynamically to avoid importing them if Gemma is not loaded yet
@@ -18,6 +16,7 @@ GPU_LOCK = threading.Lock()
 
 class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
     def __init__(self):
+        import torch
         self.device = "mps" if torch.backends.mps.is_available() else "cpu"
         self.model_id = "google/siglip2-base-patch16-224"
         self.model = None
@@ -32,6 +31,8 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
         with self.lock:
             if self.model is None:
                 with GPU_LOCK:
+                    import torch
+                    from transformers import AutoModel, AutoProcessor
                     print(f"[SigLIP2Adapter] Loading model {self.model_id} on {self.device}...", flush=True)
                     # SDPA (Scaled Dot-Product Attention) activation
                     self.model = AutoModel.from_pretrained(
@@ -42,6 +43,7 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
                     print("[SigLIP2Adapter] Model loaded successfully.", flush=True)
 
     def get_image_embedding(self, image_path: str) -> list[float]:
+        import torch
         self._load_model()
         
         from utils.image import is_raw_image, decode_raw_to_pil
@@ -63,6 +65,7 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
         return embedding
 
     def get_text_embedding(self, text: str) -> list[float]:
+        import torch
         self._load_model()
         inputs = self.processor(text=[text], padding="max_length", return_tensors="pt").to(self.device)
         with GPU_LOCK:

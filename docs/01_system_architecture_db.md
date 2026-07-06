@@ -60,6 +60,7 @@ ChromaDB는 트랜잭션 및 롤백을 지원하지 않기 때문에, 데이터 
 * `file_size` (INTEGER): 파일 크기 (Bytes)
 * `file_mtime` (FLOAT): 파일 시스템 상의 최종 수정 시각 (중복 스캔 방지용)
 * `mime_type` (VARCHAR(50)): 파일의 MIME 타입 (image/jpeg, image/x-sony-arw 등)
+* `is_favorite` (BOOLEAN, Default: False): 즐겨찾기 지정 여부
 * `created_at` (DATETIME): DB 레코드 생성 일시
 * `updated_at` (DATETIME): DB 레코드 수정 일시
 
@@ -71,6 +72,7 @@ ChromaDB는 트랜잭션 및 롤백을 지원하지 않기 때문에, 데이터 
 * `camera_model` (VARCHAR(100)): 카메라 제조사 및 모델명
 * `lens_model` (VARCHAR(100)): 사용 렌즈 모델명
 * `f_number` (FLOAT): 조리개 수치 (F-Stop)
+* `focal_length` (FLOAT): 렌즈 화각 (Focal Length)
 * `shutter_speed` (VARCHAR(30)): 셔터 스피드 (예: "1/250")
 * `iso` (INTEGER): ISO 감도
 * `capture_date` (DATETIME, Indexed): 사진 촬영 일시
@@ -79,7 +81,12 @@ ChromaDB는 트랜잭션 및 롤백을 지원하지 않기 때문에, 데이터 
 * `image_id` (VARCHAR(64), Primary Key, Foreign Key): `images.id` 참조, CASCADE ON DELETE
 * `caption` (TEXT): Gemma 4 E4B-it가 생성한 상세 사진 묘사 캡션
 * `tags` (TEXT): JSON 형태의 키워드 문자열 리스트 (예: `["바다", "하늘", "일몰"]`)
+* `aesthetic_tags` (TEXT): 전문가용 구도/조명 관련 톤앤매너 태그 (JSON)
 * `is_user_edited` (BOOLEAN, Default: False): 사용자가 직접 캡션이나 태그를 수정했는지 여부. (True인 경우 인덱싱 재수행 시 오버라이트 방지)
+
+#### Table 4: `indexed_folders` (인덱싱 대상 폴더)
+* `path` (VARCHAR(1024), Primary Key): 사용자 폴더 절대 경로
+* `created_at` (DATETIME): DB 레코드 생성 일시
 
 ---
 

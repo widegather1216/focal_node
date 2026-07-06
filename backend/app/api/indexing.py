@@ -25,20 +25,18 @@ def start_indexing(payload: schemas.IndexStartRequest, background_tasks: Backgro
     return {"message": "Indexing started"}
 
 @router.post("/sync", status_code=202)
-def sync_database(background_tasks: BackgroundTasks):
+def sync_database(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     if indexing_status["status"] == "processing":
         raise HTTPException(status_code=400, detail="Indexing is already in progress.")
         
+    # Get all currently indexed folders
+    folders = db.query(IndexedFolder).all()
+    folder_paths = [folder.path for folder in folders]
+
     # Set status synchronously to prevent race conditions
     indexing_status["status"] = "processing"
     
-    def sync_task():
-        try:
-            cleanup_zombie_records()
-        finally:
-            indexing_status["status"] = "idle"
-            
-    background_tasks.add_task(sync_task)
+    background_tasks.add_task(run_indexing_background, folder_paths)
     return {"message": "Sync started"}
 
 @router.get("/status")

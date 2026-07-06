@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 import models
 import schemas
 from database import get_db
-from services.indexing_service import gemma_adapter
+from services.indexing_service import get_gemma_adapter
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -38,7 +38,7 @@ async def get_photo_critique(
     try:
         # We run the MLX inference in a background thread to prevent event loop blocking
         critique_text = await asyncio.to_thread(
-            gemma_adapter.generate_deep_critique, 
+            get_gemma_adapter().generate_deep_critique, 
             file_path, 
             meta_data
         )

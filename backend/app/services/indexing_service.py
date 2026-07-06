@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 from database import SessionLocal
 from services.photo import register_photo_atomic, generate_and_cache_thumbnail
 from utils.image import extract_metadata
-import services.mlx_adapters as mlx_adapters
 from models import Image as DBImage
 import time
 
@@ -25,9 +24,23 @@ indexing_status = {
     "current_file": ""
 }
 
-# Singleton adapters initialized once
-siglip_adapter = mlx_adapters.SigLIP2Adapter()
-gemma_adapter = mlx_adapters.GemmaAdapter()
+# Singleton adapters initialized on demand
+_siglip_adapter = None
+_gemma_adapter = None
+
+def get_siglip_adapter():
+    global _siglip_adapter
+    if _siglip_adapter is None:
+        import services.mlx_adapters as mlx_adapters
+        _siglip_adapter = mlx_adapters.SigLIP2Adapter()
+    return _siglip_adapter
+
+def get_gemma_adapter():
+    global _gemma_adapter
+    if _gemma_adapter is None:
+        import services.mlx_adapters as mlx_adapters
+        _gemma_adapter = mlx_adapters.GemmaAdapter()
+    return _gemma_adapter
 
 def calculate_sha256(file_path: str) -> str:
     """
@@ -83,8 +96,8 @@ def run_ai_pipeline_sync(file_path: str) -> tuple[dict, list[float], dict]:
     Returns: (metadata, embedding, ai_result)
     """
     metadata = extract_metadata(file_path)
-    embedding = siglip_adapter.get_image_embedding(file_path)
-    ai_result = gemma_adapter.generate_caption_and_tags(file_path, metadata)
+    embedding = get_siglip_adapter().get_image_embedding(file_path)
+    ai_result = get_gemma_adapter().generate_caption_and_tags(file_path, metadata)
     return metadata, embedding, ai_result
 
 def index_single_file_sync(file_path: str) -> dict | str:

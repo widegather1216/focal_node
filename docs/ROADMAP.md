@@ -52,11 +52,11 @@ graph TD
 
 ---
 
-## 📅 [대기] Phase 9: AI 모델 메모리 관리 고도화
+## ✅ [완료] Phase 9: AI 모델 메모리 관리 고도화
 * **목표:** 연속적인 사진 인덱싱 과정에서 발생하는 디스크 I/O 병목 및 모델 로딩 스래싱(Thrashing) 방지.
 * **상세 작업:**
-  - Gemma 4 E4B-it 모델 비동기 타이머 기반 Keep-alive 로직 적용.
-  - 인덱싱 큐가 비워진 후 60초 대기열 생성, 60초 경과 시 VRAM 가비지 컬렉션(해제) 자동 수행.
+  - Gemma 4 E4B-it 모델 비동기 타이머 기반 Keep-alive 로직 적용 완료.
+  - 인덱싱 큐가 비워진 후 60초 대기열 생성, 60초 경과 시 VRAM 가비지 컬렉션(해제) 자동 수행 구현 완료.
 
 ## 📅 [대기] Phase 10: 갤러리 탐색 성능 최적화
 * **목표:** 초대형 사진 라이브러리 스크롤 시 발생하는 프레임 드랍 및 UI 렉 원천 방지.
@@ -64,12 +64,12 @@ graph TD
   - 인덱싱 시점에 가로 360px sRGB JPEG 썸네일을 로컬 Thumbnail Cache 디렉토리에 저장.
   - API 캐시 우선 서빙 및 캐시 미스(Cache Miss) 시에만 실시간 In-Memory 디코딩 수행.
 
-## 📅 [대기] Phase 11: 데이터 영구 보존 & 폴더 관리
+## 🔄 [진행 중] Phase 11: 데이터 영구 보존 & 폴더 관리
 * **목표:** 앱 업데이트 시 데이터 소실을 막는 DB 마이그레이션과 사이드바 폴더 제어 기능 구축.
 * **상세 작업:**
   - SQLite/ChromaDB 데이터베이스 경로를 안전한 유저 앱 영역(`~/.config/focal_node/`)으로 이전
-  - `IndexedFolder` 테이블 신설 및 폴더 목록 복원 API 연동
-  - 폴더 단위 삭제(Un-indexing) 기능 개발
+  - `IndexedFolder` 테이블 신설 및 폴더 목록 복원 API 연동 (백엔드 구현 완료)
+  - 폴더 단위 삭제(Un-indexing) 기능 개발 (백엔드 구현 완료)
 
 ## 📅 [대기] Phase 12: OS 연동 및 다중 내보내기 (Export Workflow)
 * **목표:** 로컬 파일 시스템과 강하게 연동하여 사진가들의 실무 워크플로우를 돕는 기능.
@@ -91,11 +91,11 @@ graph TD
 
 ---
 
-## 📅 [대기] Phase 15: 사진가 맞춤형 AI 메타데이터 태깅 (Advanced Tagging)
+## 🔄 [진행 중] Phase 15: 사진가 맞춤형 AI 메타데이터 태깅 (Advanced Tagging)
 * **목표:** EXIF 데이터와 시각 분석을 결합하여 구도, 조명, 톤 등 사진가 전문 용어 기반 태그 자동 생성.
 * **상세 작업:**
   - Gemma 4 프롬프트에 EXIF 메타데이터 주입 및 프롬프트 엔지니어링.
-  - SQLite `image_metadata`에 `aesthetic_tags` 스키마 추가.
+  - SQLite `image_metadata`에 `aesthetic_tags` 스키마 추가 (완료).
   - 프론트엔드 상세 패널에 전문 용어 전용 배지(Badge) UI 구축.
 
 ## ✅ [완료] Phase 16: 시각적 톤앤매너 기반 레퍼런스 검색 (Tone & Mood Search)
@@ -113,8 +113,8 @@ graph TD
   - `cleanup_zombie_records` 가비지 컬렉터(Garbage Collector) 연동 완료.
   - `utils/image.py` RAW 세로 썸네일 EXIF 회전(`exif_transpose`) 버그 수정 완료.
 
-## 📅 [대기] Phase 17: 포트폴리오 큐레이션 및 AI 비평 (AI Portfolio Review)
+## 🔄 [진행 중] Phase 17: 포트폴리오 큐레이션 및 AI 비평 (AI Portfolio Review)
 * **목표:** 여러 장의 사진을 분석하여 포트폴리오 구성 조언 및 사진 비평(Critique)을 제공하는 인터랙티브 환경.
 * **상세 작업:**
-  - 여러 장의 사진 정보(태그, EXIF, 캡션)를 컨텍스트로 전달받는 `POST /api/chat/critique` API 구현.
+  - 여러 장의 사진 정보(태그, EXIF, 캡션)를 컨텍스트로 전달받는 `POST /api/chat/critique` API 구현 (백엔드 구현 중).
   - 프론트엔드 다중 선택(Multi-select) 모드 및 챗봇 형태의 Curation 패널 UI 구축.

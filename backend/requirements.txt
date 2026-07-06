@@ -11,3 +11,6 @@ torch>=2.2.0
 transformers>=4.49.0
 mlx-vlm
 pyinstaller>=6.5.0
+pytest>=8.0.0
+httpx>=0.27.0
+pytest-asyncio>=0.23.5

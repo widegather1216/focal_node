@@ -6,7 +6,7 @@ import schemas
 import models
 from database import get_db
 from chroma import get_chroma_collection
-from services.indexing_service import siglip_adapter
+from services.indexing_service import get_siglip_adapter
 
 router = APIRouter(prefix="/api/search", tags=["search"])
 
@@ -95,7 +95,7 @@ async def search_photos(
             text_search_ids = [r[0] for r in text_search_q.all()]
 
             # 2. Get query embedding (CPU bound)
-            query_embedding = await asyncio.to_thread(siglip_adapter.get_text_embedding, query_str)
+            query_embedding = await asyncio.to_thread(get_siglip_adapter().get_text_embedding, query_str)
             
             # 3. Search ChromaDB (I/O bound)
             # Fetch a larger pool because SQLite filtering might reduce the count
