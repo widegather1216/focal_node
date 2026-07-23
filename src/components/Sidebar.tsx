@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { open } from '@tauri-apps/plugin-dialog';
 import { FolderPlus, Folder, Loader2, Search, RefreshCw, Trash2, Heart } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { SearchFilterMenu } from './SearchFilterMenu';
 import { api } from '../services/api';
 
@@ -90,7 +91,7 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
             />
           </div>
           <SearchFilterMenu />
-          <button
+          <motion.button
             onClick={() => {
               const { is_favorite, ...rest } = searchFilters;
               if (is_favorite) {
@@ -99,22 +100,48 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
                 setSearchFilters({ ...rest, is_favorite: true });
               }
             }}
+            whileHover={{ 
+              scale: 1.05, 
+              y: -1,
+              backgroundColor: searchFilters.is_favorite ? 'rgba(239, 68, 68, 0.25)' : 'rgba(255, 255, 255, 0.08)'
+            }}
+            whileTap={{ scale: 0.92 }}
+            transition={{ type: "spring", stiffness: 400, damping: 15 }}
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               width: '36px', height: '36px',
               backgroundColor: searchFilters.is_favorite ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.05)',
               border: searchFilters.is_favorite ? '1px solid #ef4444' : '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s', flexShrink: 0
+              boxShadow: searchFilters.is_favorite ? '0 0 12px rgba(239, 68, 68, 0.4)' : 'none',
+              borderRadius: '8px', cursor: 'pointer', flexShrink: 0
             }}
             title="즐겨찾기 모아보기"
           >
-            <Heart size={16} fill={searchFilters.is_favorite ? '#ef4444' : 'none'} color={searchFilters.is_favorite ? '#ef4444' : '#aaa'} />
-          </button>
+            <motion.div
+              key={searchFilters.is_favorite ? "fav-active" : "fav-inactive"}
+              initial={{ scale: 0.8 }}
+              animate={{ scale: 1 }}
+              transition={{ type: "spring", stiffness: 500, damping: 12 }}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Heart 
+                size={19} 
+                fill={searchFilters.is_favorite ? '#ef4444' : 'rgba(239, 68, 68, 0.08)'} 
+                color={searchFilters.is_favorite ? '#ef4444' : 'rgba(255, 255, 255, 0.5)'} 
+              />
+            </motion.div>
+          </motion.button>
         </div>
 
-        <button 
+        <motion.button 
           onClick={handleAddFolder}
           disabled={isIndexing}
+          whileHover={isIndexing ? {} : { 
+            scale: 1.02, 
+            backgroundColor: 'rgba(255, 255, 255, 0.15)' 
+          }}
+          whileTap={isIndexing ? {} : { scale: 0.98 }}
+          transition={{ type: "spring", stiffness: 400, damping: 15 }}
           style={{
             width: '100%',
             display: 'flex',
@@ -128,15 +155,14 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
             color: '#fff',
             cursor: isIndexing ? 'not-allowed' : 'pointer',
             opacity: isIndexing ? 0.5 : 1,
-            transition: 'background-color 0.2s',
             marginBottom: '10px'
           }}
         >
           <FolderPlus size={18} />
           {isIndexing ? 'Indexing...' : 'Add Photos'}
-        </button>
+        </motion.button>
 
-        <button 
+        <motion.button 
           onClick={async () => {
             if (!apiPort) return;
             try {
@@ -146,6 +172,12 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
             }
           }}
           disabled={isIndexing}
+          whileHover={isIndexing ? {} : { 
+            scale: 1.02, 
+            backgroundColor: 'rgba(255, 255, 255, 0.08)' 
+          }}
+          whileTap={isIndexing ? {} : { scale: 0.98 }}
+          transition={{ type: "spring", stiffness: 400, damping: 15 }}
           style={{
             width: '100%',
             display: 'flex',
@@ -158,18 +190,23 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
             borderRadius: '8px',
             color: '#ccc',
             cursor: isIndexing ? 'not-allowed' : 'pointer',
-            opacity: isIndexing ? 0.5 : 1,
-            transition: 'background-color 0.2s'
+            opacity: isIndexing ? 0.5 : 1
           }}
         >
           <RefreshCw size={16} />
           Sync Database
-        </button>
+        </motion.button>
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto' }}>
-        <div 
+        <motion.div 
           onClick={() => onSelectFolder(null)}
+          whileHover={{ 
+            backgroundColor: selectedFolder === null ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.05)',
+            color: '#fff'
+          }}
+          whileTap={{ scale: 0.98 }}
+          transition={{ type: "spring", stiffness: 400, damping: 20 }}
           style={{
             padding: '8px 10px',
             borderRadius: '6px',
@@ -183,11 +220,15 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
         >
           <Folder size={16} />
           <span style={{ fontSize: '14px' }}>All Photos</span>
-        </div>
+        </motion.div>
         
         {folders.map(folder => (
-          <div 
+          <motion.div 
             key={folder.path}
+            whileHover={{ 
+              backgroundColor: selectedFolder === folder.path ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.03)' 
+            }}
+            transition={{ type: "spring", stiffness: 400, damping: 20 }}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -198,8 +239,9 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
               marginTop: '4px',
             }}
           >
-            <div 
+            <motion.div 
               onClick={() => onSelectFolder(folder.path)}
+              whileTap={{ scale: 0.98 }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -215,9 +257,9 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
               <span style={{ fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {folder.path.split('/').filter(Boolean).pop() || folder.path}
               </span>
-            </div>
+            </motion.div>
             
-            <button
+            <motion.button
               onClick={(e) => {
                 e.stopPropagation();
                 if (apiPort && confirm(`Remove folder ${folder.path} and all its indexed photos?`)) {
@@ -227,6 +269,9 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
                   }
                 }
               }}
+              whileHover={{ scale: 1.15, color: '#ff6666' }}
+              whileTap={{ scale: 0.9 }}
+              transition={{ type: "spring", stiffness: 500, damping: 15 }}
               style={{
                 background: 'transparent',
                 border: 'none',
@@ -236,16 +281,12 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                opacity: 0.7,
-                transition: 'opacity 0.2s'
               }}
-              onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-              onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'}
               title="Remove Folder"
             >
               <Trash2 size={14} />
-            </button>
-          </div>
+            </motion.button>
+          </motion.div>
         ))}
       </div>
 

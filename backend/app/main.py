@@ -41,12 +41,25 @@ async def lifespan(app: FastAPI):
     import threading
     import time
     
-    def download_with_retry(repo_id, max_retries=3):
+    def download_with_retry(repo_id, label, max_retries=3):
         from huggingface_hub import snapshot_download
+        from huggingface_hub.utils import LocalEntryNotFoundError
         # Ignore massive redundant weight files (PyTorch/TF/Flax) to prevent OOM and disk space exhaustion
         # This allows downloading all other configs, safetensors, and tokenizers.
         ignore_patterns = ["*.bin", "*.pth", "*.pt", "*.h5", "*.msgpack", "*.onnx", "*.ot"]
         
+        # Check if already cached
+        try:
+            snapshot_download(
+                repo_id=repo_id,
+                local_files_only=True,
+                ignore_patterns=ignore_patterns
+            )
+            return True
+        except Exception:
+            pass
+            
+        print(f"[Downloader] Downloading {label}...", flush=True)
         for attempt in range(max_retries):
             try:
                 snapshot_download(
@@ -65,11 +78,8 @@ async def lifespan(app: FastAPI):
                     return False
                     
     def download_models_background():
-        print("[Downloader] Downloading SigLIP 2 (검색 엔진)...", flush=True)
-        download_with_retry("google/siglip2-base-patch16-224")
-        
-        print("[Downloader] Downloading Gemma 4 (비전 분석 엔진)...", flush=True)
-        download_with_retry("google/gemma-4-E4B-it")
+        download_with_retry("google/siglip2-base-patch16-224", "SigLIP 2 (검색 엔진)")
+        download_with_retry("google/gemma-4-E4B-it", "Gemma 4 (비전 분석 엔진)")
             
         print("[Downloader] Completed all model downloads.", flush=True)
         

@@ -237,19 +237,25 @@ export function DetailPanel() {
                 {photo?.file_name || 'Loading...'}
               </h2>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <button 
+                <motion.button 
                   onClick={handleToggleFavorite}
+                  whileHover={{ scale: 1.15 }}
+                  whileTap={{ scale: 0.9 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 15 }}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
                   title="즐겨찾기"
                 >
                   <Heart size={20} fill={photo?.is_favorite ? '#ef4444' : 'none'} color={photo?.is_favorite ? '#ef4444' : '#fff'} />
-                </button>
-                <button 
+                </motion.button>
+                <motion.button 
                   onClick={() => setSelectedPhotoId(null)}
+                  whileHover={{ scale: 1.15 }}
+                  whileTap={{ scale: 0.9 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 15 }}
                   style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
                 >
                   <X size={20} />
-                </button>
+                </motion.button>
               </div>
             </div>
 
@@ -288,55 +294,71 @@ export function DetailPanel() {
                         )}
                       </h3>
                       <div style={{ display: 'flex', gap: '8px' }}>
-                        <button
+                        <motion.button
                           onClick={handleReindex}
                           disabled={reindexing}
+                          whileHover={reindexing ? {} : { scale: 1.03, backgroundColor: 'rgba(76, 175, 80, 0.08)' }}
+                          whileTap={reindexing ? {} : { scale: 0.97 }}
+                          transition={{ type: "spring", stiffness: 400, damping: 15 }}
                           style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: '1px solid #4CAF50', color: '#4CAF50', padding: '4px 12px', borderRadius: '4px', cursor: reindexing ? 'default' : 'pointer', fontSize: '12px', opacity: reindexing ? 0.7 : 1 }}
                           title="AI 분석 재시도"
                         >
                           <motion.div
                             animate={reindexing ? { rotate: 360 } : {}}
                             transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                           >
                             <RefreshCw size={14} />
                           </motion.div>
                           {reindexing ? '재분석 중...' : '재분석'}
-                        </button>
-                        <button
+                        </motion.button>
+                        <motion.button
                           onClick={() => {
                             setSearchQuery(`similar:${photo.id}`);
                             setSelectedPhotoId(null);
                           }}
+                          whileHover={{ scale: 1.03, backgroundColor: 'rgba(255, 215, 0, 0.15)' }}
+                          whileTap={{ scale: 0.97 }}
+                          transition={{ type: "spring", stiffness: 400, damping: 15 }}
                           style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255, 215, 0, 0.1)', border: '1px solid rgba(255, 215, 0, 0.4)', color: '#ffd700', padding: '4px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
                           title="비슷한 무드 찾기 (Similar Mood Search)"
                         >
                           <Wand2 size={14} />
                           Similar
-                        </button>
-                        <button
+                        </motion.button>
+                        <motion.button
                           onClick={handleReveal}
+                          whileHover={{ scale: 1.03, backgroundColor: 'rgba(255, 255, 255, 0.05)' }}
+                          whileTap={{ scale: 0.97 }}
+                          transition={{ type: "spring", stiffness: 400, damping: 15 }}
                           style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: '1px solid #444', color: '#fff', padding: '4px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
                           title="Reveal in OS"
                         >
                           <FolderOpen size={14} />
                           Reveal
-                        </button>
+                        </motion.button>
                         {!editing ? (
-                          <button 
+                          <motion.button 
                             onClick={() => setEditing(true)}
+                            whileHover={{ scale: 1.03, backgroundColor: 'rgba(255, 255, 255, 0.05)' }}
+                            whileTap={{ scale: 0.97 }}
+                            transition={{ type: "spring", stiffness: 400, damping: 15 }}
                             style={{ background: 'none', border: '1px solid #444', color: '#fff', padding: '4px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
                           >
                             Edit
-                          </button>
+                          </motion.button>
                         ) : (
-                          <button 
+                          <motion.button 
                             onClick={handleSave}
                             disabled={saving}
+                            whileHover={saving ? {} : { scale: 1.03, backgroundColor: '#45a049' }}
+                            whileTap={saving ? {} : { scale: 0.97 }}
+                            transition={{ type: "spring", stiffness: 400, damping: 15 }}
                             style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#4CAF50', border: 'none', color: '#fff', padding: '4px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
                           >
                             <Save size={14} />
                             {saving ? 'Saving...' : 'Save'}
-                          </button>
+                          </motion.button>
                         )}
                       </div>
                     </div>
@@ -357,12 +379,15 @@ export function DetailPanel() {
                             {tagsEdit.map((tag, idx) => (
                               <span key={idx} style={{ background: '#2a2a2a', border: '1px solid #444', padding: '4px 8px', borderRadius: '16px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 {tag}
-                                <button
+                                <motion.button
                                   onClick={() => setTagsEdit(prev => prev.filter((_, i) => i !== idx))}
-                                  style={{ background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', padding: 0, display: 'flex' }}
+                                  whileHover={{ scale: 1.2, color: '#fff' }}
+                                  whileTap={{ scale: 0.9 }}
+                                  transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                                  style={{ background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                                 >
                                   <X size={12} />
-                                </button>
+                                </motion.button>
                               </span>
                             ))}
                           </div>
@@ -396,28 +421,30 @@ export function DetailPanel() {
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
                             {photo.ai_analysis?.aesthetic_tags && photo.ai_analysis.aesthetic_tags.length > 0 && (
                                 photo.ai_analysis.aesthetic_tags.map((tag, idx) => (
-                                  <span 
+                                  <motion.span 
                                     key={`aes-${idx}`} 
                                     onClick={() => handleTagClick(tag)}
+                                    whileHover={{ scale: 1.05, backgroundColor: 'rgba(255, 215, 0, 0.2)' }}
+                                    whileTap={{ scale: 0.97 }}
+                                    transition={{ type: "spring", stiffness: 400, damping: 15 }}
                                     style={{ background: 'rgba(255, 215, 0, 0.1)', border: '1px solid rgba(255, 215, 0, 0.4)', color: '#ffd700', padding: '4px 10px', borderRadius: '16px', fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}
-                                    onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 215, 0, 0.2)'; }}
-                                    onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255, 215, 0, 0.1)'; }}
                                   >
                                     ✨ {tag}
-                                  </span>
+                                  </motion.span>
                                 ))
                             )}
                             {photo.ai_analysis?.tags && photo.ai_analysis.tags.length > 0 ? (
                               photo.ai_analysis.tags.map((tag, idx) => (
-                                <span 
+                                <motion.span 
                                   key={`tag-${idx}`} 
                                   onClick={() => handleTagClick(tag)}
+                                  whileHover={{ scale: 1.05, backgroundColor: '#3a3a3a' }}
+                                  whileTap={{ scale: 0.97 }}
+                                  transition={{ type: "spring", stiffness: 400, damping: 15 }}
                                   style={{ background: '#2a2a2a', border: '1px solid #444', padding: '4px 10px', borderRadius: '16px', fontSize: '12px', cursor: 'pointer' }}
-                                  onMouseEnter={(e) => { e.currentTarget.style.background = '#3a3a3a'; }}
-                                  onMouseLeave={(e) => { e.currentTarget.style.background = '#2a2a2a'; }}
                                 >
                                   {tag}
-                                </span>
+                                </motion.span>
                               ))
                             ) : (
                               (!photo.ai_analysis?.aesthetic_tags || photo.ai_analysis.aesthetic_tags.length === 0) && (
@@ -437,13 +464,16 @@ export function DetailPanel() {
                         ✨ 전문가 AI 비평
                       </h3>
                       {!critique && !loadingCritique && (
-                        <button
+                        <motion.button
                           onClick={handleRequestCritique}
+                          whileHover={{ scale: 1.03, backgroundColor: 'rgba(255, 215, 0, 0.15)', boxShadow: '0 0 8px rgba(255, 215, 0, 0.2)' }}
+                          whileTap={{ scale: 0.97 }}
+                          transition={{ type: "spring", stiffness: 400, damping: 15 }}
                           style={{ background: 'rgba(255, 215, 0, 0.1)', border: '1px solid rgba(255, 215, 0, 0.4)', color: '#ffd700', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
                         >
                           <Wand2 size={14} />
                           비평 받기
-                        </button>
+                        </motion.button>
                       )}
                     </div>
                     

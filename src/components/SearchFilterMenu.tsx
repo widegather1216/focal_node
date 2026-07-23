@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAppStore, SearchFilters } from '../store/useAppStore';
 import { SlidersHorizontal, X } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 export function SearchFilterMenu() {
   const { searchFilters, setSearchFilters, clearSearchFilters } = useAppStore();
@@ -35,14 +36,22 @@ export function SearchFilterMenu() {
 
   return (
     <div style={{ position: 'relative' }}>
-      <button
+      <motion.button
         onClick={() => {
             setLocalFilters(searchFilters);
             setIsOpen(!isOpen);
         }}
+        whileHover={{ 
+          scale: 1.08, 
+          y: -1,
+          backgroundColor: activeFilterCount > 0 ? 'rgba(74, 222, 128, 0.25)' : 'rgba(255, 255, 255, 0.08)' 
+        }}
+        whileTap={{ scale: 0.9 }}
+        transition={{ type: "spring", stiffness: 500, damping: 15 }}
         style={{
           backgroundColor: activeFilterCount > 0 ? 'rgba(74, 222, 128, 0.2)' : 'rgba(255, 255, 255, 0.05)',
           border: `1px solid ${activeFilterCount > 0 ? '#4ade80' : 'rgba(255, 255, 255, 0.2)'}`,
+          boxShadow: activeFilterCount > 0 ? '0 0 10px rgba(74, 222, 128, 0.35)' : 'none',
           borderRadius: '8px',
           padding: '8px',
           color: activeFilterCount > 0 ? '#4ade80' : '#aaa',
@@ -57,7 +66,7 @@ export function SearchFilterMenu() {
         title="Filter"
       >
         <SlidersHorizontal size={16} />
-      </button>
+      </motion.button>
 
       {isOpen && (
         <>
@@ -82,7 +91,15 @@ export function SearchFilterMenu() {
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#fff' }}>Filters</span>
-              <button onClick={() => setIsOpen(false)} style={{ background: 'none', border: 'none', color: '#aaa', cursor: 'pointer' }}><X size={16} /></button>
+              <motion.button 
+                onClick={() => setIsOpen(false)} 
+                whileHover={{ scale: 1.15, color: '#fff' }}
+                whileTap={{ scale: 0.9 }}
+                transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                style={{ background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <X size={16} />
+              </motion.button>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -138,8 +155,24 @@ export function SearchFilterMenu() {
             </div>
 
             <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-              <button onClick={handleClear} style={{ flex: 1, padding: '8px', borderRadius: '6px', backgroundColor: 'transparent', border: '1px solid #aaa', color: '#ccc', cursor: 'pointer' }}>Clear</button>
-              <button onClick={handleApply} style={{ flex: 1, padding: '8px', borderRadius: '6px', backgroundColor: '#fff', border: 'none', color: '#000', cursor: 'pointer', fontWeight: 'bold' }}>Apply</button>
+              <motion.button 
+                onClick={handleClear} 
+                whileHover={{ backgroundColor: 'rgba(255, 255, 255, 0.08)', borderColor: '#fff', color: '#fff' }}
+                whileTap={{ scale: 0.97 }}
+                transition={{ type: "spring", stiffness: 400, damping: 15 }}
+                style={{ flex: 1, padding: '8px', borderRadius: '6px', backgroundColor: 'transparent', border: '1px solid #aaa', color: '#ccc', cursor: 'pointer' }}
+              >
+                Clear
+              </motion.button>
+              <motion.button 
+                onClick={handleApply} 
+                whileHover={{ scale: 1.02, backgroundColor: '#f0f0f0', boxShadow: '0 0 8px rgba(255, 255, 255, 0.25)' }}
+                whileTap={{ scale: 0.97 }}
+                transition={{ type: "spring", stiffness: 400, damping: 15 }}
+                style={{ flex: 1, padding: '8px', borderRadius: '6px', backgroundColor: '#fff', border: 'none', color: '#000', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                Apply
+              </motion.button>
             </div>
           </div>
         </>

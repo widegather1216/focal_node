@@ -2,6 +2,7 @@ import { useRef, useEffect, useState } from 'react';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { CheckCircle2, Heart } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { useAppStore } from '../store/useAppStore';
 import { api } from '../services/api';
 
@@ -148,9 +149,10 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
                 : rowPhotos.map((photo) => {
                     const isSelected = selectedPhotoIds.has(photo.id);
                     return (
-                      <div 
+                      <motion.div 
                         key={photo.id}
                         onClick={() => setSelectedPhotoId(photo.id)}
+                        whileHover={{ scale: 1.02, transition: { duration: 0.2 } }}
                         style={{
                           flex: 1,
                           maxWidth: `calc(25% - 12px)`, // (100% / 4) - gap
@@ -159,18 +161,18 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
                           overflow: 'hidden',
                           cursor: 'pointer',
                           position: 'relative',
-                          transition: 'transform 0.2s',
                           border: isSelected ? '2px solid #4CAF50' : '2px solid transparent',
                           boxSizing: 'border-box'
                         }}
-                        onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.02)'}
-                        onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
                       >
-                        <div 
+                        <motion.div 
                           onClick={(e) => {
                             e.stopPropagation();
                             togglePhotoSelection(photo.id);
                           }}
+                          whileHover={{ scale: 1.1, opacity: 1 }}
+                          whileTap={{ scale: 0.9 }}
+                          transition={{ type: "spring", stiffness: 400, damping: 15 }}
                           style={{
                             position: 'absolute',
                             top: '8px',
@@ -183,14 +185,11 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
                             borderRadius: '50%',
                             display: 'flex',
                             padding: '2px',
-                            transition: 'opacity 0.2s'
                           }}
-                          onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-                          onMouseLeave={(e) => e.currentTarget.style.opacity = isSelected ? '1' : '0.6'}
                         >
                           <CheckCircle2 size={20} fill={isSelected ? '#4CAF50' : 'none'} color={isSelected ? '#fff' : '#fff'} />
-                        </div>
-                        <div 
+                        </motion.div>
+                        <motion.div 
                           onClick={async (e) => {
                             e.stopPropagation();
                             try {
@@ -214,6 +213,9 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
                               console.error(err);
                             }
                           }}
+                          whileHover={{ scale: 1.15, opacity: 1 }}
+                          whileTap={{ scale: 0.9 }}
+                          transition={{ type: "spring", stiffness: 400, damping: 12 }}
                           style={{
                             position: 'absolute',
                             top: '8px',
@@ -224,14 +226,11 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
                             cursor: 'pointer',
                             display: 'flex',
                             padding: '4px',
-                            transition: 'all 0.2s',
                             filter: 'drop-shadow(0px 2px 4px rgba(0,0,0,0.5))'
                           }}
-                          onMouseEnter={(e) => { e.currentTarget.style.opacity = '1'; e.currentTarget.style.transform = 'scale(1.1)'; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.opacity = photo.is_favorite ? '1' : '0.6'; e.currentTarget.style.transform = 'scale(1)'; }}
                         >
                           <Heart size={20} fill={photo.is_favorite ? '#ef4444' : 'rgba(0,0,0,0.3)'} color={photo.is_favorite ? '#ef4444' : '#fff'} />
-                        </div>
+                        </motion.div>
                         <img 
                         src={api.getPhotoThumbnailUrl(photo.id)}
                         alt={photo.file_name}
@@ -272,7 +271,7 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
                           </div>
                         )}
                       </div>
-                    </div>
+                    </motion.div>
                   );
                 })
               }

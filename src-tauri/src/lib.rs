@@ -86,15 +86,32 @@ pub fn run() {
                 // 릴리즈 환경인 경우 sidecar 바이너리 기동
                 let (program, args) = if cfg!(debug_assertions) {
                     let mut script_path = current_dir.join("backend/app/main.py");
+                    let mut venv_python_path = None;
                     for prefix in &["", "../", "../../"] {
                         let path = current_dir.join(prefix).join("backend/app/main.py");
                         if path.exists() {
                             script_path = path;
+                            
+                            // venv 경로도 함께 탐색
+                            let venv_dir = current_dir.join(prefix).join("venv");
+                            let py_exe = if cfg!(target_os = "windows") {
+                                venv_dir.join("Scripts").join("python.exe")
+                            } else {
+                                venv_dir.join("bin").join("python3")
+                            };
+                            if py_exe.exists() {
+                                venv_python_path = Some(py_exe);
+                            }
                             break;
                         }
                     }
                     
-                    ("python3".to_string(), vec![script_path.to_string_lossy().to_string()])
+                    let py_program = match venv_python_path {
+                        Some(p) => p.to_string_lossy().to_string(),
+                        None => "python3".to_string(),
+                    };
+                    
+                    (py_program, vec![script_path.to_string_lossy().to_string()])
                 } else {
                     let exe_path = std::env::current_exe().unwrap();
                     let sidecar_name = if cfg!(target_os = "windows") {

@@ -67,21 +67,31 @@ export function ActionBar() {
         <span style={{ fontWeight: 500 }}>{selectedPhotoIds.size} items selected</span>
         
         <div style={{ display: 'flex', gap: '8px' }}>
-          <button
+          <motion.button
             onClick={handleExport}
             disabled={exporting}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#4CAF50', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '20px', cursor: 'pointer', fontWeight: 500 }}
+            whileHover={exporting ? {} : { 
+              scale: 1.03, 
+              backgroundColor: '#45a049', 
+              boxShadow: '0 0 10px rgba(76, 175, 80, 0.4)' 
+            }}
+            whileTap={exporting ? {} : { scale: 0.97 }}
+            transition={{ type: "spring", stiffness: 400, damping: 15 }}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#4CAF50', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '20px', cursor: exporting ? 'not-allowed' : 'pointer', fontWeight: 500 }}
           >
             <Download size={16} />
             {exporting ? 'Exporting...' : 'Export'}
-          </button>
+          </motion.button>
           
-          <button
+          <motion.button
             onClick={clearSelection}
+            whileHover={{ scale: 1.1, backgroundColor: '#666' }}
+            whileTap={{ scale: 0.9 }}
+            transition={{ type: "spring", stiffness: 500, damping: 15 }}
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#555', color: '#fff', border: 'none', padding: '8px', borderRadius: '50%', cursor: 'pointer' }}
           >
             <X size={16} />
-          </button>
+          </motion.button>
         </div>
       </motion.div>
     </AnimatePresence>

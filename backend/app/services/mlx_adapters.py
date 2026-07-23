@@ -34,12 +34,19 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
                     import torch
                     from transformers import AutoModel, AutoProcessor
                     print(f"[SigLIP2Adapter] Loading model {self.model_id} on {self.device}...", flush=True)
-                    # SDPA (Scaled Dot-Product Attention) activation
-                    self.model = AutoModel.from_pretrained(
-                        self.model_id,
-                        attn_implementation="sdpa"
-                    ).to(self.device)
-                    self.processor = AutoProcessor.from_pretrained(self.model_id)
+                    try:
+                        self.model = AutoModel.from_pretrained(
+                            self.model_id,
+                            attn_implementation="sdpa",
+                            local_files_only=True
+                        ).to(self.device)
+                        self.processor = AutoProcessor.from_pretrained(self.model_id, local_files_only=True)
+                    except Exception:
+                        self.model = AutoModel.from_pretrained(
+                            self.model_id,
+                            attn_implementation="sdpa"
+                        ).to(self.device)
+                        self.processor = AutoProcessor.from_pretrained(self.model_id)
                     print("[SigLIP2Adapter] Model loaded successfully.", flush=True)
 
     def get_image_embedding(self, image_path: str) -> list[float]:
@@ -186,8 +193,15 @@ class GemmaAdapter(ImageCaptioningPort):
                     prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
                     
                     from mlx_vlm import generate
-                    # In mlx_vlm, generate accepts `image=image_path` (file path or URL)
-                    result = generate(self.model, self.processor, prompt=prompt, image=image_path, verbose=False)
+                    from utils.image import is_raw_image, decode_raw_to_pil
+                    
+                    if is_raw_image(image_path):
+                        image_input = decode_raw_to_pil(image_path)
+                    else:
+                        image_input = image_path
+                        
+                    # In mlx_vlm, generate accepts `image` as a file path, URL, or PIL Image
+                    result = generate(self.model, self.processor, prompt=prompt, image=image_input, verbose=False)
                     output = result.text if hasattr(result, "text") else str(result)
                 except RuntimeError as e:
                     print(f"[GemmaAdapter] MLX OOM or RuntimeError during inference: {e}. Recovering...", flush=True)
@@ -291,7 +305,14 @@ class GemmaAdapter(ImageCaptioningPort):
                     prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
                     
                     from mlx_vlm import generate
-                    result = generate(self.model, self.processor, prompt=prompt, image=image_path, verbose=False)
+                    from utils.image import is_raw_image, decode_raw_to_pil
+                    
+                    if is_raw_image(image_path):
+                        image_input = decode_raw_to_pil(image_path)
+                    else:
+                        image_input = image_path
+                        
+                    result = generate(self.model, self.processor, prompt=prompt, image=image_input, verbose=False)
                     output = result.text if hasattr(result, "text") else str(result)
                 except RuntimeError as e:
                     print(f"[GemmaAdapter] MLX OOM or RuntimeError during deep critique: {e}. Recovering...", flush=True)
