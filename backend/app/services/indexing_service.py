@@ -29,18 +29,12 @@ _siglip_adapter = None
 _gemma_adapter = None
 
 def get_siglip_adapter():
-    global _siglip_adapter
-    if _siglip_adapter is None:
-        import services.mlx_adapters as mlx_adapters
-        _siglip_adapter = mlx_adapters.SigLIP2Adapter()
-    return _siglip_adapter
+    from services.ai_factory import get_siglip_adapter as factory_get_siglip
+    return factory_get_siglip()
 
 def get_gemma_adapter():
-    global _gemma_adapter
-    if _gemma_adapter is None:
-        import services.mlx_adapters as mlx_adapters
-        _gemma_adapter = mlx_adapters.GemmaAdapter()
-    return _gemma_adapter
+    from services.ai_factory import get_gemma_adapter as factory_get_gemma
+    return factory_get_gemma()
 
 def calculate_sha256(file_path: str) -> str:
     """
@@ -103,9 +97,8 @@ def run_ai_pipeline_sync(file_path: str) -> tuple[dict, list[float], dict]:
 def index_single_file_sync(file_path: str) -> dict | str:
     """
     Performs hashing, EXIF extraction, thumbnail generation, embedding inference,
-    caption inference, and atomic registration. Run within a worker thread.
+    caption inference, and atomic registration via IndexingPipeline.
     """
-    # Check basic file attributes
     file_size = os.path.getsize(file_path)
     file_mtime = os.path.getmtime(file_path)
     
@@ -115,11 +108,9 @@ def index_single_file_sync(file_path: str) -> dict | str:
         # 1. Incremental indexing check by file path
         existing_by_path = db.query(DBImage).filter(DBImage.file_path == file_path).first()
         if existing_by_path:
-            # If path matches and mtime/file_size is unchanged, skip indexing
             if existing_by_path.file_mtime == file_mtime and existing_by_path.file_size == file_size:
                 return "skipped"
             else:
-                # Path exists but file has changed, mark old record for deletion AFTER inference
                 print(f"[Indexer] File modified. Marking for re-indexing: {file_path}", flush=True)
                 image_id_to_delete = existing_by_path.id
 
@@ -135,13 +126,13 @@ def index_single_file_sync(file_path: str) -> dict | str:
         db.close()
 
     try:
-        # 3. Generate and cache thumbnail (360px JPEG)
-        generate_and_cache_thumbnail(file_path, image_id)
-        
-        # 4 & 5. Extract metadata, embeddings and captions
-        metadata, embedding, ai_result = run_ai_pipeline_sync(file_path)
-        
-        # 6. Delete old record ONLY IF new inference succeeded
+        from services.pipeline import IndexingPipeline
+        pipeline = IndexingPipeline()
+        res = pipeline.run(file_path)
+        if isinstance(res, str):
+            return res
+            
+        # Delete old record ONLY IF new inference succeeded
         if image_id_to_delete:
             db_delete: Session = SessionLocal()
             try:
@@ -150,44 +141,8 @@ def index_single_file_sync(file_path: str) -> dict | str:
                 print(f"[Indexer] Failed to delete old record {image_id_to_delete}: {e}", flush=True)
             finally:
                 db_delete.close()
-        
-        # 7. Prepare batch data
-        image_data = {
-            "id": image_id,
-            "parent_dir": os.path.dirname(file_path),
-            "file_path": file_path,
-            "file_name": os.path.basename(file_path),
-            "file_size": file_size,
-            "file_mtime": file_mtime,
-            "mime_type": metadata.get("mime_type", "image/jpeg")
-        }
-        
-        metadata_data = {
-            "width": metadata.get("width"),
-            "height": metadata.get("height"),
-            "color_space": metadata.get("color_space"),
-            "camera_model": metadata.get("camera_model"),
-            "lens_model": metadata.get("lens_model"),
-            "f_number": metadata.get("f_number"),
-            "focal_length": metadata.get("focal_length"),
-            "shutter_speed": metadata.get("shutter_speed"),
-            "iso": metadata.get("iso"),
-            "capture_date": metadata.get("capture_date")
-        }
-        
-        ai_data = {
-            "caption": ai_result.get("caption", ""),
-            "tags": ai_result.get("tags", []),
-            "aesthetic_tags": ai_result.get("aesthetic_tags", []),
-            "is_user_edited": False
-        }
-        
-        return {
-            "image_data": image_data,
-            "metadata_data": metadata_data,
-            "ai_data": ai_data,
-            "embedding": embedding
-        }
+                
+        return res
     except Exception as e:
         print(f"[Indexer] Error indexing file {file_path}: {e}", flush=True)
         return "error"

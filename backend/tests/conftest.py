@@ -85,6 +85,8 @@ def mock_ai_adapters(monkeypatch):
     
     monkeypatch.setattr("services.indexing_service.get_siglip_adapter", lambda: mock_siglip)
     monkeypatch.setattr("services.indexing_service.get_gemma_adapter", lambda: mock_gemma)
+    monkeypatch.setattr("services.ai_factory.get_siglip_adapter", lambda: mock_siglip)
+    monkeypatch.setattr("services.ai_factory.get_gemma_adapter", lambda: mock_gemma)
     monkeypatch.setattr("api.search.get_siglip_adapter", lambda: mock_siglip)
     
     mock_chroma_collection = MagicMock()
@@ -92,4 +94,5 @@ def mock_ai_adapters(monkeypatch):
     mock_chroma_collection.query.return_value = {"ids": [[]]}
     monkeypatch.setattr("chroma.get_chroma_collection", lambda: mock_chroma_collection)
     monkeypatch.setattr("api.search.get_chroma_collection", lambda: mock_chroma_collection)
+    monkeypatch.setattr("repositories.vector_repository.get_chroma_collection", lambda: mock_chroma_collection)
     monkeypatch.setattr("services.photo.generate_and_cache_thumbnail", lambda path, img_id: None)

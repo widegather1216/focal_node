@@ -34,6 +34,11 @@
    * SigLIP 2 설치 및 PyTorch MPS 가속 구동 방법
    * Apple Silicon GPU (Metal) 가속 검증 지침
 
+6. 📐 **[코드베이스 함수 인벤토리 및 명세서](./09_codebase_function_inventory.md)**
+   * 백엔드(FastAPI), 데스크탑 호스트(Tauri/Rust), 프론트엔드(React/TS) 파일별 함수 및 API 명세
+   * 함수별 파라미터(입력), 반환타입(출력) 및 역할 설명
+   * 소스 코드 추상화(Abstraction) 및 리팩토링 제안 사항
+
 ---
 
 ## 🚀 1. 프로젝트 개요 및 핵심 목표
