@@ -1,197 +1,33 @@
-import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Save, Camera, Aperture, Clock, Sun, Focus, FolderOpen, Wand2, RefreshCw, Heart } from 'lucide-react';
-import { useAppStore } from '../store/useAppStore';
-import { invoke } from '@tauri-apps/api/core';
-import { useQueryClient } from '@tanstack/react-query';
+import { X, Save, FolderOpen, RefreshCw, Heart } from 'lucide-react';
 import { api } from '../services/api';
-
-interface PhotoDetail {
-  id: string;
-  file_name: string;
-  file_path: string;
-  file_size: number;
-  mime_type: string;
-  is_favorite: boolean;
-  metadata: {
-    width: number | null;
-    height: number | null;
-    color_space: string;
-    camera_model: string | null;
-    lens_model: string | null;
-    f_number: number | null;
-    focal_length: number | null;
-    shutter_speed: string | null;
-    iso: number | null;
-    capture_date: string | null;
-  };
-  ai_analysis: {
-    caption: string | null;
-    tags: string[];
-    aesthetic_tags?: string[];
-    is_user_edited: boolean;
-  };
-}
-
-const PhotoExif = ({ metadata }: { metadata: PhotoDetail['metadata'] }) => (
-  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-    {metadata?.camera_model && (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#333', padding: '6px 12px', borderRadius: '4px', fontSize: '12px' }}>
-        <Camera size={14} />
-        {metadata.camera_model}
-      </div>
-    )}
-    {metadata?.lens_model && (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#333', padding: '6px 12px', borderRadius: '4px', fontSize: '12px' }}>
-        <Focus size={14} />
-        {metadata.lens_model}
-      </div>
-    )}
-    {metadata?.f_number && (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#333', padding: '6px 12px', borderRadius: '4px', fontSize: '12px' }}>
-        <Aperture size={14} />
-        f/{metadata.f_number}
-      </div>
-    )}
-    {metadata?.focal_length && (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#333', padding: '6px 12px', borderRadius: '4px', fontSize: '12px' }}>
-        {metadata.focal_length}mm
-      </div>
-    )}
-    {metadata?.shutter_speed && (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#333', padding: '6px 12px', borderRadius: '4px', fontSize: '12px' }}>
-        <Clock size={14} />
-        {metadata.shutter_speed}s
-      </div>
-    )}
-    {metadata?.iso && (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#333', padding: '6px 12px', borderRadius: '4px', fontSize: '12px' }}>
-        <Sun size={14} />
-        ISO {metadata.iso}
-      </div>
-    )}
-  </div>
-);
+import { usePhotoDetail } from '../hooks/usePhotoDetail';
+import { PhotoExifView } from './detail/PhotoExifView';
+import { PhotoCritiqueView } from './detail/PhotoCritiqueView';
 
 export function DetailPanel() {
-  const { apiPort, selectedPhotoId, setSelectedPhotoId, setSearchQuery } = useAppStore();
-  const queryClient = useQueryClient();
-  const [photo, setPhoto] = useState<PhotoDetail | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [editing, setEditing] = useState(false);
-  
-  const [captionEdit, setCaptionEdit] = useState('');
-  const [tagsEdit, setTagsEdit] = useState<string[]>([]);
-  const [saving, setSaving] = useState(false);
-
-  const [critique, setCritique] = useState<string | null>(null);
-  const [loadingCritique, setLoadingCritique] = useState(false);
-  const [reindexing, setReindexing] = useState(false);
-
-  useEffect(() => {
-    if (!selectedPhotoId || !apiPort) {
-      setPhoto(null);
-      setEditing(false);
-      setCritique(null);
-      return;
-    }
-
-    const fetchDetail = async () => {
-      setLoading(true);
-      try {
-        const data: PhotoDetail = await api.getPhotoDetail(selectedPhotoId);
-        setPhoto(data);
-        setCaptionEdit(data.ai_analysis?.caption || '');
-        setTagsEdit(data.ai_analysis?.tags ? [...data.ai_analysis.tags] : []);
-        setCritique(null);
-      } catch (err) {
-        console.error("Failed to fetch photo detail:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchDetail();
-  }, [selectedPhotoId, apiPort]);
-
-  const handleSave = async () => {
-    if (!selectedPhotoId || !apiPort) return;
-    setSaving(true);
-    try {
-      const updated = await api.updatePhotoMetadata(selectedPhotoId, captionEdit, tagsEdit);
-      
-      setPhoto(prev => prev ? {
-        ...prev,
-        ai_analysis: updated.ai_analysis
-      } : null);
-      setEditing(false);
-    } catch (err) {
-      console.error("Failed to save metadata:", err);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleReveal = async () => {
-    if (!photo) return;
-    try {
-      await invoke('reveal_in_finder', { path: photo.file_path });
-    } catch (err) {
-      console.error("Failed to reveal in finder", err);
-    }
-  };
-
-  const handleRequestCritique = async () => {
-    const currentId = selectedPhotoId;
-    if (!currentId) return;
-    setLoadingCritique(true);
-    try {
-      const result = await api.getPhotoCritique(currentId);
-      if (useAppStore.getState().selectedPhotoId === currentId) {
-        setCritique(result.critique);
-      }
-    } catch (err) {
-      if (useAppStore.getState().selectedPhotoId === currentId) {
-        console.error("Failed to generate critique:", err);
-        setCritique("비평을 생성하는 도중 오류가 발생했습니다.");
-      }
-    } finally {
-      if (useAppStore.getState().selectedPhotoId === currentId) {
-        setLoadingCritique(false);
-      }
-    }
-  };
-
-  const handleReindex = async () => {
-    if (!selectedPhotoId) return;
-    setReindexing(true);
-    try {
-      const updatedData = await api.reindexPhoto(selectedPhotoId);
-      setPhoto(updatedData);
-      setCaptionEdit(updatedData.ai_analysis?.caption || '');
-      setTagsEdit(updatedData.ai_analysis?.tags ? [...updatedData.ai_analysis.tags] : []);
-    } catch (err) {
-      console.error("Failed to reindex photo:", err);
-    } finally {
-      setReindexing(false);
-    }
-  };
-
-  const handleToggleFavorite = async () => {
-    if (!photo) return;
-    try {
-      const res = await api.toggleFavorite(photo.id);
-      setPhoto(prev => prev ? { ...prev, is_favorite: res.is_favorite } : null);
-      queryClient.invalidateQueries({ queryKey: ['photos'] });
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const handleTagClick = (tag: string) => {
-    setSearchQuery(tag);
-    setSelectedPhotoId(null);
-  };
+  const {
+    selectedPhotoId,
+    setSelectedPhotoId,
+    photo,
+    loading,
+    editing,
+    setEditing,
+    captionEdit,
+    setCaptionEdit,
+    tagsEdit,
+    setTagsEdit,
+    saving,
+    critique,
+    loadingCritique,
+    reindexing,
+    handleSave,
+    handleReveal,
+    handleRequestCritique,
+    handleReindex,
+    handleToggleFavorite,
+    handleTagClick
+  } = usePhotoDetail();
 
   return (
     <AnimatePresence>
@@ -199,306 +35,194 @@ export function DetailPanel() {
         <>
           <motion.div
             initial={{ opacity: 0 }}
-            animate={{ opacity: 0.5 }}
+            animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: '#000',
-              zIndex: 10,
-            }}
             onClick={() => setSelectedPhotoId(null)}
+            style={{
+              position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.6)', backdropFilter: 'blur(4px)', zIndex: 40
+            }}
           />
+
           <motion.div
             initial={{ x: '100%' }}
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
             style={{
-              position: 'fixed',
-              top: 0,
-              right: 0,
-              width: '500px',
-              height: '100vh',
-              backgroundColor: '#1a1a1a',
-              zIndex: 20,
-              boxShadow: '-4px 0 24px rgba(0,0,0,0.5)',
-              display: 'flex',
-              flexDirection: 'column',
-              color: '#fff',
-              overflowY: 'auto'
+              position: 'fixed', top: 0, right: 0, bottom: 0, width: '420px',
+              backgroundColor: '#18181b', borderLeft: '1px solid #27272a',
+              color: '#f4f4f5', zIndex: 50, display: 'flex', flexDirection: 'column',
+              boxShadow: '-10px 0 25px rgba(0,0,0,0.5)'
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '20px', borderBottom: '1px solid #333' }}>
-              <h2 style={{ fontSize: '18px', fontWeight: 600, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {photo?.file_name || 'Loading...'}
-              </h2>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <motion.button 
-                  onClick={handleToggleFavorite}
-                  whileHover={{ scale: 1.15 }}
-                  whileTap={{ scale: 0.9 }}
-                  transition={{ type: "spring", stiffness: 500, damping: 15 }}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
-                  title="즐겨찾기"
-                >
-                  <Heart size={20} fill={photo?.is_favorite ? '#ef4444' : 'none'} color={photo?.is_favorite ? '#ef4444' : '#fff'} />
-                </motion.button>
-                <motion.button 
+            {/* Panel Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid #27272a' }}>
+              <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600 }}>사진 상세 정보</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {photo && (
+                  <button
+                    onClick={handleToggleFavorite}
+                    style={{ background: 'none', border: 'none', color: photo.is_favorite ? '#ef4444' : '#71717a', cursor: 'pointer', padding: '4px' }}
+                    title={photo.is_favorite ? "즐겨찾기 해제" : "즐겨찾기 추가"}
+                  >
+                    <Heart size={20} fill={photo.is_favorite ? '#ef4444' : 'none'} />
+                  </button>
+                )}
+                <button
                   onClick={() => setSelectedPhotoId(null)}
-                  whileHover={{ scale: 1.15 }}
-                  whileTap={{ scale: 0.9 }}
-                  transition={{ type: "spring", stiffness: 500, damping: 15 }}
-                  style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center' }}
+                  style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer', padding: '4px' }}
                 >
                   <X size={20} />
-                </motion.button>
+                </button>
               </div>
             </div>
 
-            {loading ? (
-              <div style={{ padding: '20px', textAlign: 'center', color: '#aaa' }}>Loading details...</div>
-            ) : photo ? (
-              <div style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
-                <div style={{ width: '100%', height: '300px', backgroundColor: '#000', position: 'relative', flexShrink: 0 }}>
-                  {apiPort && (
-                    <img 
-                      src={api.getPhotoOriginalUrl(photo.id)}
-                      alt={photo.file_name}
-                      style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                    />
-                  )}
+            {/* Panel Content */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+              {loading && (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px', color: '#71717a' }}>
+                  로딩 중...
                 </div>
+              )}
 
-                <div style={{ padding: '24px', flex: 1, display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                  
-                  {/* EXIF Section */}
-                  <PhotoExif metadata={photo.metadata} />
+              {!loading && photo && (
+                <>
+                  {/* Image Preview */}
+                  <div style={{ borderRadius: '8px', overflow: 'hidden', backgroundColor: '#09090b', marginBottom: '20px', display: 'flex', justifyContent: 'center', maxHeight: '280px' }}>
+                    <img
+                      src={api.getPhotoThumbnailUrl(photo.id)}
+                      alt={photo.file_name}
+                      style={{ maxWidth: '100%', maxHeight: '280px', objectFit: 'contain' }}
+                    />
+                  </div>
 
-                  {/* Date and Dimensions */}
-                  <div style={{ fontSize: '13px', color: '#888', display: 'flex', justifyContent: 'space-between' }}>
-                    <span>{photo.metadata?.capture_date ? new Date(photo.metadata.capture_date).toLocaleString() : 'Unknown Date'}</span>
-                    <span>{photo.metadata?.width && photo.metadata?.height ? `${photo.metadata.width} x ${photo.metadata.height}` : ''}</span>
+                  {/* File Info */}
+                  <div style={{ marginBottom: '20px' }}>
+                    <h4 style={{ margin: '0 0 8px 0', fontSize: '15px', wordBreak: 'break-all' }}>{photo.file_name}</h4>
+                    <div style={{ fontSize: '12px', color: '#71717a', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>해상도:</span>
+                        <span style={{ color: '#a1a1aa' }}>{photo.metadata.width} x {photo.metadata.height}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>색상 공간:</span>
+                        <span style={{ color: '#a1a1aa' }}>{photo.metadata.color_space}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span>파일 위치:</span>
+                        <button
+                          onClick={handleReveal}
+                          style={{
+                            background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer',
+                            padding: 0, fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px',
+                            textDecoration: 'underline'
+                          }}
+                        >
+                          <FolderOpen size={12} /> Finder에서 열기
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* EXIF Metadata */}
+                  <div style={{ marginBottom: '20px' }}>
+                    <h4 style={{ margin: '0 0 10px 0', fontSize: '13px', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>EXIF 촬영 정보</h4>
+                    <PhotoExifView metadata={photo.metadata} />
                   </div>
 
                   {/* AI Analysis Section */}
-                  <div style={{ borderTop: '1px solid #333', paddingTop: '24px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                      <h3 style={{ fontSize: '16px', margin: 0, fontWeight: 500, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        AI Analysis
-                        {photo.ai_analysis?.is_user_edited && (
-                          <span style={{ fontSize: '10px', background: '#4CAF50', color: '#fff', padding: '2px 6px', borderRadius: '10px' }}>Edited</span>
-                        )}
-                      </h3>
+                  <div style={{ marginBottom: '20px', backgroundColor: '#18181b', borderRadius: '8px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                      <h4 style={{ margin: 0, fontSize: '13px', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>AI 메타데이터 묘사</h4>
                       <div style={{ display: 'flex', gap: '8px' }}>
-                        <motion.button
+                        <button
                           onClick={handleReindex}
                           disabled={reindexing}
-                          whileHover={reindexing ? {} : { scale: 1.03, backgroundColor: 'rgba(76, 175, 80, 0.08)' }}
-                          whileTap={reindexing ? {} : { scale: 0.97 }}
-                          transition={{ type: "spring", stiffness: 400, damping: 15 }}
-                          style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: '1px solid #4CAF50', color: '#4CAF50', padding: '4px 12px', borderRadius: '4px', cursor: reindexing ? 'default' : 'pointer', fontSize: '12px', opacity: reindexing ? 0.7 : 1 }}
-                          title="AI 분석 재시도"
+                          style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}
+                          title="AI 분석 다시 실행"
                         >
-                          <motion.div
-                            animate={reindexing ? { rotate: 360 } : {}}
-                            transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                          >
-                            <RefreshCw size={14} />
-                          </motion.div>
-                          {reindexing ? '재분석 중...' : '재분석'}
-                        </motion.button>
-                        <motion.button
-                          onClick={() => {
-                            setSearchQuery(`similar:${photo.id}`);
-                            setSelectedPhotoId(null);
-                          }}
-                          whileHover={{ scale: 1.03, backgroundColor: 'rgba(255, 215, 0, 0.15)' }}
-                          whileTap={{ scale: 0.97 }}
-                          transition={{ type: "spring", stiffness: 400, damping: 15 }}
-                          style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255, 215, 0, 0.1)', border: '1px solid rgba(255, 215, 0, 0.4)', color: '#ffd700', padding: '4px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
-                          title="비슷한 무드 찾기 (Similar Mood Search)"
-                        >
-                          <Wand2 size={14} />
-                          Similar
-                        </motion.button>
-                        <motion.button
-                          onClick={handleReveal}
-                          whileHover={{ scale: 1.03, backgroundColor: 'rgba(255, 255, 255, 0.05)' }}
-                          whileTap={{ scale: 0.97 }}
-                          transition={{ type: "spring", stiffness: 400, damping: 15 }}
-                          style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: '1px solid #444', color: '#fff', padding: '4px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
-                          title="Reveal in OS"
-                        >
-                          <FolderOpen size={14} />
-                          Reveal
-                        </motion.button>
+                          <RefreshCw size={12} className={reindexing ? 'spin' : ''} /> Re-index
+                        </button>
                         {!editing ? (
-                          <motion.button 
+                          <button
                             onClick={() => setEditing(true)}
-                            whileHover={{ scale: 1.03, backgroundColor: 'rgba(255, 255, 255, 0.05)' }}
-                            whileTap={{ scale: 0.97 }}
-                            transition={{ type: "spring", stiffness: 400, damping: 15 }}
-                            style={{ background: 'none', border: '1px solid #444', color: '#fff', padding: '4px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+                            style={{ background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', fontSize: '12px' }}
                           >
-                            Edit
-                          </motion.button>
+                            편집
+                          </button>
                         ) : (
-                          <motion.button 
+                          <button
                             onClick={handleSave}
                             disabled={saving}
-                            whileHover={saving ? {} : { scale: 1.03, backgroundColor: '#45a049' }}
-                            whileTap={saving ? {} : { scale: 0.97 }}
-                            transition={{ type: "spring", stiffness: 400, damping: 15 }}
-                            style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#4CAF50', border: 'none', color: '#fff', padding: '4px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+                            style={{ background: '#38bdf8', border: 'none', color: '#000', cursor: 'pointer', fontSize: '12px', padding: '2px 8px', borderRadius: '4px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}
                           >
-                            <Save size={14} />
-                            {saving ? 'Saving...' : 'Save'}
-                          </motion.button>
+                            <Save size={12} /> {saving ? '저장 중...' : '저장'}
+                          </button>
                         )}
                       </div>
                     </div>
 
-                    {editing ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                        <div>
-                          <label style={{ display: 'block', fontSize: '12px', color: '#aaa', marginBottom: '8px' }}>Caption</label>
-                          <textarea
-                            value={captionEdit}
-                            onChange={e => setCaptionEdit(e.target.value)}
-                            style={{ width: '100%', minHeight: '80px', background: '#222', border: '1px solid #444', color: '#fff', padding: '8px', borderRadius: '4px', boxSizing: 'border-box', resize: 'vertical' }}
-                          />
+                    {!editing ? (
+                      <div>
+                        <p style={{ fontSize: '13px', color: '#d4d4d8', lineHeight: 1.5, margin: '0 0 12px 0', background: '#09090b', padding: '10px 12px', borderRadius: '6px' }}>
+                          {photo.ai_analysis.caption || "생성된 캡션이 없습니다."}
+                        </p>
+                        
+                        {/* Keyword Tags */}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
+                          {photo.ai_analysis.tags.map((tag, idx) => (
+                            <span
+                              key={idx}
+                              onClick={() => handleTagClick(tag)}
+                              style={{ background: '#27272a', color: '#e4e4e7', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', cursor: 'pointer' }}
+                            >
+                              #{tag}
+                            </span>
+                          ))}
                         </div>
-                        <div>
-                          <label style={{ display: 'block', fontSize: '12px', color: '#aaa', marginBottom: '8px' }}>Tags</label>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '8px' }}>
-                            {tagsEdit.map((tag, idx) => (
-                              <span key={idx} style={{ background: '#2a2a2a', border: '1px solid #444', padding: '4px 8px', borderRadius: '16px', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+
+                        {/* Aesthetic Tags */}
+                        {photo.ai_analysis.aesthetic_tags && photo.ai_analysis.aesthetic_tags.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+                            {photo.ai_analysis.aesthetic_tags.map((tag, idx) => (
+                              <span
+                                key={idx}
+                                style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', border: '1px solid rgba(168, 85, 247, 0.3)', padding: '3px 8px', borderRadius: '4px', fontSize: '11px' }}
+                              >
                                 {tag}
-                                <motion.button
-                                  onClick={() => setTagsEdit(prev => prev.filter((_, i) => i !== idx))}
-                                  whileHover={{ scale: 1.2, color: '#fff' }}
-                                  whileTap={{ scale: 0.9 }}
-                                  transition={{ type: "spring", stiffness: 500, damping: 15 }}
-                                  style={{ background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                                >
-                                  <X size={12} />
-                                </motion.button>
                               </span>
                             ))}
                           </div>
-                          <input
-                            type="text"
-                            placeholder="태그를 입력하고 Enter를 누르세요..."
-                            onKeyDown={e => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                const val = e.currentTarget.value.trim();
-                                if (val && !tagsEdit.includes(val)) {
-                                  setTagsEdit(prev => [...prev, val]);
-                                  e.currentTarget.value = '';
-                                }
-                              }
-                            }}
-                            style={{ width: '100%', background: '#222', border: '1px solid #444', color: '#fff', padding: '8px', borderRadius: '4px', boxSizing: 'border-box' }}
-                          />
-                        </div>
+                        )}
                       </div>
                     ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                        <div>
-                          <label style={{ display: 'block', fontSize: '12px', color: '#aaa', marginBottom: '8px' }}>Caption</label>
-                          <p style={{ margin: 0, fontSize: '14px', lineHeight: 1.5 }}>
-                            {photo.ai_analysis?.caption || <span style={{ color: '#666', fontStyle: 'italic' }}>No caption generated</span>}
-                          </p>
-                        </div>
-                        <div>
-                          <label style={{ display: 'block', fontSize: '12px', color: '#aaa', marginBottom: '8px' }}>Tags</label>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '12px' }}>
-                            {photo.ai_analysis?.aesthetic_tags && photo.ai_analysis.aesthetic_tags.length > 0 && (
-                                photo.ai_analysis.aesthetic_tags.map((tag, idx) => (
-                                  <motion.span 
-                                    key={`aes-${idx}`} 
-                                    onClick={() => handleTagClick(tag)}
-                                    whileHover={{ scale: 1.05, backgroundColor: 'rgba(255, 215, 0, 0.2)' }}
-                                    whileTap={{ scale: 0.97 }}
-                                    transition={{ type: "spring", stiffness: 400, damping: 15 }}
-                                    style={{ background: 'rgba(255, 215, 0, 0.1)', border: '1px solid rgba(255, 215, 0, 0.4)', color: '#ffd700', padding: '4px 10px', borderRadius: '16px', fontSize: '12px', fontWeight: 500, cursor: 'pointer' }}
-                                  >
-                                    ✨ {tag}
-                                  </motion.span>
-                                ))
-                            )}
-                            {photo.ai_analysis?.tags && photo.ai_analysis.tags.length > 0 ? (
-                              photo.ai_analysis.tags.map((tag, idx) => (
-                                <motion.span 
-                                  key={`tag-${idx}`} 
-                                  onClick={() => handleTagClick(tag)}
-                                  whileHover={{ scale: 1.05, backgroundColor: '#3a3a3a' }}
-                                  whileTap={{ scale: 0.97 }}
-                                  transition={{ type: "spring", stiffness: 400, damping: 15 }}
-                                  style={{ background: '#2a2a2a', border: '1px solid #444', padding: '4px 10px', borderRadius: '16px', fontSize: '12px', cursor: 'pointer' }}
-                                >
-                                  {tag}
-                                </motion.span>
-                              ))
-                            ) : (
-                              (!photo.ai_analysis?.aesthetic_tags || photo.ai_analysis.aesthetic_tags.length === 0) && (
-                                <span style={{ color: '#666', fontStyle: 'italic', fontSize: '14px' }}>No tags available</span>
-                              )
-                            )}
-                          </div>
-                        </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        <textarea
+                          value={captionEdit}
+                          onChange={(e) => setCaptionEdit(e.target.value)}
+                          style={{ background: '#09090b', border: '1px solid #3f3f46', color: '#fff', padding: '8px', borderRadius: '4px', fontSize: '13px', minHeight: '80px', width: '100%', boxSizing: 'border-box' }}
+                        />
+                        <input
+                          type="text"
+                          value={tagsEdit.join(', ')}
+                          onChange={(e) => setTagsEdit(e.target.value.split(',').map(t => t.trim()).filter(Boolean))}
+                          placeholder="태그 (쉼표로 구분)"
+                          style={{ background: '#09090b', border: '1px solid #3f3f46', color: '#fff', padding: '8px', borderRadius: '4px', fontSize: '12px', width: '100%', boxSizing: 'border-box' }}
+                        />
                       </div>
                     )}
                   </div>
 
-                  {/* Expert Critique Section */}
-                  <div style={{ borderTop: '1px solid #333', paddingTop: '24px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                      <h3 style={{ fontSize: '16px', margin: 0, fontWeight: 500, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        ✨ 전문가 AI 비평
-                      </h3>
-                      {!critique && !loadingCritique && (
-                        <motion.button
-                          onClick={handleRequestCritique}
-                          whileHover={{ scale: 1.03, backgroundColor: 'rgba(255, 215, 0, 0.15)', boxShadow: '0 0 8px rgba(255, 215, 0, 0.2)' }}
-                          whileTap={{ scale: 0.97 }}
-                          transition={{ type: "spring", stiffness: 400, damping: 15 }}
-                          style={{ background: 'rgba(255, 215, 0, 0.1)', border: '1px solid rgba(255, 215, 0, 0.4)', color: '#ffd700', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}
-                        >
-                          <Wand2 size={14} />
-                          비평 받기
-                        </motion.button>
-                      )}
-                    </div>
-                    
-                    {loadingCritique ? (
-                      <div style={{ padding: '20px', textAlign: 'center', color: '#aaa', background: '#222', borderRadius: '8px' }}>
-                        <motion.div
-                          animate={{ rotate: 360 }}
-                          transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-                          style={{ display: 'inline-block', marginBottom: '8px', color: '#ffd700' }}
-                        >
-                          <Wand2 size={24} />
-                        </motion.div>
-                        <div style={{ fontSize: '13px', marginTop: '8px' }}>AI 전문가가 사진을 정밀 분석하고 있습니다...</div>
-                      </div>
-                    ) : critique ? (
-                      <div style={{ background: '#222', padding: '16px', borderRadius: '8px', border: '1px solid #333' }}>
-                        <p style={{ margin: 0, fontSize: '14px', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-                          {critique}
-                        </p>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-            ) : null}
+                  {/* AI Critique Component */}
+                  <PhotoCritiqueView
+                    critique={critique}
+                    loadingCritique={loadingCritique}
+                    onRequestCritique={handleRequestCritique}
+                  />
+                </>
+              )}
+            </div>
           </motion.div>
         </>
       )}

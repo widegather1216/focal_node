@@ -204,10 +204,6 @@ class GemmaAdapter(ImageCaptioningPort):
                 self.active_requests -= 1
 
     def _safe_parse_json(self, output: str) -> dict:
-                elif "caption" in data:
-                    return {"caption": str(data["caption"]), "tags": [], "aesthetic_tags": [str(t) for t in (data.get("aesthetic_tags") or [])]}
-                elif "tags" in data:
-    def _safe_parse_json(self, output: str) -> dict:
         from services.ai_parser import parse_gemma_json_output
         return parse_gemma_json_output(output)
 
