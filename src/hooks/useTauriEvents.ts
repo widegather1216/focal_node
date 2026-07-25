@@ -6,6 +6,7 @@ import { useAppStore } from '../store/useAppStore';
 export function useTauriEvents() {
   const {
     setIsIndexing,
+    setIndexingState,
     setIndexingProgress,
     setIsDownloadingModel,
     setDownloadProgress,
@@ -17,7 +18,7 @@ export function useTauriEvents() {
     const unlistenProgress = listen<{ processed: number; total: number; file_path: string }>(
       "indexing-progress",
       (event) => {
-        setIsIndexing(true);
+        setIndexingState('processing');
         setIndexingProgress({
           processed: event.payload.processed,
           total: event.payload.total,
@@ -33,7 +34,21 @@ export function useTauriEvents() {
     );
 
     const unlistenCompleted = listen("indexing-completed", () => {
-      setIsIndexing(false);
+      setIndexingState('idle');
+      setIndexingProgress(null);
+      queryClient.invalidateQueries({ queryKey: ['photos'] });
+    });
+
+    const unlistenPaused = listen("indexing-paused", () => {
+      setIndexingState('paused');
+    });
+
+    const unlistenResumed = listen("indexing-resumed", () => {
+      setIndexingState('processing');
+    });
+
+    const unlistenCancelled = listen("indexing-cancelled", () => {
+      setIndexingState('idle');
       setIndexingProgress(null);
       queryClient.invalidateQueries({ queryKey: ['photos'] });
     });
@@ -61,10 +76,13 @@ export function useTauriEvents() {
     return () => {
       unlistenProgress.then((unlisten) => unlisten());
       unlistenCompleted.then((unlisten) => unlisten());
+      unlistenPaused.then((unlisten) => unlisten());
+      unlistenResumed.then((unlisten) => unlisten());
+      unlistenCancelled.then((unlisten) => unlisten());
       unlistenSync.then((unlisten) => unlisten());
       unlistenDownloadStarted.then((unlisten) => unlisten());
       unlistenDownloadProgress.then((unlisten) => unlisten());
       unlistenDownloadCompleted.then((unlisten) => unlisten());
     };
-  }, [setIsIndexing, setIndexingProgress, queryClient, setIsDownloadingModel, setDownloadProgress, setDownloadModelName]);
+  }, [setIsIndexing, setIndexingState, setIndexingProgress, queryClient, setIsDownloadingModel, setDownloadProgress, setDownloadModelName]);
 }

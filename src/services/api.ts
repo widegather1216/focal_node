@@ -155,6 +155,39 @@ class ApiClient {
     return res.json();
   }
 
+  async pauseIndexing(): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/index/pause`, { method: 'POST' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
+      throw new Error(`Failed to pause indexing: ${err.detail}`);
+    }
+    return res.json();
+  }
+
+  async resumeIndexing(): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/index/resume`, { method: 'POST' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
+      throw new Error(`Failed to resume indexing: ${err.detail}`);
+    }
+    return res.json();
+  }
+
+  async cancelIndexing(): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/index/cancel`, { method: 'POST' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
+      throw new Error(`Failed to cancel indexing: ${err.detail}`);
+    }
+    return res.json();
+  }
+
+  async getIndexingStatus(): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/index/status`);
+    if (!res.ok) throw new Error("Failed to fetch indexing status");
+    return res.json();
+  }
+
   async getPhotoCritique(photoId: string): Promise<any> {
     const res = await fetch(`${this.baseUrl}/api/chat/critique`, {
       method: 'POST',

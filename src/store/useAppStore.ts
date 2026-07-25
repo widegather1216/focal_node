@@ -43,9 +43,11 @@ interface AppState {
   clearSearchFilters: () => void;
 
   isIndexing: boolean;
+  indexingState: 'idle' | 'processing' | 'paused' | 'cancelled';
   indexingProgress: IndexingProgress | null;
   setIndexingProgress: (progress: IndexingProgress | null) => void;
   setIsIndexing: (isIndexing: boolean) => void;
+  setIndexingState: (state: 'idle' | 'processing' | 'paused' | 'cancelled') => void;
 
   isDownloadingModel: boolean;
   setIsDownloadingModel: (isDownloading: boolean) => void;
@@ -88,9 +90,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearSearchFilters: () => set({ searchFilters: {} }),
 
   isIndexing: false,
+  indexingState: 'idle',
   indexingProgress: null,
   setIndexingProgress: (progress) => set({ indexingProgress: progress }),
-  setIsIndexing: (isIndexing) => set({ isIndexing }),
+  setIsIndexing: (isIndexing) => set({ isIndexing, indexingState: isIndexing ? 'processing' : 'idle' }),
+  setIndexingState: (indexingState) => set({ indexingState, isIndexing: indexingState === 'processing' || indexingState === 'paused' }),
 
   isDownloadingModel: false,
   setIsDownloadingModel: (isDownloadingModel) => set({ isDownloadingModel }),

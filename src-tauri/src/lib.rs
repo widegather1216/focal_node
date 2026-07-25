@@ -260,6 +260,12 @@ pub fn run() {
                                 let _ = app_handle.emit("model-download-completed", ());
                             } else if line_str.contains("[Indexer] Background indexing completed.") {
                                 let _ = app_handle.emit("indexing-completed", ());
+                            } else if line_str.contains("[Indexer] Background indexing paused.") {
+                                let _ = app_handle.emit("indexing-paused", ());
+                            } else if line_str.contains("[Indexer] Background indexing resumed.") {
+                                let _ = app_handle.emit("indexing-resumed", ());
+                            } else if line_str.contains("[Indexer] Background indexing cancelled.") {
+                                let _ = app_handle.emit("indexing-cancelled", ());
                             } else if line_str.contains("[Indexer] Sync completed.") {
                                 let _ = app_handle.emit("sync-completed", ());
                             }

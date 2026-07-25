@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { open } from '@tauri-apps/plugin-dialog';
-import { FolderPlus, Folder, Loader2, Search, RefreshCw, Trash2, Heart } from 'lucide-react';
+import { FolderPlus, Folder, Loader2, Search, RefreshCw, Trash2, Heart, Pause, Play, Square } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { SearchFilterMenu } from './SearchFilterMenu';
 import { api } from '../services/api';
@@ -12,7 +12,21 @@ interface SidebarProps {
 }
 
 export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
-  const { apiPort, isIndexing, indexingProgress, searchQuery, setSearchQuery, searchFilters, setSearchFilters, folders, fetchFolders, removeFolder, setIsIndexing, setIndexingProgress } = useAppStore();
+  const { 
+    apiPort, 
+    isIndexing, 
+    indexingState, 
+    indexingProgress, 
+    searchQuery, 
+    setSearchQuery, 
+    searchFilters, 
+    setSearchFilters, 
+    folders, 
+    fetchFolders, 
+    removeFolder, 
+    setIsIndexing, 
+    setIndexingProgress 
+  } = useAppStore();
 
   useEffect(() => {
     if (apiPort) {
@@ -138,7 +152,8 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
           disabled={isIndexing}
           whileHover={isIndexing ? {} : { 
             scale: 1.02, 
-            backgroundColor: 'rgba(255, 255, 255, 0.15)' 
+            backgroundColor: 'rgba(255, 255, 255, 0.15)',
+            boxShadow: '0 0 12px rgba(255, 255, 255, 0.1)'
           }}
           whileTap={isIndexing ? {} : { scale: 0.98 }}
           transition={{ type: "spring", stiffness: 400, damping: 15 }}
@@ -293,15 +308,70 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
       {isIndexing && indexingProgress && (
         <div style={{
           marginTop: 'auto',
-          padding: '16px',
-          backgroundColor: 'rgba(0, 0, 0, 0.3)',
+          padding: '14px',
+          backgroundColor: indexingState === 'paused' ? 'rgba(234, 179, 8, 0.12)' : 'rgba(0, 0, 0, 0.35)',
           borderRadius: '8px',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
+          border: indexingState === 'paused' ? '1px solid rgba(234, 179, 8, 0.3)' : '1px solid rgba(255, 255, 255, 0.1)',
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-            <Loader2 size={16} className="spinner" style={{ animation: 'spin 1s linear infinite' }} />
-            <span style={{ fontSize: '12px', fontWeight: '600' }}>Indexing Photos</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {indexingState === 'paused' ? (
+                <span style={{ fontSize: '12px' }}>⏸️</span>
+              ) : (
+                <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+              )}
+              <span style={{ fontSize: '12px', fontWeight: '600', color: indexingState === 'paused' ? '#fde047' : '#fff' }}>
+                {indexingState === 'paused' ? 'Indexing Paused' : 'Indexing Photos'}
+              </span>
+            </div>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              {indexingState === 'processing' ? (
+                <button
+                  onClick={async () => {
+                    try {
+                      await api.pauseIndexing();
+                    } catch (e: any) {
+                      console.error("Pause error:", e);
+                    }
+                  }}
+                  style={{ background: 'none', border: 'none', color: '#fbbf24', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+                  title="Pause Indexing"
+                >
+                  <Pause size={14} />
+                </button>
+              ) : (
+                <button
+                  onClick={async () => {
+                    try {
+                      await api.resumeIndexing();
+                    } catch (e: any) {
+                      console.error("Resume error:", e);
+                    }
+                  }}
+                  style={{ background: 'none', border: 'none', color: '#4ade80', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+                  title="Resume Indexing"
+                >
+                  <Play size={14} />
+                </button>
+              )}
+              
+              <button
+                onClick={async () => {
+                  try {
+                    await api.cancelIndexing();
+                  } catch (e: any) {
+                    console.error("Cancel error:", e);
+                  }
+                }}
+                style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+                title="Cancel Indexing"
+              >
+                <Square size={12} fill="#ef4444" />
+              </button>
+            </div>
           </div>
+
           <div style={{
             width: '100%',
             height: '4px',
@@ -313,7 +383,7 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
             <div style={{
               width: `${(indexingProgress.processed / Math.max(1, indexingProgress.total)) * 100}%`,
               height: '100%',
-              backgroundColor: '#4ade80',
+              backgroundColor: indexingState === 'paused' ? '#facc15' : '#4ade80',
               transition: 'width 0.3s ease'
             }} />
           </div>
