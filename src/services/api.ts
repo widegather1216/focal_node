@@ -227,6 +227,19 @@ class ApiClient {
   getPhotoOriginalUrl(id: string): string {
     return `${this.baseUrl}/api/photos/${id}/original`;
   }
+
+  async getAnalyticsStats(): Promise<{
+    total_photos: number;
+    cameras: { name: string; count: number }[];
+    lenses: { name: string; count: number }[];
+    focal_lengths: { name: string; count: number }[];
+    focal_lengths_35mm: { name: string; count: number }[];
+    apertures: { name: string; count: number }[];
+  }> {
+    const res = await fetch(`${this.baseUrl}/api/analytics/stats`);
+    if (!res.ok) throw new Error("Failed to fetch analytics stats");
+    return res.json();
+  }
 }
 
 

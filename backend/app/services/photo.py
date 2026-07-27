@@ -127,7 +127,13 @@ def _prepare_photo_models(image_data: dict, metadata_data: dict, ai_data: dict) 
         except ValueError:
             metadata_data["capture_date"] = None
             
-    db_metadata = DBImageMetadata(image_id=image_id, **metadata_data)
+    valid_meta_keys = {
+        "width", "height", "color_space", "camera_model", "lens_model",
+        "f_number", "focal_length", "focal_length_35mm", "crop_factor",
+        "sensor_format", "shutter_speed", "iso", "capture_date"
+    }
+    clean_meta = {k: v for k, v in metadata_data.items() if k in valid_meta_keys}
+    db_metadata = DBImageMetadata(image_id=image_id, **clean_meta)
     
     tags = ai_data.get("tags")
     if isinstance(tags, list):

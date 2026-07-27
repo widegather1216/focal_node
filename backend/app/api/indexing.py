@@ -10,12 +10,26 @@ from models import IndexedFolder
 
 router = APIRouter(prefix="/api/index", tags=["indexing"])
 
+import os
+
 @router.post("/start", status_code=202)
 def start_indexing(payload: schemas.IndexStartRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     if indexing_status["status"] in ["processing", "paused"]:
         raise HTTPException(status_code=400, detail="Indexing is already in progress or paused.")
         
+    normalized_paths = []
+    seen = set()
     for folder_path in payload.folder_paths:
+        try:
+            real_p = os.path.realpath(folder_path)
+        except Exception:
+            real_p = os.path.normpath(folder_path)
+            
+        if real_p not in seen:
+            seen.add(real_p)
+            normalized_paths.append(real_p)
+
+    for folder_path in normalized_paths:
         existing = db.query(IndexedFolder).filter(IndexedFolder.path == folder_path).first()
         if not existing:
             new_folder = IndexedFolder(path=folder_path)
@@ -24,7 +38,7 @@ def start_indexing(payload: schemas.IndexStartRequest, background_tasks: Backgro
 
     # Set status synchronously to prevent race conditions
     indexing_status["status"] = "processing"
-    background_tasks.add_task(run_indexing_background, payload.folder_paths)
+    background_tasks.add_task(run_indexing_background, normalized_paths)
     return {"message": "Indexing started"}
 
 @router.post("/sync", status_code=202)
@@ -34,7 +48,16 @@ def sync_database(background_tasks: BackgroundTasks, db: Session = Depends(get_d
         
     # Get all currently indexed folders
     folders = db.query(IndexedFolder).all()
-    folder_paths = [folder.path for folder in folders]
+    folder_paths = []
+    seen = set()
+    for folder in folders:
+        try:
+            real_p = os.path.realpath(folder.path)
+        except Exception:
+            real_p = os.path.normpath(folder.path)
+        if real_p not in seen:
+            seen.add(real_p)
+            folder_paths.append(real_p)
 
     # Set status synchronously to prevent race conditions
     indexing_status["status"] = "processing"

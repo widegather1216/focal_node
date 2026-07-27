@@ -14,10 +14,16 @@ def get_folders(db: Session = Depends(get_db)):
     folders = db.query(IndexedFolder).all()
     return [{"path": f.path, "created_at": f.created_at.isoformat()} for f in folders]
 
+import os
+
 @router.delete("")
 def unindex_folder(path: str):
     try:
-        remove_folder_data(path)
+        try:
+            norm_path = os.path.realpath(path)
+        except Exception:
+            norm_path = os.path.normpath(path)
+        remove_folder_data(norm_path)
         return {"message": f"Folder {path} and associated images removed."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

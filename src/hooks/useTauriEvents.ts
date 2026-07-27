@@ -35,8 +35,10 @@ export function useTauriEvents() {
 
     const unlistenCompleted = listen("indexing-completed", () => {
       setIndexingState('idle');
+      setIsIndexing(false);
       setIndexingProgress(null);
       queryClient.invalidateQueries({ queryKey: ['photos'] });
+      queryClient.invalidateQueries({ queryKey: ['analyticsStats'] });
     });
 
     const unlistenPaused = listen("indexing-paused", () => {
@@ -45,12 +47,15 @@ export function useTauriEvents() {
 
     const unlistenResumed = listen("indexing-resumed", () => {
       setIndexingState('processing');
+      setIsIndexing(true);
     });
 
     const unlistenCancelled = listen("indexing-cancelled", () => {
       setIndexingState('idle');
+      setIsIndexing(false);
       setIndexingProgress(null);
       queryClient.invalidateQueries({ queryKey: ['photos'] });
+      queryClient.invalidateQueries({ queryKey: ['analyticsStats'] });
     });
 
     const unlistenSync = listen("sync-completed", () => {

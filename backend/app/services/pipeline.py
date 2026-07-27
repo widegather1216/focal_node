@@ -97,6 +97,9 @@ class IndexingPipeline:
             "lens_model": ctx.metadata.get("lens_model"),
             "f_number": ctx.metadata.get("f_number"),
             "focal_length": ctx.metadata.get("focal_length"),
+            "focal_length_35mm": ctx.metadata.get("focal_length_35mm"),
+            "crop_factor": ctx.metadata.get("crop_factor"),
+            "sensor_format": ctx.metadata.get("sensor_format"),
             "shutter_speed": ctx.metadata.get("shutter_speed"),
             "iso": ctx.metadata.get("iso"),
             "capture_date": ctx.metadata.get("capture_date")

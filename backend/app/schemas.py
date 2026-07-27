@@ -20,6 +20,9 @@ class PhotoMetadataSchema(BaseModel):
     lens_model: Optional[str] = None
     f_number: Optional[float] = None
     focal_length: Optional[float] = None
+    focal_length_35mm: Optional[float] = None
+    crop_factor: Optional[float] = None
+    sensor_format: Optional[str] = None
     shutter_speed: Optional[str] = None
     iso: Optional[int] = None
     capture_date: Optional[str] = None

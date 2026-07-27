@@ -1,6 +1,6 @@
 from typing import List, Optional
-from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import or_, func
 import models
 
 class PhotoRepository:
@@ -8,13 +8,13 @@ class PhotoRepository:
         self.db = db
 
     def get_by_id(self, photo_id: str) -> Optional[models.Image]:
-        return self.db.query(models.Image).filter(models.Image.id == photo_id).first()
+        return self.db.query(models.Image).options(joinedload(models.Image.metadata_rel)).filter(models.Image.id == photo_id).first()
 
     def get_by_path(self, file_path: str) -> Optional[models.Image]:
-        return self.db.query(models.Image).filter(models.Image.file_path == file_path).first()
+        return self.db.query(models.Image).options(joinedload(models.Image.metadata_rel)).filter(models.Image.file_path == file_path).first()
 
     def list_photos(self, limit: int = 50, offset: int = 0, parent_dir: Optional[str] = None) -> List[models.Image]:
-        query = self.db.query(models.Image).outerjoin(models.ImageMetadata)
+        query = self.db.query(models.Image).options(joinedload(models.Image.metadata_rel)).outerjoin(models.ImageMetadata)
         if parent_dir:
             query = query.filter(models.Image.parent_dir == parent_dir)
         query = query.order_by(models.ImageMetadata.capture_date.desc().nullslast(), models.Image.id)
@@ -23,12 +23,13 @@ class PhotoRepository:
     def search_by_text(self, query_str: str) -> List[str]:
         """
         Performs full-text search against captions and tags in AIAnalysis table.
-        Returns list of matching image IDs.
+        Returns list of matching image IDs safely handling SQL LIKE wildcards.
         """
+        escaped = query_str.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         text_search_q = self.db.query(models.AIAnalysis.image_id).filter(
             or_(
-                models.AIAnalysis.tags.ilike(f"%{query_str}%"),
-                models.AIAnalysis.caption.ilike(f"%{query_str}%")
+                models.AIAnalysis.tags.ilike(f"%{escaped}%", escape="\\"),
+                models.AIAnalysis.caption.ilike(f"%{escaped}%", escape="\\")
             )
         )
         return [r[0] for r in text_search_q.all()]
@@ -43,7 +44,7 @@ class PhotoRepository:
         """
         Applies EXIF filters and orders/paginates results.
         """
-        q = self.db.query(models.Image).outerjoin(models.ImageMetadata, models.Image.id == models.ImageMetadata.image_id)
+        q = self.db.query(models.Image).options(joinedload(models.Image.metadata_rel)).outerjoin(models.ImageMetadata, models.Image.id == models.ImageMetadata.image_id)
         
         if photo_ids_from_chroma is not None:
             if not photo_ids_from_chroma:
@@ -103,3 +104,76 @@ class PhotoRepository:
         self.db.commit()
         self.db.refresh(db_image)
         return db_image
+
+    def get_gear_analytics(self) -> dict:
+        """
+        Aggregates photo metadata into camera, lens, focal length, and aperture stats.
+        """
+        total_photos = self.db.query(func.count(models.Image.id)).scalar() or 0
+
+        # Cameras
+        camera_q = self.db.query(
+            models.ImageMetadata.camera_model, func.count(models.ImageMetadata.image_id)
+        ).filter(
+            models.ImageMetadata.camera_model.isnot(None),
+            models.ImageMetadata.camera_model != ""
+        ).group_by(
+            models.ImageMetadata.camera_model
+        ).order_by(func.count(models.ImageMetadata.image_id).desc()).limit(10).all()
+
+        cameras = [{"name": row[0], "count": row[1]} for row in camera_q]
+
+        # Lenses
+        lens_q = self.db.query(
+            models.ImageMetadata.lens_model, func.count(models.ImageMetadata.image_id)
+        ).filter(
+            models.ImageMetadata.lens_model.isnot(None),
+            models.ImageMetadata.lens_model != ""
+        ).group_by(
+            models.ImageMetadata.lens_model
+        ).order_by(func.count(models.ImageMetadata.image_id).desc()).limit(10).all()
+
+        lenses = [{"name": row[0], "count": row[1]} for row in lens_q]
+
+        # Focal lengths
+        focal_q = self.db.query(
+            models.ImageMetadata.focal_length, func.count(models.ImageMetadata.image_id)
+        ).filter(
+            models.ImageMetadata.focal_length.isnot(None)
+        ).group_by(
+            models.ImageMetadata.focal_length
+        ).order_by(models.ImageMetadata.focal_length.asc()).limit(15).all()
+
+        focal_lengths = [{"name": f"{int(row[0]) if row[0].is_integer() else row[0]}mm", "count": row[1]} for row in focal_q]
+
+        # 35mm Equivalent Focal lengths
+        focal35_q = self.db.query(
+            models.ImageMetadata.focal_length_35mm, func.count(models.ImageMetadata.image_id)
+        ).filter(
+            models.ImageMetadata.focal_length_35mm.isnot(None)
+        ).group_by(
+            models.ImageMetadata.focal_length_35mm
+        ).order_by(models.ImageMetadata.focal_length_35mm.asc()).limit(15).all()
+
+        focal_lengths_35mm = [{"name": f"{int(row[0]) if row[0].is_integer() else row[0]}mm", "count": row[1]} for row in focal35_q]
+
+        # Apertures
+        aperture_q = self.db.query(
+            models.ImageMetadata.f_number, func.count(models.ImageMetadata.image_id)
+        ).filter(
+            models.ImageMetadata.f_number.isnot(None)
+        ).group_by(
+            models.ImageMetadata.f_number
+        ).order_by(models.ImageMetadata.f_number.asc()).limit(15).all()
+
+        apertures = [{"name": f"f/{round(row[0], 2) if isinstance(row[0], (int, float)) else row[0]}", "count": row[1]} for row in aperture_q]
+
+        return {
+            "total_photos": total_photos,
+            "cameras": cameras,
+            "lenses": lenses,
+            "focal_lengths": focal_lengths,
+            "focal_lengths_35mm": focal_lengths_35mm,
+            "apertures": apertures,
+        }
+

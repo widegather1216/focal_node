@@ -26,6 +26,9 @@ export interface SearchFilters {
 }
 
 interface AppState {
+  activeTab: 'gallery' | 'analytics';
+  setActiveTab: (tab: 'gallery' | 'analytics') => void;
+
   apiPort: number | null;
   setApiPort: (port: number | null) => void;
   
@@ -73,6 +76,9 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
+  activeTab: 'gallery',
+  setActiveTab: (activeTab) => set({ activeTab }),
+
   apiPort: null,
   setApiPort: (port) => set({ apiPort: port }),
 
@@ -145,6 +151,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
       if (response.ok) {
         set((state) => ({ folders: state.folders.filter(f => f.path !== path) }));
+        get().fetchFolders();
       }
     } catch (error) {
       console.error('Failed to remove folder:', error);

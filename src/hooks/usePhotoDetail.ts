@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../store/useAppStore';
 import { api } from '../services/api';
+import { usePhotoDetailQuery, useUpdatePhotoMetadataMutation } from './usePhotoDetailQuery';
+import { useToggleFavoriteMutation } from './usePhotosQuery';
 
 export interface PhotoDetail {
   id: string;
@@ -19,6 +20,9 @@ export interface PhotoDetail {
     lens_model: string | null;
     f_number: number | null;
     focal_length: number | null;
+    focal_length_35mm: number | null;
+    crop_factor: number | null;
+    sensor_format: string | null;
     shutter_speed: string | null;
     iso: number | null;
     capture_date: string | null;
@@ -32,61 +36,53 @@ export interface PhotoDetail {
 }
 
 export function usePhotoDetail() {
-  const { apiPort, selectedPhotoId, setSelectedPhotoId, setSearchQuery } = useAppStore();
-  const queryClient = useQueryClient();
+  const { selectedPhotoId, setSelectedPhotoId, setSearchQuery, searchQuery, searchFilters } = useAppStore();
 
-  const [photo, setPhoto] = useState<PhotoDetail | null>(null);
-  const [loading, setLoading] = useState(false);
+  const { data: photo, isLoading: loading } = usePhotoDetailQuery(selectedPhotoId);
+  const updateMetadataMutation = useUpdatePhotoMetadataMutation();
+  const toggleFavoriteMutation = useToggleFavoriteMutation(null, searchQuery, searchFilters);
+
   const [editing, setEditing] = useState(false);
-  
   const [captionEdit, setCaptionEdit] = useState('');
   const [tagsEdit, setTagsEdit] = useState<string[]>([]);
-  const [saving, setSaving] = useState(false);
 
   const [critique, setCritique] = useState<string | null>(null);
   const [loadingCritique, setLoadingCritique] = useState(false);
   const [reindexing, setReindexing] = useState(false);
 
   useEffect(() => {
-    if (!selectedPhotoId || !apiPort) {
-      setPhoto(null);
+    if (photo) {
+      setCaptionEdit(photo.ai_analysis?.caption || '');
+      setTagsEdit(photo.ai_analysis?.tags ? [...photo.ai_analysis.tags] : []);
+    } else {
       setEditing(false);
       setCritique(null);
-      return;
     }
+  }, [photo]);
 
-    const fetchDetail = async () => {
-      setLoading(true);
-      try {
-        const data: PhotoDetail = await api.getPhotoDetail(selectedPhotoId);
-        setPhoto(data);
-        setCaptionEdit(data.ai_analysis?.caption || '');
-        setTagsEdit(data.ai_analysis?.tags ? [...data.ai_analysis.tags] : []);
-        setCritique(null);
-      } catch (err) {
-        console.error("Failed to fetch photo detail:", err);
-      } finally {
-        setLoading(false);
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && selectedPhotoId) {
+        setSelectedPhotoId(null);
       }
     };
-
-    fetchDetail();
-  }, [selectedPhotoId, apiPort]);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [selectedPhotoId, setSelectedPhotoId]);
 
   const handleSave = async () => {
-    if (!selectedPhotoId || !apiPort) return;
-    setSaving(true);
+    if (!selectedPhotoId) return;
     try {
-      const updated = await api.updatePhotoMetadata(selectedPhotoId, captionEdit, tagsEdit);
-      setPhoto(prev => prev ? {
-        ...prev,
-        ai_analysis: updated.ai_analysis
-      } : null);
+      await updateMetadataMutation.mutateAsync({
+        photoId: selectedPhotoId,
+        caption: captionEdit,
+        tags: tagsEdit,
+      });
       setEditing(false);
     } catch (err) {
       console.error("Failed to save metadata:", err);
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -125,7 +121,6 @@ export function usePhotoDetail() {
     setReindexing(true);
     try {
       const updatedData = await api.reindexPhoto(selectedPhotoId);
-      setPhoto(updatedData);
       setCaptionEdit(updatedData.ai_analysis?.caption || '');
       setTagsEdit(updatedData.ai_analysis?.tags ? [...updatedData.ai_analysis.tags] : []);
     } catch (err) {
@@ -138,9 +133,7 @@ export function usePhotoDetail() {
   const handleToggleFavorite = async () => {
     if (!photo) return;
     try {
-      const res = await api.toggleFavorite(photo.id);
-      setPhoto(prev => prev ? { ...prev, is_favorite: res.is_favorite } : null);
-      queryClient.invalidateQueries({ queryKey: ['photos'] });
+      await toggleFavoriteMutation.mutateAsync(photo.id);
     } catch (err) {
       console.error("Failed to toggle favorite:", err);
     }
@@ -154,7 +147,7 @@ export function usePhotoDetail() {
   return {
     selectedPhotoId,
     setSelectedPhotoId,
-    photo,
+    photo: photo || null,
     loading,
     editing,
     setEditing,
@@ -162,7 +155,7 @@ export function usePhotoDetail() {
     setCaptionEdit,
     tagsEdit,
     setTagsEdit,
-    saving,
+    saving: updateMetadataMutation.isPending,
     critique,
     loadingCritique,
     reindexing,

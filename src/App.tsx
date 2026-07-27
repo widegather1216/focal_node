@@ -4,6 +4,7 @@ import { useBackendInit } from "./hooks/useBackendInit";
 import { useTauriEvents } from "./hooks/useTauriEvents";
 import { Sidebar } from "./components/Sidebar";
 import { PhotoGallery } from "./components/PhotoGallery";
+import { AnalyticsView } from "./components/AnalyticsView";
 import { DetailPanel } from "./components/DetailPanel";
 import { ActionBar } from "./components/ActionBar";
 import { ModelDownloadModal } from "./components/ModelDownloadModal";
@@ -15,7 +16,7 @@ function App() {
   const { loading, backendStatus, backendError } = useBackendInit();
   useTauriEvents();
 
-  const { isDownloadingModel } = useAppStore();
+  const { isDownloadingModel, activeTab } = useAppStore();
 
   if (loading || backendError) {
     return (
@@ -60,7 +61,13 @@ function App() {
   return (
     <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden', backgroundColor: '#111', position: 'relative' }}>
       <Sidebar onSelectFolder={setSelectedFolder} selectedFolder={selectedFolder} />
-      <PhotoGallery selectedFolder={selectedFolder} />
+      
+      {activeTab === 'gallery' ? (
+        <PhotoGallery selectedFolder={selectedFolder} />
+      ) : (
+        <AnalyticsView />
+      )}
+
       <DetailPanel />
       <ActionBar />
       

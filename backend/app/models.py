@@ -4,6 +4,9 @@ from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, Foreig
 from sqlalchemy.orm import relationship
 from database import Base
 
+def utcnow():
+    return datetime.datetime.now(datetime.timezone.utc)
+
 class Image(Base):
     __tablename__ = "images"
 
@@ -15,8 +18,8 @@ class Image(Base):
     file_mtime = Column(Float, nullable=False)
     mime_type = Column(String(50), nullable=False)
     is_favorite = Column(Boolean, default=False, nullable=False)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     # Relationships
     metadata_rel = relationship("ImageMetadata", back_populates="image", uselist=False, cascade="all, delete-orphan")
@@ -56,11 +59,14 @@ class Image(Base):
             "lens_model": meta.lens_model if meta else None,
             "f_number": meta.f_number if meta else None,
             "focal_length": meta.focal_length if meta else None,
+            "focal_length_35mm": meta.focal_length_35mm if meta else None,
+            "crop_factor": meta.crop_factor if meta else None,
+            "sensor_format": meta.sensor_format if meta else None,
             "shutter_speed": meta.shutter_speed if meta else None,
             "iso": meta.iso if meta else None,
             "capture_date": meta.capture_date.isoformat() if meta and meta.capture_date else None,
         }
-        
+
         tags_list = []
         if ai and ai.tags:
             try:
@@ -105,6 +111,9 @@ class ImageMetadata(Base):
     lens_model = Column(String(100), nullable=True)
     f_number = Column(Float, nullable=True)
     focal_length = Column(Float, nullable=True)
+    focal_length_35mm = Column(Float, nullable=True)
+    crop_factor = Column(Float, nullable=True)
+    sensor_format = Column(String(50), nullable=True)
     shutter_speed = Column(String(30), nullable=True)
     iso = Column(Integer, nullable=True)
     capture_date = Column(DateTime, index=True, nullable=True)
@@ -130,4 +139,4 @@ class IndexedFolder(Base):
     __tablename__ = "indexed_folders"
 
     path = Column(String(1024), primary_key=True)
-    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)

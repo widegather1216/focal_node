@@ -4,7 +4,7 @@ import shutil
 import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response, StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
 
 import models
@@ -44,7 +44,7 @@ def get_photos(
     """
     Returns list of photos, supporting pagination and directory filtering.
     """
-    query = db.query(models.Image).outerjoin(models.ImageMetadata)
+    query = db.query(models.Image).options(joinedload(models.Image.metadata_rel)).outerjoin(models.ImageMetadata)
     if parent_dir:
         query = query.filter(models.Image.parent_dir == parent_dir)
         
@@ -120,7 +120,10 @@ def get_photo_detail(id: str, db: Session = Depends(get_db)):
     """
     Fetches full metadata and AI analysis details for a single photo.
     """
-    img = db.query(models.Image).filter(models.Image.id == id).first()
+    img = db.query(models.Image).options(
+        joinedload(models.Image.metadata_rel),
+        joinedload(models.Image.ai_analysis_rel)
+    ).filter(models.Image.id == id).first()
     if not img:
         raise HTTPException(status_code=404, detail="Photo not found")
         
@@ -159,23 +162,23 @@ def patch_photo_metadata(
 
 @router.post("/export")
 async def export_photos(
-    payload: schemas.ExportRequest,
-    db: Session = Depends(get_db)
+    payload: schemas.ExportRequest
 ):
     """
     Exports selected photos to a destination folder via streaming to prevent timeouts.
+    Frees database connection before starting the long copy streaming process.
     """
     dest_folder = payload.destination_folder
     
     if not os.path.exists(dest_folder) or not os.path.isdir(dest_folder):
         raise HTTPException(status_code=400, detail="Invalid destination folder")
         
-    images = db.query(models.Image).filter(models.Image.id.in_(payload.photo_ids)).all()
-    
-    if not images:
-        raise HTTPException(status_code=404, detail="No photos found to export")
-        
-    export_items = [{"file_path": img.file_path, "file_name": img.file_name} for img in images]
+    from database import SessionLocal
+    with SessionLocal() as db:
+        images = db.query(models.Image).filter(models.Image.id.in_(payload.photo_ids)).all()
+        if not images:
+            raise HTTPException(status_code=404, detail="No photos found to export")
+        export_items = [{"file_path": img.file_path, "file_name": img.file_name} for img in images]
         
     async def export_generator():
         errors = []

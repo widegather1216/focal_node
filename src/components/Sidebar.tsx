@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../store/useAppStore';
 import { open } from '@tauri-apps/plugin-dialog';
-import { FolderPlus, Folder, Loader2, Search, RefreshCw, Trash2, Heart, Pause, Play, Square } from 'lucide-react';
+import { FolderPlus, Folder, Loader2, Search, RefreshCw, Trash2, Heart, Pause, Play, Square, BarChart3, Image as ImageIcon } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { SearchFilterMenu } from './SearchFilterMenu';
 import { api } from '../services/api';
@@ -12,8 +13,11 @@ interface SidebarProps {
 }
 
 export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
+  const queryClient = useQueryClient();
   const { 
     apiPort, 
+    activeTab,
+    setActiveTab,
     isIndexing, 
     indexingState, 
     indexingProgress, 
@@ -75,9 +79,53 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
       padding: '20px 10px',
       boxSizing: 'border-box'
     }}>
-      <div style={{ padding: '0 10px', marginBottom: '20px' }}>
-        <h2 style={{ fontSize: '18px', fontWeight: '600', margin: '0 0 16px 0', color: '#fff' }}>Focal Node</h2>
+      <div style={{ padding: '0 10px', marginBottom: '16px' }}>
+        <h2 style={{ fontSize: '18px', fontWeight: '600', margin: '0 0 12px 0', color: '#fff' }}>Focal Node</h2>
         
+        {/* View Switcher Tabs */}
+        <div style={{ display: 'flex', gap: '4px', marginBottom: '16px', background: '#09090b', padding: '4px', borderRadius: '8px', border: '1px solid #27272a' }}>
+          <button
+            onClick={() => setActiveTab('gallery')}
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              background: activeTab === 'gallery' ? '#27272a' : 'transparent',
+              color: activeTab === 'gallery' ? '#fff' : '#a1a1aa',
+              border: 'none',
+              padding: '6px 8px',
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            <ImageIcon size={14} /> 갤러리
+          </button>
+          <button
+            onClick={() => setActiveTab('analytics')}
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '6px',
+              background: activeTab === 'analytics' ? '#27272a' : 'transparent',
+              color: activeTab === 'analytics' ? '#fff' : '#a1a1aa',
+              border: 'none',
+              padding: '6px 8px',
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            <BarChart3 size={14} color={activeTab === 'analytics' ? '#38bdf8' : '#a1a1aa'} /> 인사이트
+          </button>
+        </div>
+
         <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
           <div style={{ position: 'relative', flex: 1 }}>
             <Search size={16} color="#aaa" style={{ position: 'absolute', left: '10px', top: '10px' }} />
@@ -215,7 +263,10 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
 
       <div style={{ flex: 1, overflowY: 'auto' }}>
         <motion.div 
-          onClick={() => onSelectFolder(null)}
+          onClick={() => {
+            setActiveTab('gallery');
+            onSelectFolder(null);
+          }}
           whileHover={{ 
             backgroundColor: selectedFolder === null ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.05)',
             color: '#fff'
@@ -255,7 +306,10 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
             }}
           >
             <motion.div 
-              onClick={() => onSelectFolder(folder.path)}
+              onClick={() => {
+                setActiveTab('gallery');
+                onSelectFolder(folder.path);
+              }}
               whileTap={{ scale: 0.98 }}
               style={{
                 display: 'flex',
@@ -275,10 +329,12 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
             </motion.div>
             
             <motion.button
-              onClick={(e) => {
+              onClick={async (e) => {
                 e.stopPropagation();
                 if (apiPort && confirm(`Remove folder ${folder.path} and all its indexed photos?`)) {
-                  removeFolder(folder.path);
+                  await removeFolder(folder.path);
+                  queryClient.invalidateQueries({ queryKey: ['photos'] });
+                  queryClient.invalidateQueries({ queryKey: ['analyticsStats'] });
                   if (selectedFolder === folder.path) {
                     onSelectFolder(null);
                   }

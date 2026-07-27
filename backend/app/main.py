@@ -25,6 +25,7 @@ import api.indexing
 import api.search
 import api.folders
 import api.chat
+import api.analytics
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -37,6 +38,17 @@ async def lifespan(app: FastAPI):
             conn.execute(text("ALTER TABLE images ADD COLUMN is_favorite BOOLEAN DEFAULT 0 NOT NULL"))
     except Exception:
         pass
+        
+    for col_sql in [
+        "ALTER TABLE image_metadata ADD COLUMN focal_length_35mm FLOAT",
+        "ALTER TABLE image_metadata ADD COLUMN crop_factor FLOAT",
+        "ALTER TABLE image_metadata ADD COLUMN sensor_format VARCHAR(50)"
+    ]:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(col_sql))
+        except Exception:
+            pass
         
     import threading
     import time
@@ -112,6 +124,7 @@ app.include_router(api.indexing.router)
 app.include_router(api.search.router)
 app.include_router(api.folders.router)
 app.include_router(api.chat.router)
+app.include_router(api.analytics.router)
 
 # --- Base API Endpoint ---
 @app.get("/api/health")

@@ -83,6 +83,8 @@ def scan_directory(folder_paths: list[str]) -> list[str]:
             continue
         for root, _, files in os.walk(folder):
             for file in files:
+                if file.startswith(".") or file.startswith("._"):
+                    continue
                 ext = os.path.splitext(file)[1].lower()
                 if ext in SUPPORTED_EXTENSIONS:
                     files_to_index.append(os.path.join(root, file))
@@ -218,6 +220,9 @@ async def reindex_single_photo_inplace(photo_id: str) -> dict:
         db_meta.lens_model = metadata.get("lens_model")
         db_meta.f_number = metadata.get("f_number")
         db_meta.focal_length = metadata.get("focal_length")
+        db_meta.focal_length_35mm = metadata.get("focal_length_35mm")
+        db_meta.crop_factor = metadata.get("crop_factor")
+        db_meta.sensor_format = metadata.get("sensor_format")
         db_meta.shutter_speed = metadata.get("shutter_speed")
         db_meta.iso = metadata.get("iso")
         db_meta.capture_date = metadata.get("capture_date")
@@ -256,10 +261,14 @@ async def reindex_single_photo_inplace(photo_id: str) -> dict:
 
 def cleanup_zombie_records(db: Session = None):
     """
-    Checks all indexed images and batch deletes records if their physical files are missing.
-    Also acts as a Garbage Collector to remove orphaned embeddings from ChromaDB.
+    Checks all indexed images and batch deletes records if:
+    1) Their physical files are missing from disk.
+    2) Their parent folder is no longer in IndexedFolder list.
+    Also acts as a Garbage Collector for ChromaDB and Thumbnail Cache.
     """
     from chroma import get_chroma_collection
+    from models import IndexedFolder
+    from services.photo import get_thumbnail_path
     
     close_db = False
     if db is None:
@@ -267,29 +276,63 @@ def cleanup_zombie_records(db: Session = None):
         close_db = True
         
     try:
-        all_images = db.query(DBImage.id, DBImage.file_path).all()
+        # Get all registered indexed folders
+        indexed_folders = db.query(IndexedFolder.path).all()
+        folder_paths = [f.path for f in indexed_folders]
+        
+        # Helper to check if file belongs to any registered folder
+        def belongs_to_any_folder(file_path: str, parent_dir: str) -> bool:
+            if not folder_paths:
+                return False
+            try:
+                real_parent = os.path.realpath(parent_dir).lower()
+                real_file = os.path.realpath(file_path).lower()
+            except Exception:
+                real_parent = os.path.normpath(parent_dir).lower()
+                real_file = os.path.normpath(file_path).lower()
+
+            for f_path in folder_paths:
+                try:
+                    real_f = os.path.realpath(f_path).lower()
+                except Exception:
+                    real_f = os.path.normpath(f_path).lower()
+                f_prefix = real_f if real_f.endswith(os.sep) else real_f + os.sep
+                if real_parent == real_f or real_parent.startswith(f_prefix) or real_file.startswith(f_prefix):
+                    return True
+            return False
+
+        all_images = db.query(DBImage.id, DBImage.file_path, DBImage.parent_dir).all()
         sqlite_ids = set()
         zombie_ids = []
-        for img_id, file_path in all_images:
-            if not os.path.exists(file_path):
+        
+        for img_id, file_path, parent_dir in all_images:
+            # Delete if file physically removed OR parent folder is no longer indexed
+            if not os.path.exists(file_path) or not belongs_to_any_folder(file_path, parent_dir):
                 zombie_ids.append(img_id)
             else:
                 sqlite_ids.add(img_id)
                 
         # 1. SQLite Zombie Cleanup
         if zombie_ids:
-            print(f"[Indexer] Found {len(zombie_ids)} zombie records in SQLite. Cleaning up...", flush=True)
+            print(f"[Indexer] Found {len(zombie_ids)} unindexed/zombie records in SQLite. Cleaning up...", flush=True)
             for i in range(0, len(zombie_ids), 900):
                 chunk = zombie_ids[i:i+900]
                 db.query(DBImage).filter(DBImage.id.in_(chunk)).delete(synchronize_session=False)
+                for zid in chunk:
+                    t_path = get_thumbnail_path(zid)
+                    if os.path.exists(t_path):
+                        try:
+                            os.remove(t_path)
+                        except Exception:
+                            pass
             db.commit()
         else:
-            print("[Indexer] No SQLite zombie records found.", flush=True)
+            print("[Indexer] No SQLite zombie/unindexed records found.", flush=True)
 
         # 2. ChromaDB Garbage Collection
         try:
             collection = get_chroma_collection()
-            chroma_data = collection.get()
+            chroma_data = collection.get(include=[])
             if chroma_data and chroma_data.get('ids'):
                 chroma_ids = set(chroma_data['ids'])
                 orphaned_ids = list(chroma_ids - sqlite_ids)
@@ -312,38 +355,60 @@ def cleanup_zombie_records(db: Session = None):
 def remove_folder_data(folder_path: str):
     """
     Deletes a folder from IndexedFolder and removes all associated photos
-    from SQLite and ChromaDB.
+    from SQLite, ChromaDB, and Thumbnail cache using robust realpath & case-insensitive matching.
     """
     from chroma import get_chroma_collection
     from models import IndexedFolder
+    from services.photo import get_thumbnail_path
+    from sqlalchemy import or_, func
     
     db = SessionLocal()
     try:
-        # Ensure path format for prefix matching
-        search_prefix = folder_path
-        if not search_prefix.endswith(os.sep):
-            search_prefix += os.sep
-
-        # Find all images under this folder
-        images_to_delete = db.query(DBImage.id).filter(DBImage.file_path.startswith(search_prefix)).all()
-        image_ids = [row.id for row in images_to_delete] if images_to_delete else []
+        real_target = os.path.realpath(folder_path)
+        search_prefix = real_target if real_target.endswith(os.sep) else real_target + os.sep
+        path_without_sep = real_target.rstrip(os.sep)
         
-        # Also check exact match if they added a file directly (edge case)
-        exact_match = db.query(DBImage).filter(DBImage.file_path == folder_path).first()
-        if exact_match and exact_match.id not in image_ids:
-            image_ids.append(exact_match.id)
+        target_lower = real_target.lower()
+        prefix_lower = search_prefix.lower()
+        without_sep_lower = path_without_sep.lower()
+        orig_lower = folder_path.lower()
+        orig_prefix_lower = (folder_path if folder_path.endswith(os.sep) else folder_path + os.sep).lower()
+
+        # Find all images under this folder or with matching parent_dir (case-insensitive & realpath aware)
+        images_to_delete = db.query(DBImage.id).filter(
+            or_(
+                func.lower(DBImage.parent_dir) == target_lower,
+                func.lower(DBImage.parent_dir) == without_sep_lower,
+                func.lower(DBImage.parent_dir) == orig_lower,
+                func.lower(DBImage.parent_dir).startswith(prefix_lower),
+                func.lower(DBImage.parent_dir).startswith(orig_prefix_lower),
+                func.lower(DBImage.file_path).startswith(prefix_lower),
+                func.lower(DBImage.file_path).startswith(orig_prefix_lower),
+                func.lower(DBImage.file_path) == target_lower
+            )
+        ).all()
+        image_ids = list(set(row.id for row in images_to_delete)) if images_to_delete else []
 
         if image_ids:
             print(f"[Indexer] Removing {len(image_ids)} images for folder {folder_path}", flush=True)
-            # 1. Delete from SQLite
+            # 1. Delete from SQLite and remove thumbnail cache files
             for i in range(0, len(image_ids), 900):
                 chunk = image_ids[i:i+900]
                 db.query(DBImage).filter(DBImage.id.in_(chunk)).delete(synchronize_session=False)
+                for img_id in chunk:
+                    t_path = get_thumbnail_path(img_id)
+                    if os.path.exists(t_path):
+                        try:
+                            os.remove(t_path)
+                        except Exception:
+                            pass
 
-        # 2. Remove from IndexedFolder
-        folder_record = db.query(IndexedFolder).filter(IndexedFolder.path == folder_path).first()
-        if folder_record:
-            db.delete(folder_record)
+        # 2. Remove from IndexedFolder matching any case/realpath variant
+        all_indexed = db.query(IndexedFolder).all()
+        for f_rec in all_indexed:
+            f_real = os.path.realpath(f_rec.path).lower()
+            if f_real in [target_lower, without_sep_lower, orig_lower] or f_rec.path.lower() in [target_lower, without_sep_lower, orig_lower]:
+                db.delete(f_rec)
 
         # 3. Commit SQLite Transaction
         db.commit()
@@ -387,6 +452,9 @@ async def run_indexing_background(folder_paths: list[str]):
         
         if not files:
             indexing_status["status"] = "idle"
+            indexing_status["processed_files"] = 0
+            indexing_status["total_files"] = 0
+            print("[Indexer] Background indexing completed.", flush=True)
             return
             
         semaphore = asyncio.Semaphore(4)
@@ -444,7 +512,9 @@ async def run_indexing_background(folder_paths: list[str]):
                         from services.photo import register_photos_batch_atomic
                         register_photos_batch_atomic(db_batch, batch_data)
                     except Exception as e:
-                        print(f"[Indexer] Batch DB Upsert Failed: {e}", flush=True)
+                        import traceback
+                        print(f"[Indexer] Batch DB Upsert Failed for {len(batch_data)} items: {e}", flush=True)
+                        traceback.print_exc()
                     finally:
                         db_batch.close()
                 await asyncio.to_thread(_save_batch)

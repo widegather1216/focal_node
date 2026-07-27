@@ -58,8 +58,9 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
             image = decode_raw_to_pil(image_path)
         else:
             from PIL import ImageOps
-            image_raw = Image.open(image_path)
-            image = ImageOps.exif_transpose(image_raw).convert("RGB")
+            with Image.open(image_path) as image_raw:
+                image_t = ImageOps.exif_transpose(image_raw)
+                image = image_t.convert("RGB") if image_t.mode != "RGB" else image_t.copy()
             
         inputs = self.processor(images=image, return_tensors="pt").to(self.device)
         with GPU_LOCK:
