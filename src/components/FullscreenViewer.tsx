@@ -15,6 +15,7 @@ export function FullscreenViewer() {
   const [isZenMode, setIsZenMode] = useState(false);
   const [showZenHint, setShowZenHint] = useState(false);
   const zenHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   
   const queryClient = useQueryClient();
 
@@ -121,6 +122,48 @@ export function FullscreenViewer() {
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
   }, [isFullscreenOpen, closeFullscreen, isZenMode, fullscreenPhotoId]);
+
+  // Trackpad pinch-to-zoom & wheel zoom handler
+  useEffect(() => {
+    if (!isFullscreenOpen) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      // Trackpad pinch gesture emits wheel event with e.ctrlKey === true
+      if (e.ctrlKey) {
+        const delta = -e.deltaY * 0.015;
+        setScale(prev => Math.min(Math.max(prev + delta, 0.8), 4));
+      } else {
+        // Standard wheel scroll zoom
+        const delta = -e.deltaY * 0.002;
+        setScale(prev => Math.min(Math.max(prev + delta, 0.8), 4));
+      }
+    };
+
+    // WebKit Safari gesture events for macOS Trackpad pinch
+    let initialScale = 1;
+    const handleGestureStart = (e: any) => {
+      e.preventDefault();
+      initialScale = scale;
+    };
+    const handleGestureChange = (e: any) => {
+      e.preventDefault();
+      if (e.scale) {
+        const nextScale = Math.min(Math.max(initialScale * e.scale, 0.8), 4);
+        setScale(nextScale);
+      }
+    };
+
+    window.addEventListener('wheel', handleWheel, { passive: false });
+    window.addEventListener('gesturestart', handleGestureStart as any, { passive: false });
+    window.addEventListener('gesturechange', handleGestureChange as any, { passive: false });
+
+    return () => {
+      window.removeEventListener('wheel', handleWheel);
+      window.removeEventListener('gesturestart', handleGestureStart as any);
+      window.removeEventListener('gesturechange', handleGestureChange as any);
+    };
+  }, [isFullscreenOpen, scale]);
 
   const handleZoomIn = () => setScale(prev => Math.min(prev + 0.5, 4));
   const handleZoomOut = () => setScale(prev => Math.max(prev - 0.5, 0.5));
@@ -456,6 +499,7 @@ export function FullscreenViewer() {
 
         {/* Main Image Container */}
         <div
+          ref={containerRef}
           style={{
             position: 'absolute',
             top: 0,
@@ -471,21 +515,34 @@ export function FullscreenViewer() {
           onClick={toggleZenMode}
         >
           <motion.div
+            key={fullscreenPhotoId}
             drag={scale > 1}
-            dragElastic={0.05}
-            dragConstraints={{ left: -500 * scale, right: 500 * scale, top: -500 * scale, bottom: 500 * scale }}
+            dragConstraints={{
+              left: -window.innerWidth * (scale - 0.8),
+              right: window.innerWidth * (scale - 0.8),
+              top: -window.innerHeight * (scale - 0.8),
+              bottom: window.innerHeight * (scale - 0.8)
+            }}
+            dragMomentum={false}
+            dragElastic={0}
             onPointerDown={(e) => {
               if (scale > 1) {
                 e.stopPropagation();
               }
             }}
-            animate={{ scale }}
-            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            animate={{
+              scale,
+              x: scale === 1 ? 0 : undefined,
+              y: scale === 1 ? 0 : undefined
+            }}
+            transition={scale === 1 ? { type: 'spring', stiffness: 300, damping: 30 } : { duration: 0 }}
             style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', height: '100%', touchAction: 'none' }}
           >
             <img
               src={imageUrl}
               alt={photo?.file_name || '원본 사진'}
+              draggable={false}
+              onDragStart={(e) => e.preventDefault()}
               onError={() => setImgError(true)}
               onDoubleClick={() => setScale(prev => (prev === 1 ? 2 : 1))}
               style={{
@@ -495,6 +552,8 @@ export function FullscreenViewer() {
                 maxWidth: fitMode === 'contain' ? '92vw' : 'none',
                 objectFit: fitMode === 'cover' ? 'cover' : 'contain',
                 display: 'block',
+                userSelect: 'none',
+                WebkitUserSelect: 'none',
                 boxShadow: '0 20px 50px rgba(0,0,0,0.8)'
               }}
             />
