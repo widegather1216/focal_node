@@ -65,6 +65,11 @@ interface AppState {
   selectedPhotoId: string | null;
   setSelectedPhotoId: (id: string | null) => void;
 
+  isFullscreenOpen: boolean;
+  fullscreenPhotoId: string | null;
+  openFullscreen: (photoId: string) => void;
+  closeFullscreen: () => void;
+
   selectedPhotoIds: Set<string>;
   togglePhotoSelection: (id: string) => void;
   clearSelection: () => void;
@@ -114,6 +119,11 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   selectedPhotoId: null,
   setSelectedPhotoId: (id) => set({ selectedPhotoId: id }),
+
+  isFullscreenOpen: false,
+  fullscreenPhotoId: null,
+  openFullscreen: (photoId) => set({ isFullscreenOpen: true, fullscreenPhotoId: photoId }),
+  closeFullscreen: () => set({ isFullscreenOpen: false, fullscreenPhotoId: null }),
 
   selectedPhotoIds: new Set(),
   togglePhotoSelection: (id) => set((state) => {

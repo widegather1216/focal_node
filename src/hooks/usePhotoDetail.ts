@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../store/useAppStore';
 import { api } from '../services/api';
 import { usePhotoDetailQuery, useUpdatePhotoMetadataMutation } from './usePhotoDetailQuery';
@@ -37,6 +38,7 @@ export interface PhotoDetail {
 
 export function usePhotoDetail() {
   const { selectedPhotoId, setSelectedPhotoId, setSearchQuery, searchQuery, searchFilters } = useAppStore();
+  const queryClient = useQueryClient();
 
   const { data: photo, isLoading: loading } = usePhotoDetailQuery(selectedPhotoId);
   const updateMetadataMutation = useUpdatePhotoMetadataMutation();
@@ -60,17 +62,49 @@ export function usePhotoDetail() {
     }
   }, [photo]);
 
+  const getActivePhotoList = (): any[] => {
+    const queryCache = queryClient.getQueriesData<any>({ queryKey: ['photos'] });
+    for (const [, data] of queryCache) {
+      if (data && data.pages) {
+        return data.pages.flatMap((page: any) => page);
+      }
+    }
+    return [];
+  };
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && selectedPhotoId) {
+      const { isFullscreenOpen } = useAppStore.getState();
+      if (!selectedPhotoId || isFullscreenOpen) return;
+
+      const target = e.target as HTMLElement | null;
+      if (editing || (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable))) {
+        return;
+      }
+
+      if (e.key === 'Escape') {
         setSelectedPhotoId(null);
+      } else if (e.key === 'ArrowLeft') {
+        const photos = getActivePhotoList();
+        if (!photos.length) return;
+        const currentIndex = photos.findIndex((p: any) => p.id === selectedPhotoId);
+        if (currentIndex > 0) {
+          setSelectedPhotoId(photos[currentIndex - 1].id);
+        }
+      } else if (e.key === 'ArrowRight') {
+        const photos = getActivePhotoList();
+        if (!photos.length) return;
+        const currentIndex = photos.findIndex((p: any) => p.id === selectedPhotoId);
+        if (currentIndex !== -1 && currentIndex < photos.length - 1) {
+          setSelectedPhotoId(photos[currentIndex + 1].id);
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [selectedPhotoId, setSelectedPhotoId]);
+  }, [selectedPhotoId, setSelectedPhotoId, editing]);
 
   const handleSave = async () => {
     if (!selectedPhotoId) return;

@@ -21,6 +21,18 @@
   -webkit-text-size-adjust: 100%;
 }
 
+html, body, #root {
+  background-color: #09090b !important;
+  overscroll-behavior: none !important;
+  overscroll-behavior-x: none !important;
+  overscroll-behavior-y: none !important;
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
 .container {
   margin: 0;
   padding-top: 10vh;

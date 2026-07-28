@@ -147,19 +147,19 @@ export function AnalyticsView() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px', marginBottom: '40px' }}>
         {/* Camera Donut Chart */}
         <div style={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '12px', padding: '24px', display: 'flex', flexDirection: 'column' }}>
-          <h3 style={{ margin: '0 0 20px 0', fontSize: '16px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Camera size={18} color="#38bdf8" /> 카메라 바디 사용 점유율
           </h3>
-          <div style={{ width: '100%', height: '280px' }}>
+          <div style={{ width: '100%', height: '320px' }}>
             {stats.cameras.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
+                <PieChart margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
                   <Pie
                     data={stats.cameras}
                     cx="50%"
-                    cy="50%"
-                    innerRadius={65}
-                    outerRadius={95}
+                    cy="42%"
+                    innerRadius={55}
+                    outerRadius={85}
                     paddingAngle={4}
                     dataKey="count"
                   >
@@ -168,7 +168,13 @@ export function AnalyticsView() {
                     ))}
                   </Pie>
                   <Tooltip content={<CustomTooltip />} />
-                  <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                  <Legend
+                    layout="horizontal"
+                    verticalAlign="bottom"
+                    align="center"
+                    formatter={(value: string) => value.length > 18 ? `${value.substring(0, 18)}...` : value}
+                    wrapperStyle={{ fontSize: '12px', paddingTop: '16px', color: '#a1a1aa' }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
@@ -181,19 +187,19 @@ export function AnalyticsView() {
 
         {/* Lens Donut Chart */}
         <div style={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '12px', padding: '24px', display: 'flex', flexDirection: 'column' }}>
-          <h3 style={{ margin: '0 0 20px 0', fontSize: '16px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Focus size={18} color="#c084fc" /> 렌즈 모델 점유율
           </h3>
-          <div style={{ width: '100%', height: '280px' }}>
+          <div style={{ width: '100%', height: '320px' }}>
             {stats.lenses.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
+                <PieChart margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
                   <Pie
                     data={stats.lenses}
                     cx="50%"
-                    cy="50%"
-                    innerRadius={65}
-                    outerRadius={95}
+                    cy="42%"
+                    innerRadius={55}
+                    outerRadius={85}
                     paddingAngle={4}
                     dataKey="count"
                   >
@@ -202,7 +208,13 @@ export function AnalyticsView() {
                     ))}
                   </Pie>
                   <Tooltip content={<CustomTooltip />} />
-                  <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                  <Legend
+                    layout="horizontal"
+                    verticalAlign="bottom"
+                    align="center"
+                    formatter={(value: string) => value.length > 18 ? `${value.substring(0, 18)}...` : value}
+                    wrapperStyle={{ fontSize: '12px', paddingTop: '16px', color: '#a1a1aa' }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             ) : (

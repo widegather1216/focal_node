@@ -1,11 +1,13 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Save, FolderOpen, RefreshCw, Heart } from 'lucide-react';
+import { X, Save, FolderOpen, RefreshCw, Heart, Maximize2 } from 'lucide-react';
 import { api } from '../services/api';
 import { usePhotoDetail } from '../hooks/usePhotoDetail';
+import { useAppStore } from '../store/useAppStore';
 import { PhotoExifView } from './detail/PhotoExifView';
 import { PhotoCritiqueView } from './detail/PhotoCritiqueView';
 
 export function DetailPanel() {
+  const openFullscreen = useAppStore(state => state.openFullscreen);
   const {
     selectedPhotoId,
     setSelectedPhotoId,
@@ -88,14 +90,56 @@ export function DetailPanel() {
 
               {!loading && photo && (
                 <>
-                  {/* Image Preview */}
-                  <div style={{ borderRadius: '8px', overflow: 'hidden', backgroundColor: '#09090b', marginBottom: '20px', display: 'flex', justifyContent: 'center', maxHeight: '280px' }}>
+                  {/* Image Preview with Fullscreen Zoom Trigger */}
+                  <motion.div
+                    initial="rest"
+                    whileHover="hover"
+                    animate="rest"
+                    onClick={() => openFullscreen(photo.id)}
+                    style={{
+                      borderRadius: '8px',
+                      overflow: 'hidden',
+                      backgroundColor: '#09090b',
+                      marginBottom: '20px',
+                      display: 'flex',
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      maxHeight: '280px',
+                      position: 'relative',
+                      cursor: 'zoom-in',
+                      border: '1px solid #27272a'
+                    }}
+                    title="클릭하여 전체화면 보기"
+                  >
                     <img
                       src={api.getPhotoThumbnailUrl(photo.id)}
                       alt={photo.file_name}
-                      style={{ maxWidth: '100%', maxHeight: '280px', objectFit: 'contain' }}
+                      style={{ maxWidth: '100%', maxHeight: '280px', objectFit: 'contain', display: 'block' }}
                     />
-                  </div>
+                    <motion.div
+                      variants={{
+                        rest: { opacity: 0 },
+                        hover: { opacity: 1 }
+                      }}
+                      transition={{ duration: 0.2 }}
+                      style={{
+                        position: 'absolute',
+                        top: 0, left: 0, right: 0, bottom: 0,
+                        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                        backdropFilter: 'blur(3px)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#fff',
+                        gap: '8px',
+                        pointerEvents: 'none'
+                      }}
+                    >
+                      <Maximize2 size={26} color="#38bdf8" />
+                      <span style={{ fontSize: '12px', fontWeight: 600, color: '#f4f4f5' }}>전체화면으로 보기</span>
+                    </motion.div>
+                  </motion.div>
 
                   {/* File Info */}
                   <div style={{ marginBottom: '20px' }}>
