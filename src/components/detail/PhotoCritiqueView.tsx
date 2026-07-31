@@ -1,16 +1,18 @@
 import React from 'react';
-import { Wand2, RefreshCw } from 'lucide-react';
+import { Wand2, RefreshCw, Trash2 } from 'lucide-react';
 
 interface PhotoCritiqueViewProps {
   critique: string | null;
   loadingCritique: boolean;
   onRequestCritique: () => void;
+  onDeleteCritique?: () => void;
 }
 
 export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
   critique,
   loadingCritique,
-  onRequestCritique
+  onRequestCritique,
+  onDeleteCritique
 }) => {
   return (
     <div style={{ marginTop: '24px', background: '#1a1a1a', padding: '16px', borderRadius: '8px', border: '1px solid #333' }}>
@@ -18,17 +20,31 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
         <h4 style={{ margin: 0, fontSize: '14px', color: '#888', display: 'flex', alignItems: 'center', gap: '6px' }}>
           <Wand2 size={16} color="#a855f7" /> AI 사진 비평 (Gemma VLM)
         </h4>
-        <button
-          onClick={onRequestCritique}
-          disabled={loadingCritique}
-          style={{
-            background: 'none', border: 'none', color: '#a855f7', cursor: 'pointer',
-            fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px'
-          }}
-        >
-          <RefreshCw size={12} className={loadingCritique ? 'spin' : ''} />
-          {critique ? '다시 비평받기' : 'AI 비평 생성'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            onClick={onRequestCritique}
+            disabled={loadingCritique}
+            style={{
+              background: 'none', border: 'none', color: '#a855f7', cursor: 'pointer',
+              fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px'
+            }}
+          >
+            <RefreshCw size={12} className={loadingCritique ? 'spin' : ''} />
+            {critique ? '다시 비평받기' : 'AI 비평 생성'}
+          </button>
+          {!loadingCritique && critique && onDeleteCritique && (
+            <button
+              onClick={onDeleteCritique}
+              style={{
+                background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer',
+                fontSize: '12px', display: 'flex', alignItems: 'center', padding: '2px'
+              }}
+              title="비평 삭제"
+            >
+              <Trash2 size={13} />
+            </button>
+          )}
+        </div>
       </div>
 
       {loadingCritique && (

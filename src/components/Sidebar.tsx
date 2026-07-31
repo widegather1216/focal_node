@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../store/useAppStore';
 import { open } from '@tauri-apps/plugin-dialog';
-import { FolderPlus, Folder, Loader2, Search, RefreshCw, Trash2, Heart, Pause, Play, Square, BarChart3, Image as ImageIcon } from 'lucide-react';
+import { FolderPlus, Folder, Loader2, Search, RefreshCw, Trash2, Heart, Pause, Play, Square, BarChart3, Image as ImageIcon, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { SearchFilterMenu } from './SearchFilterMenu';
 import { api } from '../services/api';
@@ -91,18 +91,18 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '6px',
+              gap: '4px',
               background: activeTab === 'gallery' ? '#27272a' : 'transparent',
               color: activeTab === 'gallery' ? '#fff' : '#a1a1aa',
               border: 'none',
-              padding: '6px 8px',
+              padding: '6px 4px',
               borderRadius: '6px',
               fontSize: '12px',
               fontWeight: 600,
               cursor: 'pointer'
             }}
           >
-            <ImageIcon size={14} /> 갤러리
+            <ImageIcon size={13} /> 갤러리
           </button>
           <button
             onClick={() => setActiveTab('analytics')}
@@ -111,18 +111,38 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              gap: '6px',
+              gap: '4px',
               background: activeTab === 'analytics' ? '#27272a' : 'transparent',
               color: activeTab === 'analytics' ? '#fff' : '#a1a1aa',
               border: 'none',
-              padding: '6px 8px',
+              padding: '6px 4px',
               borderRadius: '6px',
               fontSize: '12px',
               fontWeight: 600,
               cursor: 'pointer'
             }}
           >
-            <BarChart3 size={14} color={activeTab === 'analytics' ? '#38bdf8' : '#a1a1aa'} /> 인사이트
+            <BarChart3 size={13} color={activeTab === 'analytics' ? '#38bdf8' : '#a1a1aa'} /> 인사이트
+          </button>
+          <button
+            onClick={() => setActiveTab('critique')}
+            style={{
+              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '4px',
+              background: activeTab === 'critique' ? '#27272a' : 'transparent',
+              color: activeTab === 'critique' ? '#fff' : '#a1a1aa',
+              border: 'none',
+              padding: '6px 4px',
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: 600,
+              cursor: 'pointer'
+            }}
+          >
+            <Sparkles size={13} color={activeTab === 'critique' ? '#c084fc' : '#a1a1aa'} /> 비평
           </button>
         </div>
 

@@ -5,6 +5,7 @@ import { useTauriEvents } from "./hooks/useTauriEvents";
 import { Sidebar } from "./components/Sidebar";
 import { PhotoGallery } from "./components/PhotoGallery";
 import { AnalyticsView } from "./components/AnalyticsView";
+import { CritiqueView } from "./components/CritiqueView";
 import { DetailPanel } from "./components/DetailPanel";
 import { ActionBar } from "./components/ActionBar";
 import { ModelDownloadModal } from "./components/ModelDownloadModal";
@@ -65,8 +66,10 @@ function App() {
       
       {activeTab === 'gallery' ? (
         <PhotoGallery selectedFolder={selectedFolder} />
-      ) : (
+      ) : activeTab === 'analytics' ? (
         <AnalyticsView />
+      ) : (
+        <CritiqueView />
       )}
 
       <DetailPanel />

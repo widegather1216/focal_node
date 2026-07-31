@@ -32,6 +32,8 @@ class AIAnalysisSchema(BaseModel):
     tags: List[str] = []
     aesthetic_tags: List[str] = []
     is_user_edited: bool = False
+    critique: Optional[str] = None
+    critique_updated_at: Optional[str] = None
 
 class PhotoDetailResponse(BaseModel):
     id: str
@@ -102,3 +104,18 @@ class CritiqueRequest(BaseModel):
 
 class CritiqueResponse(BaseModel):
     critique: str
+    critique_updated_at: Optional[str] = None
+
+class CritiqueItemResponse(BaseModel):
+    photo_id: str
+    file_name: str
+    file_path: str
+    capture_date: Optional[str] = None
+    camera_model: Optional[str] = None
+    lens_model: Optional[str] = None
+    f_number: Optional[float] = None
+    shutter_speed: Optional[str] = None
+    iso: Optional[int] = None
+    critique: str
+    critique_updated_at: Optional[str] = None
+

@@ -26,8 +26,8 @@ export interface SearchFilters {
 }
 
 interface AppState {
-  activeTab: 'gallery' | 'analytics';
-  setActiveTab: (tab: 'gallery' | 'analytics') => void;
+  activeTab: 'gallery' | 'analytics' | 'critique';
+  setActiveTab: (tab: 'gallery' | 'analytics' | 'critique') => void;
 
   apiPort: number | null;
   setApiPort: (port: number | null) => void;
@@ -73,6 +73,10 @@ interface AppState {
   selectedPhotoIds: Set<string>;
   togglePhotoSelection: (id: string) => void;
   clearSelection: () => void;
+
+  generatingCritiquePhotoIds: Set<string>;
+  addGeneratingCritiquePhotoId: (id: string) => void;
+  removeGeneratingCritiquePhotoId: (id: string) => void;
 
   folders: IndexedFolder[];
   setFolders: (folders: IndexedFolder[]) => void;
@@ -136,6 +140,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     return { selectedPhotoIds: nextSet };
   }),
   clearSelection: () => set({ selectedPhotoIds: new Set() }),
+
+  generatingCritiquePhotoIds: new Set(),
+  addGeneratingCritiquePhotoId: (id) => set((state) => {
+    const nextSet = new Set(state.generatingCritiquePhotoIds);
+    nextSet.add(id);
+    return { generatingCritiquePhotoIds: nextSet };
+  }),
+  removeGeneratingCritiquePhotoId: (id) => set((state) => {
+    const nextSet = new Set(state.generatingCritiquePhotoIds);
+    nextSet.delete(id);
+    return { generatingCritiquePhotoIds: nextSet };
+  }),
 
   folders: [],
   setFolders: (folders) => set({ folders }),

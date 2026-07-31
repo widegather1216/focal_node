@@ -33,11 +33,22 @@ export interface PhotoDetail {
     tags: string[];
     aesthetic_tags?: string[];
     is_user_edited: boolean;
+    critique?: string | null;
+    critique_updated_at?: string | null;
   };
 }
 
 export function usePhotoDetail() {
-  const { selectedPhotoId, setSelectedPhotoId, setSearchQuery, searchQuery, searchFilters } = useAppStore();
+  const { 
+    selectedPhotoId, 
+    setSelectedPhotoId, 
+    setSearchQuery, 
+    searchQuery, 
+    searchFilters,
+    generatingCritiquePhotoIds,
+    addGeneratingCritiquePhotoId,
+    removeGeneratingCritiquePhotoId
+  } = useAppStore();
   const queryClient = useQueryClient();
 
   const { data: photo, isLoading: loading } = usePhotoDetailQuery(selectedPhotoId);
@@ -49,13 +60,14 @@ export function usePhotoDetail() {
   const [tagsEdit, setTagsEdit] = useState<string[]>([]);
 
   const [critique, setCritique] = useState<string | null>(null);
-  const [loadingCritique, setLoadingCritique] = useState(false);
+  const loadingCritique = Boolean(selectedPhotoId && generatingCritiquePhotoIds.has(selectedPhotoId));
   const [reindexing, setReindexing] = useState(false);
 
   useEffect(() => {
     if (photo) {
       setCaptionEdit(photo.ai_analysis?.caption || '');
       setTagsEdit(photo.ai_analysis?.tags ? [...photo.ai_analysis.tags] : []);
+      setCritique(photo.ai_analysis?.critique || null);
     } else {
       setEditing(false);
       setCritique(null);
@@ -131,22 +143,37 @@ export function usePhotoDetail() {
 
   const handleRequestCritique = async () => {
     const currentId = selectedPhotoId;
-    if (!currentId) return;
-    setLoadingCritique(true);
+    if (!currentId || generatingCritiquePhotoIds.has(currentId)) return;
+    addGeneratingCritiquePhotoId(currentId);
     try {
       const result = await api.getPhotoCritique(currentId);
       if (useAppStore.getState().selectedPhotoId === currentId) {
         setCritique(result.critique);
       }
+      queryClient.invalidateQueries({ queryKey: ['critiques'] });
+      queryClient.invalidateQueries({ queryKey: ['photoDetail', currentId] });
     } catch (err) {
       if (useAppStore.getState().selectedPhotoId === currentId) {
         console.error("Failed to generate critique:", err);
         setCritique("비평을 생성하는 도중 오류가 발생했습니다.");
       }
     } finally {
+      removeGeneratingCritiquePhotoId(currentId);
+    }
+  };
+
+  const handleDeleteCritique = async () => {
+    const currentId = selectedPhotoId;
+    if (!currentId) return;
+    try {
+      await api.deleteCritique(currentId);
       if (useAppStore.getState().selectedPhotoId === currentId) {
-        setLoadingCritique(false);
+        setCritique(null);
       }
+      queryClient.invalidateQueries({ queryKey: ['critiques'] });
+      queryClient.invalidateQueries({ queryKey: ['photoDetail', currentId] });
+    } catch (err) {
+      console.error("Failed to delete critique:", err);
     }
   };
 
@@ -196,6 +223,7 @@ export function usePhotoDetail() {
     handleSave,
     handleReveal,
     handleRequestCritique,
+    handleDeleteCritique,
     handleReindex,
     handleToggleFavorite,
     handleTagClick

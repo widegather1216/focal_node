@@ -1,5 +1,19 @@
 import { useAppStore, SearchFilters } from '../store/useAppStore';
 
+export interface CritiqueItem {
+  photo_id: string;
+  file_name: string;
+  file_path: string;
+  capture_date?: string | null;
+  camera_model?: string | null;
+  lens_model?: string | null;
+  f_number?: number | null;
+  shutter_speed?: string | null;
+  iso?: number | null;
+  critique: string;
+  critique_updated_at?: string | null;
+}
+
 class ApiClient {
   private get baseUrl(): string {
     const port = useAppStore.getState().apiPort;
@@ -195,6 +209,20 @@ class ApiClient {
       body: JSON.stringify({ photo_id: photoId })
     });
     if (!res.ok) throw new Error("Failed to get photo critique");
+    return res.json();
+  }
+
+  async getCritiques(): Promise<any[]> {
+    const res = await fetch(`${this.baseUrl}/api/chat/critiques`);
+    if (!res.ok) throw new Error("Failed to fetch critiques");
+    return res.json();
+  }
+
+  async deleteCritique(photoId: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/chat/critique/${encodeURIComponent(photoId)}`, {
+      method: 'DELETE'
+    });
+    if (!res.ok) throw new Error("Failed to delete critique");
     return res.json();
   }
 

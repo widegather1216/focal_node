@@ -85,7 +85,9 @@ class Image(Base):
             "caption": ai.caption if ai else None,
             "tags": tags_list,
             "aesthetic_tags": aesthetic_tags_list,
-            "is_user_edited": ai.is_user_edited if ai else False
+            "is_user_edited": ai.is_user_edited if ai else False,
+            "critique": ai.critique if ai else None,
+            "critique_updated_at": ai.critique_updated_at.isoformat() if ai and ai.critique_updated_at else None
         }
         
         return {
@@ -130,6 +132,8 @@ class AIAnalysis(Base):
     tags = Column(String, nullable=True)  # Stored as JSON string (e.g. '["tag1", "tag2"]')
     aesthetic_tags = Column(String, nullable=True)  # Stored as JSON string for professional tags
     is_user_edited = Column(Boolean, default=False, nullable=False)
+    critique = Column(String, nullable=True)
+    critique_updated_at = Column(DateTime, nullable=True)
 
     # Relationships
     image = relationship("Image", back_populates="ai_analysis_rel")

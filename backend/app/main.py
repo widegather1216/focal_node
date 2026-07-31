@@ -58,7 +58,9 @@ async def lifespan(app: FastAPI):
     for col_sql in [
         "ALTER TABLE image_metadata ADD COLUMN focal_length_35mm FLOAT",
         "ALTER TABLE image_metadata ADD COLUMN crop_factor FLOAT",
-        "ALTER TABLE image_metadata ADD COLUMN sensor_format VARCHAR(50)"
+        "ALTER TABLE image_metadata ADD COLUMN sensor_format VARCHAR(50)",
+        "ALTER TABLE ai_analysis ADD COLUMN critique TEXT",
+        "ALTER TABLE ai_analysis ADD COLUMN critique_updated_at DATETIME"
     ]:
         try:
             with engine.begin() as conn:
