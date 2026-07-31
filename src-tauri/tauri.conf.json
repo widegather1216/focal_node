@@ -33,6 +33,9 @@
     ],
     "externalBin": [
       "binaries/focal_node_backend"
+    ],
+    "resources": [
+      "binaries/_internal/**/*"
     ]
   }
 }

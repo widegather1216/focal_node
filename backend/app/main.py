@@ -13,6 +13,22 @@ from config import METAL_CACHE_DIR
 # 3. Ensure Metal shader cache persists across PyInstaller executions to prevent 10s recompilation delay
 os.environ["MTL_SHADER_CACHE_DIR"] = METAL_CACHE_DIR
 
+# 4. Ensure MLX C++ engine finds mlx.metallib in PyInstaller frozen package
+if getattr(sys, 'frozen', False):
+    exe_dir = os.path.dirname(sys.executable)
+    candidates = [
+        os.path.join(exe_dir, "_internal", "mlx", "lib", "mlx.metallib"),
+        os.path.join(exe_dir, "_internal", "mlx.metallib"),
+        os.path.join(exe_dir, "mlx.metallib"),
+        os.path.join(exe_dir, "..", "Resources", "_internal", "mlx", "lib", "mlx.metallib"),
+        os.path.join(exe_dir, "..", "Resources", "binaries", "_internal", "mlx", "lib", "mlx.metallib"),
+    ]
+    for c in candidates:
+        if os.path.exists(c):
+            os.environ["MLX_METAL_PATH"] = c
+            print(f"[Sidecar] MLX_METAL_PATH set to {c}", flush=True)
+            break
+
 from contextlib import asynccontextmanager
 import uvicorn
 from fastapi import FastAPI

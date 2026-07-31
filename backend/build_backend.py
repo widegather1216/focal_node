@@ -44,7 +44,7 @@ def build():
     args = [
         script_path,
         "--name=focal_node_backend",
-        "--onefile",
+        "--onedir",
         "--noconfirm",
         "--clean",
         "--log-level=INFO",
@@ -61,13 +61,24 @@ def build():
         "mlx_lm",
         "mlx_vlm",
         "chromadb",
-        "torch"
+        "torch",
+        "pydantic_core",
+        "pydantic",
+        "fastapi"
     ]
     
     for mod in collect_all_modules:
         args.extend(["--collect-all", mod])
         args.extend(["--copy-metadata", mod])
         
+    import site
+    for sp in site.getsitepackages():
+        mlx_metallib = os.path.join(sp, "mlx", "lib", "mlx.metallib")
+        if os.path.exists(mlx_metallib):
+            args.extend(["--add-data", f"{mlx_metallib}:mlx/lib"])
+            args.extend(["--add-data", f"{mlx_metallib}:."])
+            break
+
     PyInstaller.__main__.run(args)
 
 if __name__ == "__main__":

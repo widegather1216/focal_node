@@ -119,8 +119,59 @@ pub fn run() {
                     } else {
                         "focal_node_backend"
                     };
-                    let sidecar_path = exe_path.parent().unwrap().join(sidecar_name);
+                    let parent_dir = exe_path.parent().unwrap();
+                    let sidecar_path = parent_dir.join(sidecar_name);
                     
+                    #[cfg(target_os = "macos")]
+                    {
+                        let macos_dir = parent_dir; // Contents/MacOS
+                        let contents_dir = macos_dir.parent().unwrap(); // Contents
+                        
+                        let res_internal_candidates = [
+                            contents_dir.join("Resources/_internal"),
+                            contents_dir.join("Resources/binaries/_internal"),
+                            macos_dir.join("_internal")
+                        ];
+                        
+                        let mut found_internal = None;
+                        for cand in &res_internal_candidates {
+                            if cand.exists() {
+                                found_internal = Some(cand.clone());
+                                break;
+                            }
+                        }
+                        
+                        if let Some(ref internal_path) = found_internal {
+                            let macos_internal = macos_dir.join("_internal");
+                            if !macos_internal.exists() {
+                                let _ = std::os::unix::fs::symlink(internal_path, &macos_internal);
+                            }
+                            
+                            let frameworks_dir = contents_dir.join("Frameworks");
+                            if !frameworks_dir.exists() {
+                                let _ = std::os::unix::fs::symlink(internal_path, &frameworks_dir);
+                            }
+                            
+                            let mlx_metallib = internal_path.join("mlx").join("lib").join("mlx.metallib");
+                            if mlx_metallib.exists() {
+                                let macos_metallib = macos_dir.join("mlx.metallib");
+                                let macos_default_metallib = macos_dir.join("default.metallib");
+                                if !macos_metallib.exists() {
+                                    let _ = std::os::unix::fs::symlink(&mlx_metallib, &macos_metallib);
+                                }
+                                if !macos_default_metallib.exists() {
+                                    let _ = std::os::unix::fs::symlink(&mlx_metallib, &macos_default_metallib);
+                                }
+                            }
+                            
+                            let internal_str = internal_path.to_string_lossy().to_string();
+                            let macos_str = macos_dir.to_string_lossy().to_string();
+                            let combined_path = format!("{}:{}", internal_str, macos_str);
+                            std::env::set_var("DYLD_LIBRARY_PATH", &combined_path);
+                            std::env::set_var("DYLD_FALLBACK_LIBRARY_PATH", &combined_path);
+                        }
+                    }
+
                     (sidecar_path.to_string_lossy().to_string(), vec![])
                 };
 
@@ -128,6 +179,13 @@ pub fn run() {
 
                 let mut cmd = Command::new(&program);
                 cmd.args(&args);
+                #[cfg(target_os = "macos")]
+                {
+                    if let Ok(path) = std::env::var("DYLD_LIBRARY_PATH") {
+                        cmd.env("DYLD_LIBRARY_PATH", &path);
+                        cmd.env("DYLD_FALLBACK_LIBRARY_PATH", &path);
+                    }
+                }
                 cmd.stdout(Stdio::piped());
                 cmd.stderr(Stdio::piped());
 

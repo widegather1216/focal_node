@@ -103,3 +103,34 @@ async def handle_inference_endpoint(image_id: str):
 * 인덱싱 프로세스 내에서 이미지가 큐에 계속 들어올 때 매번 로드/해제를 반복하지 않도록, 작업이 끝난 후에도 **60초간 대기하는 타이머 기반 Keep-alive 전략**을 적용해야 합니다.
 * 타이머가 만료되기 전 새로운 인덱싱 요청이 들어오면 가중치가 로드된 상태에서 즉시 추론을 계속하고, 60초간 무풍 상태(Idle)가 지속될 때만 가중치 데이터를 메모리에서 해제(Garbage Collection 실행)해야 합니다.
 
+---
+
+## 5. 프로덕션 패키징 및 백엔드 부팅 속도 최적화 규격
+
+실사용 배포(Production Packaging) 환경에서 발생할 수 있는 초기 구동 지연(Cold Start Bottleneck)을 예방하기 위한 패키징 및 로딩 지침입니다.
+
+### 5.1. PyInstaller 패키징 모드 규격 (`--onedir` 권장)
+* **단일 바이너리(`--onefile`) 지양:** PyInstaller 단일 파일 빌드는 실행 시마다 수 GB에 달하는 Python 런타임, PyTorch/MLX/Transformers/ChromaDB C++ 바인딩을 OS 임시 폴더(`~/$TMPDIR/_MEIxxxxxx`)에 매번 새로 압축 해제합니다.
+* **디렉터리 빌드(`--onedir`) 적용:** 생산성 및 빠른 부팅을 위해 Sidecar 바이너리는 번들 폴더 형태로 빌드하여 앱 설치 시점에 이미 디렉터리에 추출된 상태를 유지하도록 구성합니다.
+* **macOS Gatekeeper 검사 간소화:** 임시 폴더 압축 해제 제거 및 정식 Developer ID 서명/공증(Notarization)을 통해 macOS `syspolicyd`의 실시간 악성코드 정적 검사 오버헤드를 건너뛰도록 권장합니다.
+
+### 5.2. Heavy 모듈 지연 임포트 (Lazy Import) 지침
+* `main.py` 및 라우터 모듈 상단에서 `torch`, `mlx`, `chromadb`, `transformers` 등 heavy 라이브러리를 Eager Import하면 FastAPI가 OS 유휴 포트를 할당받고 `[Sidecar] PORT: {port}`를 출력하기까지 수 초 이상의 블로킹이 초래됩니다.
+* 백엔드는 가급적 빠르게 포트를 생성하여 Tauri 프론트엔드에 통신 준비 완료 상태를 알리고, heavy 모듈은 백그라운드 스레드 또는 실제 API 요청 수신 시점에 Lazy Import로 로드하도록 통제합니다.
+
+---
+
+## 6. 개발 vs 프로덕션 데이터 환경 격리 및 스키마 마이그레이션 제약
+
+개발 테스트 데이터와 사용자 실사용 데이터 간의 오염 및 스키마 변경 시 발생할 수 있는 데이터 손실을 체계적으로 방지합니다.
+
+### 6.1. 데이터 경로 완전 분리 (`IS_PROD`)
+* `config.py`에서 `sys.frozen` 여부에 따라 저장 디렉터리를 엄격히 구분합니다.
+  * **개발 환경 (`sys.frozen == False`)**: `~/.config/focal_node_dev`
+  * **실사용 패키징 환경 (`sys.frozen == True`)**: `~/.config/focal_node`
+* 개발 과정에서의 로컬 인덱싱 테스트가 실사용 데이터에 영향을 주지 않도록 데이터 격리를 보장합니다.
+
+### 6.2. ChromaDB Self-Healing 대응 및 스키마 마이그레이션
+* **ChromaDB Self-Healing (손상 백업 로직):** 라이브러리 스키마 변경이나 데이터 불일치 예외 발생 시 `chroma.py`가 이전 벡터 DB 폴더를 `chroma_corrupted_YYYYMMDDHHMMSS`로 백업한 후 자동 재생성합니다.
+* **SQLite 스키마 안전 업데이트 (Alembic / Defensive ALTER):** 정식 배포 버전 업데이트 시 기존 사용자 인덱스가 날아가지 않도록, 단순 `Base.metadata.create_all()`에 의존하기보다 안전한 Column 추가(Defensive `ALTER TABLE`) 방식이나 `Alembic` 기반 DB 마이그레이션 전략을 적용해야 합니다.
+

@@ -207,6 +207,8 @@ def extract_metadata(file_path: str) -> dict:
     # 3. Derive 35mm focal length equivalent & Crop Factor
     fl = metadata["focal_length"]
     fl35 = metadata["focal_length_35mm"]
+    camera = (metadata.get("camera_model") or "").upper()
+    lens = (metadata.get("lens_model") or "").upper()
     is_smartphone = any(k in camera for k in ["IPHONE", "GALAXY", "SM-", "PIXEL", "XIAOMI", "REDMI", "POCO", "ONEPLUS", "HUAWEI", "OPPO", "VIVO"]) or \
                     any(k in lens for k in ["IPHONE", "GALAXY", "SM-", "PIXEL"])
 

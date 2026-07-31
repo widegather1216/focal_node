@@ -102,6 +102,20 @@ class GemmaAdapter(ImageCaptioningPort):
         if self.model is None:
             with GPU_LOCK:
                 print(f"[GemmaAdapter] Lazy loading model {self.model_id} via mlx_vlm...", flush=True)
+                import sys
+                if getattr(sys, 'frozen', False) and "MLX_METAL_PATH" not in os.environ:
+                    exe_dir = os.path.dirname(sys.executable)
+                    candidates = [
+                        os.path.join(exe_dir, "_internal", "mlx", "lib", "mlx.metallib"),
+                        os.path.join(exe_dir, "_internal", "mlx.metallib"),
+                        os.path.join(exe_dir, "mlx.metallib"),
+                        os.path.join(exe_dir, "..", "Resources", "_internal", "mlx", "lib", "mlx.metallib"),
+                        os.path.join(exe_dir, "..", "Resources", "binaries", "_internal", "mlx", "lib", "mlx.metallib"),
+                    ]
+                    for c in candidates:
+                        if os.path.exists(c):
+                            os.environ["MLX_METAL_PATH"] = c
+                            break
                 from mlx_vlm import load
                 self.model, self.processor = load(self.model_id)
                 print("[GemmaAdapter] Model loaded successfully.", flush=True)

@@ -41,7 +41,7 @@ backend/dist/
 focal_node_backend.spec
 
 # Tauri Binaries
-src-tauri/binaries/focal_node_backend-*
+src-tauri/binaries/
 src-tauri/target/
 
 # Local cache
