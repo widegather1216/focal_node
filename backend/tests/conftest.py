@@ -74,6 +74,8 @@ def mock_ai_adapters(monkeypatch):
     mock_siglip = MagicMock()
     mock_siglip.get_image_embedding.return_value = [0.1] * 768
     mock_siglip.get_text_embedding.return_value = [0.1] * 768
+    mock_siglip.get_zero_shot_hints.return_value = ["바다", "노을", "서핑"]
+
     
     mock_gemma = MagicMock()
     mock_gemma.generate_caption_and_tags.return_value = {

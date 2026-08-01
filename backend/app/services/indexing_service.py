@@ -118,9 +118,12 @@ def run_ai_pipeline_sync(file_path: str) -> tuple[dict, list[float], dict]:
     Returns: (metadata, embedding, ai_result)
     """
     metadata = extract_metadata(file_path)
-    embedding = get_siglip_adapter().get_image_embedding(file_path)
-    ai_result = get_gemma_adapter().generate_caption_and_tags(file_path, metadata)
+    siglip_adapter = get_siglip_adapter()
+    embedding = siglip_adapter.get_image_embedding(file_path)
+    siglip_hints = siglip_adapter.get_zero_shot_hints(embedding)
+    ai_result = get_gemma_adapter().generate_caption_and_tags(file_path, metadata, siglip_hints=siglip_hints)
     return metadata, embedding, ai_result
+
 
 def index_single_file_sync(file_path: str) -> dict | str:
     """

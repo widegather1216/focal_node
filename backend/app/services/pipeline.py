@@ -55,13 +55,18 @@ class EXIFExtractStep(PipelineStep):
 class AIInferenceStep(PipelineStep):
     def execute(self, ctx: PipelineContext) -> bool:
         try:
-            ctx.embedding = get_siglip_adapter().get_image_embedding(ctx.file_path)
-            ctx.ai_result = get_gemma_adapter().generate_caption_and_tags(ctx.file_path, ctx.metadata)
+            siglip_adapter = get_siglip_adapter()
+            ctx.embedding = siglip_adapter.get_image_embedding(ctx.file_path)
+            siglip_hints = siglip_adapter.get_zero_shot_hints(ctx.embedding)
+            ctx.ai_result = get_gemma_adapter().generate_caption_and_tags(
+                ctx.file_path, ctx.metadata, siglip_hints=siglip_hints
+            )
             return True
         except Exception as e:
             print(f"[Pipeline AIInferenceStep] Error for {ctx.file_path}: {e}", flush=True)
             ctx.status = "error"
             return False
+
 
 class IndexingPipeline:
     def __init__(self):

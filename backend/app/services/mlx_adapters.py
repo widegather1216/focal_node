@@ -3,7 +3,9 @@ import gc
 import json
 import time
 import threading
+from typing import Any
 from PIL import Image
+
 
 # For Gemma 4 (MLX)
 # We import mlx and mlx_lm dynamically to avoid importing them if Gemma is not loaded yet
@@ -21,6 +23,7 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
         self.model_id = "google/siglip2-base-patch16-224"
         self.model = None
         self.processor = None
+        self.cached_taxonomy_embeddings = None
         self.lock = threading.Lock()
         
         # SigLIP 2 is relatively lightweight and serves critical search path,
@@ -48,6 +51,23 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
                         ).to(self.device)
                         self.processor = AutoProcessor.from_pretrained(self.model_id)
                     print("[SigLIP2Adapter] Model loaded successfully.", flush=True)
+                    self._precompute_taxonomy_embeddings()
+
+    def _precompute_taxonomy_embeddings(self):
+        try:
+            from services.taxonomy import SIGLIP_VISUAL_TAXONOMY
+            import torch
+            inputs = self.processor(text=SIGLIP_VISUAL_TAXONOMY, padding="max_length", return_tensors="pt").to(self.device)
+            with GPU_LOCK:
+                with torch.no_grad():
+                    feat = self.model.get_text_features(**inputs)
+                text_features = feat.pooler_output
+                text_features = text_features / text_features.norm(p=2, dim=-1, keepdim=True)
+                self.cached_taxonomy_embeddings = text_features.cpu().numpy()
+            print(f"[SigLIP2Adapter] Precomputed taxonomy embeddings for {len(SIGLIP_VISUAL_TAXONOMY)} visual concepts.", flush=True)
+        except Exception as e:
+            print(f"[SigLIP2Adapter] Failed to precompute taxonomy embeddings: {e}", flush=True)
+            self.cached_taxonomy_embeddings = None
 
     def get_image_embedding(self, image_path: str) -> list[float]:
         import torch
@@ -85,6 +105,30 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
             embedding = text_features[0].tolist()
         return embedding
 
+    def get_zero_shot_hints(self, image_input: Any, top_k: int = 5) -> list[str]:
+        """
+        Calculates cosine similarity between image embedding and precomputed taxonomy embeddings.
+        Returns Top-K matching visual keyword strings.
+        """
+        import numpy as np
+        if self.cached_taxonomy_embeddings is None:
+            return []
+            
+        if isinstance(image_input, str):
+            image_emb = self.get_image_embedding(image_input)
+        else:
+            image_emb = image_input
+            
+        if not image_emb:
+            return []
+            
+        img_vec = np.array(image_emb, dtype=np.float32)
+        scores = np.dot(self.cached_taxonomy_embeddings, img_vec)
+        top_indices = np.argsort(scores)[::-1][:top_k]
+        
+        from services.taxonomy import SIGLIP_VISUAL_TAXONOMY
+        return [SIGLIP_VISUAL_TAXONOMY[i] for i in top_indices]
+
 
 class GemmaAdapter(ImageCaptioningPort):
     def __init__(self):
@@ -102,7 +146,7 @@ class GemmaAdapter(ImageCaptioningPort):
         if self.model is None:
             with GPU_LOCK:
                 print(f"[GemmaAdapter] Lazy loading model {self.model_id} via mlx_vlm...", flush=True)
-                import sys
+                import sys, os
                 if getattr(sys, 'frozen', False) and "MLX_METAL_PATH" not in os.environ:
                     exe_dir = os.path.dirname(sys.executable)
                     candidates = [
@@ -121,32 +165,27 @@ class GemmaAdapter(ImageCaptioningPort):
                 print("[GemmaAdapter] Model loaded successfully.", flush=True)
             
         self.last_used_time = time.time()
+        self._start_keep_alive_timer_locked()
+
+    def _start_keep_alive_timer_locked(self):
         if not self.timer_active:
             self.timer_active = True
             self.timer_thread = threading.Thread(target=self._keep_alive_loop, daemon=True)
             self.timer_thread.start()
 
+
     def _keep_alive_loop(self):
+        import gc
         while True:
-            time.sleep(5)
-            should_unload = False
-            
+            time.sleep(10)
             with self.lock:
-                if self.model is None:
-                    self.timer_active = False
-                    break
+                if self.active_requests > 0:
+                    continue
                 elapsed = time.time() - self.last_used_time
-                if self.active_requests == 0 and elapsed >= 60.0:
-                    should_unload = True
-                    
-            if should_unload:
-                # Acquire self.lock FIRST, then GPU_LOCK to match the acquisition order 
-                # in generation methods and prevent Deadlocks.
-                with self.lock:
-                    # Double-check conditions inside lock
-                    if self.model is not None and self.active_requests == 0 and (time.time() - self.last_used_time) >= 60.0:
-                        with GPU_LOCK:
-                            print(f"[GemmaAdapter] Inactivity timeout reached. Unloading model...", flush=True)
+                if elapsed >= 60:
+                    with GPU_LOCK:
+                        if self.model is not None:
+                            print("[GemmaAdapter] Keep-alive timeout reached (60s). Unloading model...", flush=True)
                             self.model = None
                             self.processor = None
                             gc.collect()
@@ -159,15 +198,21 @@ class GemmaAdapter(ImageCaptioningPort):
                             print("[GemmaAdapter] Model unloaded.", flush=True)
                             break
 
-    def generate_caption_and_tags(self, image_path: str, metadata: dict = None) -> dict:
+    def generate_caption_and_tags(self, image_path: str, metadata: dict = None, siglip_hints: list[str] = None) -> dict:
         with self.lock:
             self._load_model_locked()
             self.last_used_time = time.time()
             self.active_requests += 1
             
         try:
-            from services.ai_parser import GEMMA_SYSTEM_PROMPT, format_exif_text, parse_gemma_json_output
+            from services.ai_parser import (
+                GEMMA_SYSTEM_PROMPT,
+                format_exif_text,
+                format_siglip_hints_text,
+                parse_gemma_json_output
+            )
             exif_text = format_exif_text(metadata)
+            siglip_text = format_siglip_hints_text(siglip_hints)
             messages = [
                 {
                     "role": "system",
@@ -177,7 +222,7 @@ class GemmaAdapter(ImageCaptioningPort):
                     "role": "user",
                     "content": [
                         {"type": "image"},
-                        {"type": "text", "text": f"{exif_text}이 사진을 정밀 분석하여 JSON으로 출력하십시오."}
+                        {"type": "text", "text": f"{exif_text}{siglip_text}이 사진을 정밀 분석하여 JSON으로 출력하십시오."}
                     ]
                 }
             ]
