@@ -119,3 +119,12 @@ class CritiqueItemResponse(BaseModel):
     critique: str
     critique_updated_at: Optional[str] = None
 
+class CritiqueSummaryRequest(BaseModel):
+    photo_ids: Optional[List[str]] = None
+
+class CritiqueSummaryResponse(BaseModel):
+    summary: str
+    total_critiques_analyzed: int
+    created_at: str
+
+

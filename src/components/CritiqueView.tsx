@@ -13,16 +13,31 @@ import {
   ExternalLink, 
   Loader2, 
   FileText,
-  Maximize2
+  Maximize2,
+  Wand2,
+  RefreshCw,
+  X,
+  Award,
+  ChevronDown,
+  ChevronUp,
+  AlertCircle
 } from 'lucide-react';
-import { api, CritiqueItem } from '../services/api';
+import { api, CritiqueItem, CritiqueSummaryResponse } from '../services/api';
 import { useAppStore } from '../store/useAppStore';
 
 export const CritiqueView: React.FC = () => {
   const queryClient = useQueryClient();
   const { apiPort, setSelectedPhotoId, setActiveTab, openFullscreen } = useAppStore();
+  
   const [filterQuery, setFilterQuery] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Summary State
+  const [summaryData, setSummaryData] = useState<CritiqueSummaryResponse | null>(null);
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [copiedSummary, setCopiedSummary] = useState(false);
+  const [isSummaryExpanded, setIsSummaryExpanded] = useState(true);
 
   const { data: critiques = [], isLoading } = useQuery<CritiqueItem[]>({
     queryKey: ['critiques'],
@@ -41,6 +56,29 @@ export const CritiqueView: React.FC = () => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleGenerateSummary = async () => {
+    if (critiques.length === 0 || isGeneratingSummary) return;
+    setIsGeneratingSummary(true);
+    setSummaryError(null);
+    setIsSummaryExpanded(true);
+    try {
+      const res = await api.getCritiqueSummary();
+      setSummaryData(res);
+    } catch (err: any) {
+      console.error("Failed to generate critique summary:", err);
+      setSummaryError(err.message || "종합 요약을 생성하는 도중 오류가 발생했습니다.");
+    } finally {
+      setIsGeneratingSummary(false);
+    }
+  };
+
+  const handleCopySummary = () => {
+    if (!summaryData?.summary) return;
+    navigator.clipboard.writeText(summaryData.summary);
+    setCopiedSummary(true);
+    setTimeout(() => setCopiedSummary(false), 2000);
   };
 
   const filteredCritiques = critiques.filter((item) => {
@@ -92,7 +130,7 @@ export const CritiqueView: React.FC = () => {
     }}>
       {/* Header */}
       <header style={{
-        padding: '24px 32px 18px 32px',
+        padding: '20px 32px',
         borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
         background: 'linear-gradient(180deg, rgba(24, 24, 27, 0.8) 0%, rgba(12, 12, 14, 0.95) 100%)',
         backdropFilter: 'blur(12px)',
@@ -138,30 +176,67 @@ export const CritiqueView: React.FC = () => {
           </div>
         </div>
 
-        {/* Filter Input */}
-        {critiques.length > 0 && (
-          <div style={{ position: 'relative', width: '280px' }}>
-            <Search size={16} color="#71717a" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
-            <input
-              type="text"
-              placeholder="비평 내용 또는 파일명 검색..."
-              value={filterQuery}
-              onChange={(e) => setFilterQuery(e.target.value)}
-              style={{
-                width: '100%',
-                backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.12)',
-                borderRadius: '10px',
-                padding: '8px 12px 8px 36px',
-                color: '#fff',
-                fontSize: '13px',
-                outline: 'none',
-                boxSizing: 'border-box',
-                transition: 'all 0.2s ease'
-              }}
-            />
-          </div>
-        )}
+        {/* Right Header Controls */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {critiques.length > 0 && (
+            <>
+              <div style={{ position: 'relative', width: '240px' }}>
+                <Search size={15} color="#71717a" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                <input
+                  type="text"
+                  placeholder="비평 또는 파일명 검색..."
+                  value={filterQuery}
+                  onChange={(e) => setFilterQuery(e.target.value)}
+                  style={{
+                    width: '100%',
+                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                    borderRadius: '10px',
+                    padding: '8px 12px 8px 34px',
+                    color: '#fff',
+                    fontSize: '13px',
+                    outline: 'none',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              <motion.button
+                onClick={handleGenerateSummary}
+                disabled={isGeneratingSummary}
+                whileHover={!isGeneratingSummary ? { scale: 1.03 } : {}}
+                whileTap={!isGeneratingSummary ? { scale: 0.97 } : {}}
+                style={{
+                  background: 'linear-gradient(135deg, #a855f7 0%, #6366f1 100%)',
+                  color: '#fff',
+                  border: 'none',
+                  padding: '9px 16px',
+                  borderRadius: '10px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  cursor: isGeneratingSummary ? 'not-allowed' : 'pointer',
+                  opacity: isGeneratingSummary ? 0.7 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  boxShadow: '0 4px 16px rgba(168, 85, 247, 0.3)'
+                }}
+              >
+                {isGeneratingSummary ? (
+                  <>
+                    <Loader2 size={15} className="spin" />
+                    <span>요약 분석 중...</span>
+                  </>
+                ) : (
+                  <>
+                    <Wand2 size={15} />
+                    <span>종합 요약 생성</span>
+                  </>
+                )}
+              </motion.button>
+            </>
+          )}
+        </div>
       </header>
 
       {/* Main Content Area */}
@@ -171,6 +246,171 @@ export const CritiqueView: React.FC = () => {
         padding: '28px 32px',
         boxSizing: 'border-box'
       }}>
+        {/* Aggregated Critique Summary Card Section */}
+        <AnimatePresence>
+          {(isGeneratingSummary || summaryData || summaryError) && (
+            <motion.div
+              initial={{ opacity: 0, y: -15, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -15, scale: 0.98 }}
+              transition={{ duration: 0.3 }}
+              style={{
+                maxWidth: '1600px',
+                margin: '0 auto 28px auto',
+                background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.08) 0%, rgba(99, 102, 241, 0.05) 100%)',
+                border: '1px solid rgba(168, 85, 247, 0.25)',
+                borderRadius: '16px',
+                overflow: 'hidden',
+                boxShadow: '0 8px 32px rgba(168, 85, 247, 0.12)',
+                position: 'relative'
+              }}
+            >
+              {/* Card Header */}
+              <div style={{
+                padding: '16px 20px',
+                borderBottom: isSummaryExpanded ? '1px solid rgba(168, 85, 247, 0.15)' : 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                background: 'rgba(24, 24, 27, 0.4)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Award size={20} color="#c084fc" />
+                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#fff' }}>
+                    AI 포트폴리오 비평 종합 리포트
+                  </h3>
+                  {summaryData && (
+                    <span style={{
+                      background: 'rgba(168, 85, 247, 0.2)',
+                      color: '#e9d5ff',
+                      fontSize: '11px',
+                      padding: '2px 8px',
+                      borderRadius: '10px',
+                      fontWeight: 500
+                    }}>
+                      {summaryData.total_critiques_analyzed}개 비평 종합 분석
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {summaryData && (
+                    <>
+                      <button
+                        onClick={handleCopySummary}
+                        style={{
+                          background: copiedSummary ? 'rgba(74, 222, 128, 0.15)' : 'rgba(255, 255, 255, 0.06)',
+                          border: '1px solid rgba(255, 255, 255, 0.1)',
+                          color: copiedSummary ? '#4ade80' : '#e4e4e7',
+                          padding: '5px 10px',
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px'
+                        }}
+                      >
+                        {copiedSummary ? <Check size={13} /> : <Copy size={13} />}
+                        {copiedSummary ? '복사됨' : '요약 복사'}
+                      </button>
+                      <button
+                        onClick={handleGenerateSummary}
+                        disabled={isGeneratingSummary}
+                        style={{
+                          background: 'rgba(255, 255, 255, 0.06)',
+                          border: '1px solid rgba(255, 255, 255, 0.1)',
+                          color: '#e4e4e7',
+                          padding: '5px 10px',
+                          borderRadius: '6px',
+                          fontSize: '12px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px'
+                        }}
+                      >
+                        <RefreshCw size={13} className={isGeneratingSummary ? 'spin' : ''} />
+                        다시 요약
+                      </button>
+                    </>
+                  )}
+
+                  <button
+                    onClick={() => setIsSummaryExpanded(!isSummaryExpanded)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#a1a1aa',
+                      cursor: 'pointer',
+                      padding: '4px',
+                      display: 'flex',
+                      alignItems: 'center'
+                    }}
+                  >
+                    {isSummaryExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setSummaryData(null);
+                      setSummaryError(null);
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#71717a',
+                      cursor: 'pointer',
+                      padding: '4px',
+                      display: 'flex',
+                      alignItems: 'center'
+                    }}
+                    title="요약 닫기"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Card Body */}
+              {isSummaryExpanded && (
+                <div style={{ padding: '20px 24px' }}>
+                  {isGeneratingSummary && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#c084fc', padding: '12px 0' }}>
+                      <Loader2 size={20} className="spin" />
+                      <span style={{ fontSize: '14px', fontWeight: 500 }}>
+                        Gemma VLM이 {critiques.length}개의 사진 비평 데이터와 EXIF 정보를 종합하여 포트폴리오를 총체적으로 분석하고 있습니다...
+                      </span>
+                    </div>
+                  )}
+
+                  {summaryError && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ef4444', fontSize: '13px' }}>
+                      <AlertCircle size={16} />
+                      <span>{summaryError}</span>
+                    </div>
+                  )}
+
+                  {!isGeneratingSummary && summaryData && (
+                    <div style={{
+                      fontSize: '14px',
+                      lineHeight: '1.75',
+                      color: '#f4f4f5',
+                      whiteSpace: 'pre-line',
+                      maxHeight: '400px',
+                      overflowY: 'auto',
+                      paddingRight: '8px'
+                    }}>
+                      {summaryData.summary}
+                    </div>
+                  )}
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Critiques Grid or Empty States */}
         {critiques.length === 0 ? (
           /* Empty State */
           <motion.div

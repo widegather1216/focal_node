@@ -113,3 +113,52 @@ def delete_photo_critique(photo_id: str, db: Session = Depends(get_db)):
         db.commit()
     return {"status": "ok", "photo_id": photo_id}
 
+
+@router.post("/critique-summary", response_model=schemas.CritiqueSummaryResponse)
+async def generate_critique_summary(
+    payload: schemas.CritiqueSummaryRequest = schemas.CritiqueSummaryRequest()
+):
+    """
+    Generates an aggregated summary report for existing photo critiques using the Gemma LLM model.
+    """
+    from database import SessionLocal
+    with SessionLocal() as db:
+        query = (
+            db.query(models.AIAnalysis, models.Image, models.ImageMetadata)
+            .join(models.Image, models.AIAnalysis.image_id == models.Image.id)
+            .outerjoin(models.ImageMetadata, models.Image.id == models.ImageMetadata.image_id)
+            .filter(models.AIAnalysis.critique.isnot(None))
+            .filter(models.AIAnalysis.critique != "")
+        )
+        if payload and payload.photo_ids:
+            query = query.filter(models.Image.id.in_(payload.photo_ids))
+            
+        results = query.all()
+        if not results:
+            raise HTTPException(status_code=400, detail="요약할 AI 비평 데이터가 존재하지 않습니다.")
+
+        critiques_list = []
+        for ai, img, meta in results:
+            critiques_list.append({
+                "photo_id": img.id,
+                "file_name": img.file_name,
+                "camera_model": meta.camera_model if meta else None,
+                "lens_model": meta.lens_model if meta else None,
+                "critique": ai.critique
+            })
+
+    try:
+        summary_text = await asyncio.to_thread(
+            get_gemma_adapter().generate_critique_summary,
+            critiques_list
+        )
+        now_utc = models.utcnow()
+        return {
+            "summary": summary_text,
+            "total_critiques_analyzed": len(critiques_list),
+            "created_at": now_utc.isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate critique summary: {str(e)}")
+
+

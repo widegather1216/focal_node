@@ -278,3 +278,62 @@ class GemmaAdapter(ImageCaptioningPort):
             with self.lock:
                 self.last_used_time = time.time()
                 self.active_requests -= 1
+
+    def generate_critique_summary(self, critiques_list: list[dict]) -> str:
+        with self.lock:
+            self._load_model_locked()
+            self.last_used_time = time.time()
+            self.active_requests += 1
+
+        try:
+            from services.ai_parser import GEMMA_CRITIQUE_SUMMARY_SYSTEM_PROMPT
+
+            critique_blocks = []
+            for idx, item in enumerate(critiques_list, 1):
+                cam_info = f" (카메라: {item.get('camera_model', 'N/A')}, 렌즈: {item.get('lens_model', 'N/A')})" if item.get('camera_model') else ""
+                block = f"[사진 {idx}: {item.get('file_name', '무제')}{cam_info}]\n비평: {item.get('critique', '')}"
+                critique_blocks.append(block)
+
+            combined_critiques = "\n\n".join(critique_blocks)
+            user_prompt = f"다음은 사용자가 수집한 총 {len(critiques_list)}개의 사진 비평 데이터입니다:\n\n{combined_critiques}\n\n위 비평 데이터를 바탕으로 작성자의 사진 촬영 스타일, 주요 강점, 개선점, 촬영 습관 및 종합 조언을 리포트 형태로 작성해주십시오."
+
+            messages = [
+                {
+                    "role": "system",
+                    "content": GEMMA_CRITIQUE_SUMMARY_SYSTEM_PROMPT
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": user_prompt}
+                    ]
+                }
+            ]
+
+            with GPU_LOCK:
+                try:
+                    tokenizer = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
+                    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+
+                    from mlx_vlm import generate
+                    result = generate(self.model, self.processor, prompt=prompt, verbose=False)
+                    output = result.text if hasattr(result, "text") else str(result)
+                except RuntimeError as e:
+                    print(f"[GemmaAdapter] MLX OOM during critique summary: {e}. Recovering...", flush=True)
+                    try:
+                        import mlx.core as mx
+                        mx.clear_cache()
+                    except Exception:
+                        pass
+                    gc.collect()
+                    return "메모리가 부족하여 종합 요약을 완료하지 못했습니다. 불필요한 앱을 종료 후 다시 시도해주세요."
+                except Exception as e:
+                    print(f"[GemmaAdapter] Unexpected critique summary error: {e}", flush=True)
+                    return "비평 종합 요약 생성 중 오류가 발생했습니다."
+
+            return output.strip()
+        finally:
+            with self.lock:
+                self.last_used_time = time.time()
+                self.active_requests -= 1
+

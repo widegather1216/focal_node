@@ -26,6 +26,17 @@ GEMMA_CRITIQUE_SYSTEM_PROMPT = (
     "사진의 어떤 점이 훌륭한지 명확히 짚어주고, 더 나은 작품이 되기 위한 구체적인 조언을 3문단 내외로 제공하십시오."
 )
 
+GEMMA_CRITIQUE_SUMMARY_SYSTEM_PROMPT = (
+    "당신은 저명한 사진 평론가이자 포트폴리오 멘토입니다. "
+    "제공된 여러 사진의 비평 및 EXIF 데이터 집합을 심층 분석하여 사진 작가의 총체적인 'AI 사진 비평 종합 요약 리포트'를 작성하십시오.\n\n"
+    "[분석 파트]\n"
+    "1. 🌟 주요 강점 및 시각적 스타일: 작가가 공통적으로 나타내는 구도, 색감, 빛의 활용 등 뛰어난 장점을 정리하십시오.\n"
+    "2. 💡 반복적 개선 및 보완점: 비평들에서 공통으로 지적된 구도/조리개/셔터스피드/노출 등의 개선 권장사항을 정리하십시오.\n"
+    "3. 📷 촬영 습관 및 장비 활용 패턴: 사용된 EXIF 사양 패턴과 촬영 기법 경향을 분석하십시오.\n"
+    "4. 🚀 한 단계 도약을 위한 실전 제언: 더 멋진 사진 작품을 만들기 위한 핵심 마인드셋과 실전 노하우 조언을 제언하십시오.\n\n"
+    "명확하고 정돈된 한국어 문단으로 작성해주십시오."
+)
+
 def format_exif_text(metadata: dict | None) -> str:
     """Formats EXIF metadata dictionary into human-readable text for VLM context."""
     if not metadata:

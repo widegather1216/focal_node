@@ -14,6 +14,12 @@ export interface CritiqueItem {
   critique_updated_at?: string | null;
 }
 
+export interface CritiqueSummaryResponse {
+  summary: string;
+  total_critiques_analyzed: number;
+  created_at: string;
+}
+
 class ApiClient {
   private get baseUrl(): string {
     const port = useAppStore.getState().apiPort;
@@ -223,6 +229,19 @@ class ApiClient {
       method: 'DELETE'
     });
     if (!res.ok) throw new Error("Failed to delete critique");
+    return res.json();
+  }
+
+  async getCritiqueSummary(photoIds?: string[]): Promise<CritiqueSummaryResponse> {
+    const res = await fetch(`${this.baseUrl}/api/chat/critique-summary`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ photo_ids: photoIds || null })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
+      throw new Error(err.detail || "Failed to generate critique summary");
+    }
     return res.json();
   }
 
