@@ -14,7 +14,7 @@ from PIL import Image
 from core.ports import ImageEmbeddingPort, TextEmbeddingPort, ImageCaptioningPort
 
 # Global lock to prevent MLX and PyTorch MPS from crashing due to concurrent GPU access
-GPU_LOCK = threading.Lock()
+GPU_LOCK = threading.RLock()
 
 class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
     def __init__(self):
@@ -51,7 +51,7 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
                         ).to(self.device)
                         self.processor = AutoProcessor.from_pretrained(self.model_id)
                     print("[SigLIP2Adapter] Model loaded successfully.", flush=True)
-                    self._precompute_taxonomy_embeddings()
+                self._precompute_taxonomy_embeddings()
 
     def _precompute_taxonomy_embeddings(self):
         try:

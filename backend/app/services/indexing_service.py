@@ -350,7 +350,7 @@ def cleanup_zombie_records(db: Session = None):
         except Exception as chroma_err:
             print(f"[Compensating Tx Error] Failed to access/clean ChromaDB: {chroma_err}", flush=True)
             
-        print("[Indexer] Sync completed.", flush=True)
+        print("[Indexer] Zombie cleanup completed.", flush=True)
     finally:
         if close_db:
             db.close()
@@ -458,6 +458,7 @@ async def run_indexing_background(folder_paths: list[str]):
             indexing_status["processed_files"] = 0
             indexing_status["total_files"] = 0
             print("[Indexer] Background indexing completed.", flush=True)
+            print("[Indexer] Sync completed.", flush=True)
             return
             
         semaphore = asyncio.Semaphore(4)
@@ -476,8 +477,17 @@ async def run_indexing_background(folder_paths: list[str]):
                 indexing_status["current_file"] = f_path
                 res = await asyncio.to_thread(index_single_file_sync, f_path)
                 indexing_status["processed_files"] += 1
+                if isinstance(res, dict):
+                    status_str = "Indexed with AI"
+                elif res == "skipped_duplicate_hash":
+                    status_str = "Skipped (Duplicate Hash)"
+                elif res == "skipped":
+                    status_str = "Skipped (Already Indexed)"
+                else:
+                    status_str = f"Status: {res}"
+                    
                 if indexing_status["processed_files"] % 1 == 0 or indexing_status["processed_files"] == indexing_status["total_files"]:
-                    print(f"[Indexing] Progress: {indexing_status['processed_files']}/{indexing_status['total_files']} - {f_path}", flush=True)
+                    print(f"[Indexing] Progress: {indexing_status['processed_files']}/{indexing_status['total_files']} - {f_path} ({status_str})", flush=True)
                 return res
 
         chunk_size = 100
@@ -530,6 +540,7 @@ async def run_indexing_background(folder_paths: list[str]):
         else:
             indexing_status["status"] = "idle"
             print("[Indexer] Background indexing completed.", flush=True)
+            print("[Indexer] Sync completed.", flush=True)
     except Exception as e:
         print(f"[Indexer] Background task error: {e}", flush=True)
         indexing_status["status"] = "error"

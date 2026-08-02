@@ -29,6 +29,7 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
     fetchFolders, 
     removeFolder, 
     setIsIndexing, 
+    setIndexingState,
     setIndexingProgress 
   } = useAppStore();
 
@@ -249,8 +250,12 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
           onClick={async () => {
             if (!apiPort) return;
             try {
+              setIsIndexing(true);
+              setIndexingState('processing');
               await api.syncDatabase();
             } catch (e: any) {
+              setIsIndexing(false);
+              setIndexingState('idle');
               alert(e.message);
             }
           }}
