@@ -45,7 +45,22 @@ async def get_photo_critique(
                 file_path,
                 meta_data
             )
-            critique_text = res_dict.get("critique", "")
+            raw_en = res_dict.get("critique", "")
+            quality_score = res_dict.get("quality_score")
+            
+            # Explicitly unload UniPercept 8B model to free ~16GB Mac RAM before loading Gemma 4!
+            get_unipercept_adapter().unload_model()
+            
+            # Translate raw English VQA output to structured Korean using Gemma 4
+            try:
+                critique_text = await asyncio.to_thread(
+                    get_gemma_adapter().translate_and_format_critique,
+                    raw_en,
+                    quality_score
+                )
+            except Exception as tr_err:
+                print(f"[chat.py] Gemma 4 translation fallback: {tr_err}", flush=True)
+                critique_text = raw_en
         else:
             critique_text = await asyncio.to_thread(
                 get_gemma_adapter().generate_deep_critique, 

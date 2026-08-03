@@ -152,6 +152,26 @@ class UniPerceptAdapter:
                             print("[UniPerceptAdapter] UniPercept Model unloaded from memory.", flush=True)
                             break
 
+    def unload_model(self):
+        """Explicitly unload UniPercept model from memory and clear GPU cache immediately."""
+        with self.lock:
+            with GPU_LOCK:
+                if self.model is not None:
+                    print("[UniPerceptAdapter] Explicitly unloading UniPercept model to free memory for next pipeline...", flush=True)
+                    self.model = None
+                    self.processor = None
+                    self.tokenizer = None
+                    gc.collect()
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                    elif hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+                        try:
+                            torch.mps.empty_cache()
+                        except Exception:
+                            pass
+                    self.timer_active = False
+                    print("[UniPerceptAdapter] UniPercept Model explicitly unloaded from memory.", flush=True)
+
     def generate_unipercept_critique(self, image_path: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         with self.lock:
             self._load_model_locked()
@@ -184,12 +204,8 @@ class UniPerceptAdapter:
                 if parts:
                     exif_desc = f"[EXIF: {', '.join(parts)}]\n"
 
-            prompt_text = (
-                f"{exif_desc}"
-                "Evaluate this image across three domains: 1. Image Aesthetics (IAA), "
-                "2. Image Quality (IQA), and 3. Structure & Texture (ISTA). "
-                "Provide concise reasons for each domain and a final score out of 100."
-            )
+            from services.ai_parser import UNIPERCEPT_CRITIQUE_PROMPT
+            prompt_text = f"{exif_desc}{UNIPERCEPT_CRITIQUE_PROMPT}"
 
             # Build preprocessed 448x448 pixel_values
             transform = build_transform(input_size=448)
@@ -221,16 +237,23 @@ class UniPerceptAdapter:
                     print(f"[UniPerceptAdapter] Inference error during critique generation: {eval_err}", flush=True)
                     critique_text = f"UniPercept 분석 중 오류가 발생했습니다: {str(eval_err)}"
 
-            # Parse final quality score if present in response
+            # Extract all domain scores (IAA, IQA, ISTA) from UniPercept response
             quality_score = None
-            match = re.search(r"(\d{1,3})\s*(?:out of|\/)\s*100", critique_text, re.IGNORECASE)
-            if match:
+            scores_found = re.findall(r"(?:Score|Scores)\s*[:=]\s*(\d{1,3})", critique_text, re.IGNORECASE)
+            if not scores_found:
+                scores_found = re.findall(r"(\d{1,3})\s*(?:out of|/)\s*100", critique_text, re.IGNORECASE)
+
+            valid_scores = []
+            for s in scores_found:
                 try:
-                    parsed = int(match.group(1))
-                    if 0 <= parsed <= 100:
-                        quality_score = parsed
+                    val = int(s)
+                    if 0 <= val <= 100:
+                        valid_scores.append(val)
                 except ValueError:
                     pass
+
+            if valid_scores:
+                quality_score = int(sum(valid_scores) / len(valid_scores))
 
             return {
                 "critique": critique_text.strip(),

@@ -382,3 +382,46 @@ class GemmaAdapter(ImageCaptioningPort):
                 self.last_used_time = time.time()
                 self.active_requests -= 1
 
+    def translate_and_format_critique(self, raw_en_critique: str, quality_score: int = None) -> str:
+        with self.lock:
+            self._load_model_locked()
+            self.last_used_time = time.time()
+            self.active_requests += 1
+
+        try:
+            from services.ai_parser import (
+                GEMMA_TRANSLATE_CRITIQUE_SYSTEM_PROMPT,
+                format_unipercept_translate_user_prompt
+            )
+            user_prompt = format_unipercept_translate_user_prompt(raw_en_critique, quality_score)
+            messages = [
+                {
+                    "role": "system",
+                    "content": GEMMA_TRANSLATE_CRITIQUE_SYSTEM_PROMPT
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": user_prompt}
+                    ]
+                }
+            ]
+
+            with GPU_LOCK:
+                try:
+                    tokenizer = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
+                    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+
+                    from mlx_vlm import generate
+                    result = generate(self.model, self.processor, prompt=prompt, verbose=False)
+                    output = result.text if hasattr(result, "text") else str(result)
+                    return output.strip()
+                except Exception as e:
+                    print(f"[GemmaAdapter] Translation failed ({e}). Returning raw UniPercept critique.", flush=True)
+                    return raw_en_critique
+        finally:
+            with self.lock:
+                self.last_used_time = time.time()
+                self.active_requests -= 1
+
+
