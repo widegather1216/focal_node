@@ -52,3 +52,10 @@ src-tauri/target/
 .env
 .env.*
 !.env.example
+
+# Large Archives & Model Weights
+*.zip
+focal_node.zip
+checkpoints/
+UniPercept_model*/
+

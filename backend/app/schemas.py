@@ -101,10 +101,12 @@ class SimilarSearchRequest(BaseModel):
 
 class CritiqueRequest(BaseModel):
     photo_id: str
+    engine: Optional[str] = "unipercept"
 
 class CritiqueResponse(BaseModel):
     critique: str
     critique_updated_at: Optional[str] = None
+    engine_used: Optional[str] = "unipercept"
 
 class CritiqueItemResponse(BaseModel):
     photo_id: str

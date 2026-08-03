@@ -38,12 +38,20 @@ async def get_photo_critique(
     # DB session is closed here, connection is returned to pool BEFORE the long MLX inference.
     
     try:
-        # We run the MLX inference in a background thread to prevent event loop blocking
-        critique_text = await asyncio.to_thread(
-            get_gemma_adapter().generate_deep_critique, 
-            file_path, 
-            meta_data
-        )
+        if payload.engine == "unipercept":
+            from services.unipercept_adapter import get_unipercept_adapter
+            res_dict = await asyncio.to_thread(
+                get_unipercept_adapter().generate_unipercept_critique,
+                file_path,
+                meta_data
+            )
+            critique_text = res_dict.get("critique", "")
+        else:
+            critique_text = await asyncio.to_thread(
+                get_gemma_adapter().generate_deep_critique, 
+                file_path, 
+                meta_data
+            )
         
         now_utc = models.utcnow()
         with SessionLocal() as db:
@@ -60,7 +68,11 @@ async def get_photo_critique(
                 ai.critique_updated_at = now_utc
             db.commit()
 
-        return {"critique": critique_text, "critique_updated_at": now_utc.isoformat()}
+        return {
+            "critique": critique_text,
+            "critique_updated_at": now_utc.isoformat(),
+            "engine_used": payload.engine
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate critique: {str(e)}")
 
