@@ -1,6 +1,6 @@
 # [Doc 4] 에이전트 구현 제약사항 명세 (Implementation Constraints)
 
-데스크탑 앱 환경에서 발생하기 쉬운 오동작(포트 충돌, DB 데드락, 메모리 누수, UI 프리징)을 차단하기 위한 필수 구현 규격입니다. 백엔드 및 프론트엔드 연동 시 아래 사항들을 반드시 준수해야 합니다.
+데스크탑 앱 환경에서 발생하기 쉬운 오동작(포트 충돌, DB 데드락, 메모리 누수, UI 프리징, 좀비 프로세스)을 차단하기 위한 필수 구현 규격입니다. 백엔드 및 프론트엔드 개발 시 아래 사항들을 반드시 준수해야 합니다.
 
 ---
 
@@ -14,7 +14,7 @@
 * uvicorn 구동 성공 직후, 할당받은 실제 포트 번호를 stdout(표준 출력)으로 특정 포맷팅(`PORT: {port_number}`)을 적용하여 단 한번 출력해야 합니다.
   * 예: `[Sidecar] PORT: 54932`
 
-### 1.2. Tauri (`main.rs`) 및 프론트엔드 기동 규칙
+### 1.2. Tauri (`lib.rs`) 및 프론트엔드 기동 규칙
 * Sidecar 프로세스를 생성 및 모니터링할 때, 사이드카의 stdout 스트림을 실시간 감시합니다.
 * 위 특정 포맷팅(`PORT: {port_number}`)을 정규식 등으로 파싱하여 포트 번호를 동적으로 획득합니다.
 * **경쟁 상태(Race Condition) 방지:** Tauri가 백엔드를 구동하는 속도와 프론트엔드 React가 기동되어 첫 API 조회를 날리는 시점 간의 경쟁 상태를 방지해야 합니다. React 앱은 로드 직후 즉시 API를 호출하지 않고, Tauri의 Custom Command인 `invoke("get_api_port")`를 호출하여 백엔드가 정상 기동되어 포트가 반환될 때까지 대기(Await)한 후, 해당 포트 기반으로 Axios/Fetch 클라이언트를 설정 및 첫 조회를 시작하도록 기동 시퀀스를 통제해야 합니다.
@@ -31,10 +31,10 @@
   * **`PRAGMA foreign_keys=ON;`**: SQLite는 기본적으로 외래 키 제약 조건 검사가 비활성화되어 있으므로 수동으로 활성화하여 무결성을 보호합니다.
 
 ```python
-# [예시 구현]
+# [구현 코드 지침]
 from sqlalchemy import create_engine, event
 
-engine = create_engine("sqlite:///focal_node.db")
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 
 @event.listens_for(engine, "connect")
 def set_sqlite_pragma(dbapi_connection, connection_record):
@@ -46,21 +46,17 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
 
 ### 2.2. SQLite와 ChromaDB의 데이터 정합성 보장 (보상 트랜잭션)
 * ChromaDB는 ACID 트랜잭션 및 롤백이 불가능합니다.
-* 인덱싱 파이프라인에서 두 DB 간의 적재 상태를 동기화하기 위해, **ChromaDB upsert를 먼저 시도하고 SQLite commit을 수행**해야 합니다.
-* 만약 SQLite `commit` 과정에서 장애가 발생하여 SQLite 트랜잭션이 롤백되는 경우, `except` 블록에서 ChromaDB에 이미 upsert된 데이터 ID를 수동으로 `delete`하여 동기화 상태를 강제 정비해야 합니다.
+* 인덱싱 파이프라인 및 `cleaner.py` 삭제 로직에서 두 DB 간의 적재 상태를 동기화하기 위해, **ChromaDB upsert를 먼저 시도하고 SQLite commit을 수행**해야 합니다.
+* 만약 SQLite `commit` 과정에서 장애가 발생하여 SQLite 트랜잭션이 롤백되는 경우, `except` 블록에서 `VectorRepository.delete`를 통해 ChromaDB에 이미 upsert된 데이터 ID를 수동으로 `delete`하여 동기화 상태를 강제 정비해야 합니다.
 
 ```python
-# [예시 구현]
+# [구현 코드 지침]
 try:
-    # 1. SQLite 세션 생성 후 insert문 예약
-    # 2. ChromaDB 벡터 upsert
-    chroma_collection.upsert(ids=[image_id], embeddings=[vector], metadatas=[meta])
-    # 3. SQLite 최종 커밋
-    db_session.commit()
+    vector_repo.upsert(ids=[image_id], embeddings=[vector], metadatas=[meta])
+    db.commit()
 except Exception as e:
-    db_session.rollback()
-    # 보상 트랜잭션: ChromaDB 데이터 삭제
-    chroma_collection.delete(ids=[image_id])
+    db.rollback()
+    vector_repo.delete([image_id]) # 보상 트랜잭션
     raise e
 ```
 
@@ -75,7 +71,6 @@ except Exception as e:
 * **썸네일 캐시 예외:** 단, 갤러리 탐색 시 매번 무거운 RAW 파일 디코딩을 시도하면 심각한 CPU 점유와 UI 렉을 유발합니다. 썸네일 엔드포인트 `/api/photos/{id}/thumbnail`은 **정식 썸네일 캐시 디렉토리**를 거쳐야 합니다.
   * 인덱싱 시점에 1회 썸네일을 생성하여 캐시 폴더에 저장하고, 썸네일 조회 시 캐시 폴더에서 파일을 즉시 서빙합니다.
   * 캐시 미스(Cache Miss)가 발생한 경우에 한해, 메모리 상에서 `rawpy`로 원본 RAW를 파싱 후 크기를 줄여 응답하고 동시에 캐시 폴더에 쓰기를 실행합니다.
-  * 썸네일 캐시 파일은 지정된 어플리케이션 숨김 캐시 폴더(예: `~/.config/focal_node/cache/`)에만 저장되어 임시 파일 난립을 예방합니다.
 
 ---
 
@@ -84,53 +79,49 @@ except Exception as e:
 FastAPI는 비동기 싱글 스레드 이벤트 루프를 사용합니다. 이미지 전처리, 디코딩, SigLIP 2 및 Gemma 4 E4B-it 로드와 추론(MLX) 로직은 리소스를 극도로 점유하는 **대표적인 CPU Bound(연산 집약적) 작업**입니다.
 
 ### 4.1. 비차단(Non-blocking) 비동기 처리
-* FastAPI 엔드포인트(`async def`) 내에서 MLX 추론을 직접 호출하면 이벤트 루프 자체가 통째로 멈추게 되어 다른 모든 HTTP 요청(예: 현재 인덱싱 상태 조회, 썸네일 로딩 등)이 일시정지(Freeze)됩니다.
-* 따라서 이미지 분석 서비스(`indexing_service.py`) 등 무거운 연산을 처리하는 함수를 비동기 루프에서 호출할 때는 반드시 **`asyncio.to_thread()`**를 사용하여 백엔드 내부의 별도 워커(Worker) 스레드 풀에서 동작하도록 격리해야 합니다.
-* 더 무거운 멀티프로세싱 처리가 필요할 시 `ProcessPoolExecutor`를 활용할 수도 있습니다.
+* 이미지 분석 및 추론 함수를 비동기 루프에서 호출할 때는 반드시 **`asyncio.to_thread()`**를 사용하여 백엔드 내부의 별도 워커(Worker) 스레드 풀에서 동작하도록 격리해야 합니다.
 
 ```python
-# [예시 구현]
+# [구현 코드 지침]
 import asyncio
 
-async def handle_inference_endpoint(image_id: str):
-    # 이벤트 루프를 차단하지 않고 별도 스레드에서 무거운 AI 연산 수행
-    analysis_result = await asyncio.to_thread(run_cpu_heavy_mlx_inference, image_id)
-    return analysis_result
+async def index_file_endpoint(file_path: str):
+    # 이벤트 루프 차단 없이 스레드 풀에서 무거운 AI 연산 수행
+    result = await asyncio.to_thread(worker.index_single_file_sync, file_path)
+    return result
 ```
 
-### 4.2. Gemma 4 E4B-it 모델 Keep-alive 버퍼 관리
-* Gemma 4 E4B-it 모델은 용량이 커 로드(RAM/VRAM 적재)하는 데에 수 초의 딜레이가 발생합니다.
-* 인덱싱 프로세스 내에서 이미지가 큐에 계속 들어올 때 매번 로드/해제를 반복하지 않도록, 작업이 끝난 후에도 **60초간 대기하는 타이머 기반 Keep-alive 전략**을 적용해야 합니다.
-* 타이머가 만료되기 전 새로운 인덱싱 요청이 들어오면 가중치가 로드된 상태에서 즉시 추론을 계속하고, 60초간 무풍 상태(Idle)가 지속될 때만 가중치 데이터를 메모리에서 해제(Garbage Collection 실행)해야 합니다.
+### 4.2. Gemma 4 및 UniPercept 8B 메모리 관리 규칙
+* Gemma 4 E4B-it: **60초간 대기하는 타이머 기반 Keep-alive 전략**을 적용합니다.
+* UniPercept 8B: 16GB VRAM 점유를 최소화하기 위해 사진 비평 생성이 완료된 직후 즉시 `UniPerceptAdapter.unload_model()` (`mx.clear_cache()`)을 실행해 메모리를 반환해야 합니다.
+
+### 4.3. 비동기 인덱싱 동시성 세마포어 제약 [NEW]
+* 백그라운드 인덱싱 조율 워커(`worker.py`)에서 수천 장의 사진을 비동기 처리할 때, 시스템 메모리/VRAM OOM을 방지하기 위해 **최대 4개 동시 작업 세마포어(`asyncio.Semaphore(4)`)** 제약을 강제합니다.
 
 ---
 
 ## 5. 프로덕션 패키징 및 백엔드 부팅 속도 최적화 규격
 
-실사용 배포(Production Packaging) 환경에서 발생할 수 있는 초기 구동 지연(Cold Start Bottleneck)을 예방하기 위한 패키징 및 로딩 지침입니다.
-
-### 5.1. PyInstaller 패키징 모드 규격 (`--onedir` 권장)
-* **단일 바이너리(`--onefile`) 지양:** PyInstaller 단일 파일 빌드는 실행 시마다 수 GB에 달하는 Python 런타임, PyTorch/MLX/Transformers/ChromaDB C++ 바인딩을 OS 임시 폴더(`~/$TMPDIR/_MEIxxxxxx`)에 매번 새로 압축 해제합니다.
-* **디렉터리 빌드(`--onedir`) 적용:** 생산성 및 빠른 부팅을 위해 Sidecar 바이너리는 번들 폴더 형태로 빌드하여 앱 설치 시점에 이미 디렉터리에 추출된 상태를 유지하도록 구성합니다.
-* **macOS Gatekeeper 검사 간소화:** 임시 폴더 압축 해제 제거 및 정식 Developer ID 서명/공증(Notarization)을 통해 macOS `syspolicyd`의 실시간 악성코드 정적 검사 오버헤드를 건너뛰도록 권장합니다.
-
-### 5.2. Heavy 모듈 지연 임포트 (Lazy Import) 지침
-* `main.py` 및 라우터 모듈 상단에서 `torch`, `mlx`, `chromadb`, `transformers` 등 heavy 라이브러리를 Eager Import하면 FastAPI가 OS 유휴 포트를 할당받고 `[Sidecar] PORT: {port}`를 출력하기까지 수 초 이상의 블로킹이 초래됩니다.
-* 백엔드는 가급적 빠르게 포트를 생성하여 Tauri 프론트엔드에 통신 준비 완료 상태를 알리고, heavy 모듈은 백그라운드 스레드 또는 실제 API 요청 수신 시점에 Lazy Import로 로드하도록 통제합니다.
+* **PyInstaller 디렉터리 빌드(`--onedir`) 권장:** 부팅 속도 최적화 및 macOS Gatekeeper 서명 검사 간소화를 위해 디렉터리 모드로 패키징합니다.
+* **Heavy 모듈 지연 임포트 (Lazy Import):** 백엔드가 유휴 포트를 할당받아 `[Sidecar] PORT: {port}`를 출력할 때까지 Eager Import로 인한 지연을 최소화합니다.
 
 ---
 
 ## 6. 개발 vs 프로덕션 데이터 환경 격리 및 스키마 마이그레이션 제약
 
-개발 테스트 데이터와 사용자 실사용 데이터 간의 오염 및 스키마 변경 시 발생할 수 있는 데이터 손실을 체계적으로 방지합니다.
+* `config.py`에서 `sys.frozen` 여부에 따라 개발 환경(`~/.config/focal_node_dev`)과 실사용 환경(`~/.config/focal_node`)의 DB/캐시 경로를 엄격히 구분합니다.
+* SQLite 스키마 변경 시 기존 사용자 인덱스가 날아가지 않도록 `database.py`의 `run_migrations()`를 통한 Defensive `ALTER TABLE` 구문을 적용합니다.
 
-### 6.1. 데이터 경로 완전 분리 (`IS_PROD`)
-* `config.py`에서 `sys.frozen` 여부에 따라 저장 디렉터리를 엄격히 구분합니다.
-  * **개발 환경 (`sys.frozen == False`)**: `~/.config/focal_node_dev`
-  * **실사용 패키징 환경 (`sys.frozen == True`)**: `~/.config/focal_node`
-* 개발 과정에서의 로컬 인덱싱 테스트가 실사용 데이터에 영향을 주지 않도록 데이터 격리를 보장합니다.
+---
 
-### 6.2. ChromaDB Self-Healing 대응 및 스키마 마이그레이션
-* **ChromaDB Self-Healing (손상 백업 로직):** 라이브러리 스키마 변경이나 데이터 불일치 예외 발생 시 `chroma.py`가 이전 벡터 DB 폴더를 `chroma_corrupted_YYYYMMDDHHMMSS`로 백업한 후 자동 재생성합니다.
-* **SQLite 스키마 안전 업데이트 (Alembic / Defensive ALTER):** 정식 배포 버전 업데이트 시 기존 사용자 인덱스가 날아가지 않도록, 단순 `Base.metadata.create_all()`에 의존하기보다 안전한 Column 추가(Defensive `ALTER TABLE`) 방식이나 `Alembic` 기반 DB 마이그레이션 전략을 적용해야 합니다.
+## 7. 백엔드 3계층 아키텍처 및 레포지토리 캡슐화 제약
 
+* **API 라우터 계층 제약:** 라우터(`api/*.py`)에서 ORM 직렬 쿼리나 ChromaDB collection 조작을 직접 수행하지 말고, 반드시 `PhotoRepository`, `VectorRepository`, `SearchService`, `ChatService`에 비즈니스 및 데이터 액세스를 위임해야 합니다.
+* **ChromaDB 접근 통일:** ChromaDB 임베딩 조작 시 개별 raw collection 호출을 금지하고 `VectorRepository` 메쏘드를 통해서만 조작하여 캡슐화를 유지해야 합니다.
+
+---
+
+## 8. 사이드카 부모 프로세스 데드락 감시 (Parent Watcher) [NEW]
+
+* Tauri 데스크탑 앱이 사용자에 의해 종료되거나 강제 종료될 때 자식 프로세스로 구동 중인 Python 백엔드가 OS에 좀비 프로세스로 남지 않도록 해야 합니다.
+* `utils/process.py`에 `watch_parent` 감시 스레드를 구동하여 부모 프로세스(ppid)의 생존 여부(ppid == 1 인지)를 체크하고, 부모 프로세스 사망 감지 시 Python 프로세스를 `sys.exit(0)`으로 즉시 안전 자진 종료하도록 강제합니다.

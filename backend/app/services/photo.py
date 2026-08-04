@@ -197,8 +197,9 @@ def _save_photos_atomic_internal(db: Session, items_data: list[dict]) -> list[DB
     chroma_upserted = False
     if chroma_ids:
         try:
-            collection = get_chroma_collection()
-            collection.upsert(ids=chroma_ids, embeddings=chroma_embeddings, metadatas=chroma_metadatas)
+            from repositories.vector_repository import VectorRepository
+            vector_repo = VectorRepository()
+            vector_repo.upsert(ids=chroma_ids, embeddings=chroma_embeddings, metadatas=chroma_metadatas)
             chroma_upserted = True
         except Exception as e:
             db.rollback()
@@ -213,11 +214,12 @@ def _save_photos_atomic_internal(db: Session, items_data: list[dict]) -> list[DB
         db.rollback()
         if chroma_upserted:
             try:
-                collection = get_chroma_collection()
-                collection.delete(ids=chroma_ids)
+                from repositories.vector_repository import VectorRepository
+                VectorRepository().delete(ids=chroma_ids)
             except Exception as chroma_err:
                 print(f"[Compensating Tx Error] ChromaDB delete failed after SQLite rollback: {chroma_err}")
         raise e
+
 
 def register_photo_atomic(
     db: Session,

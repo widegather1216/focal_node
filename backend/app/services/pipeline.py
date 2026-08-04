@@ -25,12 +25,10 @@ class PipelineStep(ABC):
 
 class HashStep(PipelineStep):
     def execute(self, ctx: PipelineContext) -> bool:
-        h = hashlib.sha256()
-        with open(ctx.file_path, "rb") as f:
-            for chunk in iter(lambda: f.read(8192), b""):
-                h.update(chunk)
-        ctx.image_id = h.hexdigest()
+        from services.indexer.scanner import calculate_sha256
+        ctx.image_id = calculate_sha256(ctx.file_path)
         return True
+
 
 class ThumbnailStep(PipelineStep):
     def execute(self, ctx: PipelineContext) -> bool:

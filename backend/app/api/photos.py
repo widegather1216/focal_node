@@ -4,13 +4,14 @@ import shutil
 import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response, StreamingResponse
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 from typing import List, Optional
 
 import models
 import services.photo as photo_service
 from database import get_db
 import schemas
+from repositories.photo_repository import PhotoRepository
 
 MAX_CONCURRENT_DECODES = 3
 decode_semaphore = asyncio.Semaphore(MAX_CONCURRENT_DECODES)
@@ -42,33 +43,26 @@ def get_photos(
     db: Session = Depends(get_db)
 ):
     """
-    Returns list of photos, supporting pagination and directory filtering.
+    Returns list of photos, supporting pagination and directory filtering via PhotoRepository.
     """
-    query = db.query(models.Image).options(joinedload(models.Image.metadata_rel)).outerjoin(models.ImageMetadata)
-    if parent_dir:
-        query = query.filter(models.Image.parent_dir == parent_dir)
-        
-    query = query.order_by(models.ImageMetadata.capture_date.desc().nullslast(), models.Image.id)
-    images = query.offset(offset).limit(limit).all()
-    
-    result = [img.to_list_response_dict() for img in images]
-    return result
+    photo_repo = PhotoRepository(db)
+    images = photo_repo.list_photos(limit=limit, offset=offset, parent_dir=parent_dir)
+    return [img.to_list_response_dict() for img in images]
 
 @router.get("/{id}/thumbnail")
 async def get_photo_thumbnail(id: str, db: Session = Depends(get_db)):
     """
-    Serves the cached (or dynamically generated/cached) thumbnail for a photo.
+    Serves cached (or dynamically generated) thumbnail for a photo.
     """
-    db_image = db.query(models.Image).filter(models.Image.id == id).first()
+    photo_repo = PhotoRepository(db)
+    db_image = photo_repo.get_by_id(id)
     if not db_image:
         raise HTTPException(status_code=404, detail="Photo not found")
         
     try:
-        # 1. Check cache first to avoid bottlenecking on semaphore
         cache_path = photo_service.get_thumbnail_path(id)
         if await asyncio.to_thread(os.path.exists, cache_path):
             try:
-                # Fast path: read from cache via to_thread to prevent event loop blocking
                 def _read_cache():
                     with open(cache_path, "rb") as f:
                         return f.read()
@@ -77,7 +71,6 @@ async def get_photo_thumbnail(id: str, db: Session = Depends(get_db)):
             except Exception:
                 pass
                 
-        # 2. Cache miss: generate thumbnail with bounded concurrency (OOM protection)
         async with decode_semaphore:
             thumb_bytes = await asyncio.to_thread(
                 photo_service.generate_and_cache_thumbnail, 
@@ -95,7 +88,8 @@ async def get_photo_original(id: str, db: Session = Depends(get_db)):
     """
     Serves the original image. For RAW formats, decodes dynamically to sRGB JPEG.
     """
-    db_image = db.query(models.Image).filter(models.Image.id == id).first()
+    photo_repo = PhotoRepository(db)
+    db_image = photo_repo.get_by_id(id)
     if not db_image:
         raise HTTPException(status_code=404, detail="Photo not found")
         
@@ -118,12 +112,10 @@ async def get_photo_original(id: str, db: Session = Depends(get_db)):
 @router.get("/{id}", response_model=schemas.PhotoDetailResponse)
 def get_photo_detail(id: str, db: Session = Depends(get_db)):
     """
-    Fetches full metadata and AI analysis details for a single photo.
+    Fetches full metadata and AI analysis details for a single photo via PhotoRepository.
     """
-    img = db.query(models.Image).options(
-        joinedload(models.Image.metadata_rel),
-        joinedload(models.Image.ai_analysis_rel)
-    ).filter(models.Image.id == id).first()
+    photo_repo = PhotoRepository(db)
+    img = photo_repo.get_by_id(id)
     if not img:
         raise HTTPException(status_code=404, detail="Photo not found")
         
@@ -138,13 +130,13 @@ def patch_photo_metadata(
     """
     Updates custom tags and caption editing state for a photo.
     """
-    db_image = db.query(models.Image).filter(models.Image.id == id).first()
+    photo_repo = PhotoRepository(db)
+    db_image = photo_repo.get_by_id(id)
     if not db_image:
         raise HTTPException(status_code=404, detail="Photo not found")
         
     try:
         updated_ai = photo_service.update_photo_metadata(db, id, payload.caption, payload.tags)
-        
         tags_list, aesthetic_tags_list = _parse_ai_tags(updated_ai)
                 
         return {
@@ -161,12 +153,9 @@ def patch_photo_metadata(
         raise HTTPException(status_code=500, detail=f"Failed to update metadata: {str(e)}")
 
 @router.post("/export")
-async def export_photos(
-    payload: schemas.ExportRequest
-):
+async def export_photos(payload: schemas.ExportRequest):
     """
-    Exports selected photos to a destination folder via streaming to prevent timeouts.
-    Frees database connection before starting the long copy streaming process.
+    Exports selected photos to a destination folder via streaming.
     """
     dest_folder = payload.destination_folder
     
@@ -175,7 +164,9 @@ async def export_photos(
         
     from database import SessionLocal
     with SessionLocal() as db:
-        images = db.query(models.Image).filter(models.Image.id.in_(payload.photo_ids)).all()
+        photo_repo = PhotoRepository(db)
+        images = [photo_repo.get_by_id(pid) for pid in payload.photo_ids]
+        images = [img for img in images if img is not None]
         if not images:
             raise HTTPException(status_code=404, detail="No photos found to export")
         export_items = [{"file_path": img.file_path, "file_name": img.file_name} for img in images]
@@ -222,7 +213,7 @@ from services.indexing_service import reindex_single_photo_inplace
 @router.post("/{id}/reindex", response_model=schemas.PhotoDetailResponse)
 async def reindex_photo(id: str):
     """
-    Forces a re-indexing of a single photo (e.g. if previous AI analysis failed).
+    Forces a re-indexing of a single photo.
     """
     try:
         updated_data = await reindex_single_photo_inplace(id)
@@ -237,15 +228,11 @@ async def reindex_photo(id: str):
 @router.post("/{id}/favorite", response_model=schemas.FavoriteToggleResponse)
 def toggle_favorite(id: str, db: Session = Depends(get_db)):
     """
-    Toggles the favorite status of a photo.
+    Toggles the favorite status of a photo via PhotoRepository.
     """
-    db_image = db.query(models.Image).filter(models.Image.id == id).first()
-    if not db_image:
+    photo_repo = PhotoRepository(db)
+    updated_image = photo_repo.toggle_favorite(id)
+    if not updated_image:
         raise HTTPException(status_code=404, detail="Photo not found")
-        
-    db_image.is_favorite = not db_image.is_favorite
-    db.commit()
-    db.refresh(db_image)
     
-    return {"id": db_image.id, "is_favorite": db_image.is_favorite}
-
+    return {"id": updated_image.id, "is_favorite": updated_image.is_favorite}

@@ -17,13 +17,14 @@ def get_folders(db: Session = Depends(get_db)):
 import os
 
 @router.delete("")
-def unindex_folder(path: str):
+def unindex_folder(path: str, db: Session = Depends(get_db)):
     try:
         try:
             norm_path = os.path.realpath(path)
         except Exception:
             norm_path = os.path.normpath(path)
-        remove_folder_data(norm_path)
+        remove_folder_data(norm_path, db=db)
         return {"message": f"Folder {path} and associated images removed."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+

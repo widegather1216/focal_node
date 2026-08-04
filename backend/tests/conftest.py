@@ -63,9 +63,11 @@ def client(db_session):
 
 @pytest.fixture(autouse=True)
 def mock_ai_adapters(monkeypatch):
-    # Mock SessionLocal for modules that import it
+    # Mock SessionLocal & engine for modules that import it
     monkeypatch.setattr("services.indexing_service.SessionLocal", TestingSessionLocal)
     monkeypatch.setattr("database.SessionLocal", TestingSessionLocal)
+    monkeypatch.setattr("database.engine", engine)
+
     
     # Also mock thumbnail generation so it doesn't write to disk
     """
