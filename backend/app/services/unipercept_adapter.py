@@ -272,6 +272,101 @@ class UniPerceptAdapter:
                 self.last_used_time = time.time()
                 self.active_requests -= 1
 
+    def generate_full_ensemble_critique(
+        self,
+        image_path: str,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Executes 4 prompt variations (Comprehensive, IAA, IQA, ISTA) and computes:
+        - IAA_bar = (IAA_spec + IAA_comp) / 2
+        - IQA_bar = (IQA_spec + IQA_comp) / 2
+        - ISTA_bar = (ISTA_spec + ISTA_comp) / 2
+        - S_analysis = round(0.4 * IAA_bar + 0.3 * IQA_bar + 0.3 * ISTA_bar, 1)
+        - S_final_overall = min(100, max(0, round((S_comp_direct + S_analysis) / 2)))
+        """
+        from services.ai_parser import (
+            UNIPERCEPT_CRITIQUE_PROMPT,
+            UNIPERCEPT_IAA_PROMPT,
+            UNIPERCEPT_IQA_PROMPT,
+            UNIPERCEPT_ISTA_PROMPT
+        )
+
+        res_comp = self.generate_unipercept_critique(image_path, metadata, custom_prompt=UNIPERCEPT_CRITIQUE_PROMPT)
+        res_iaa = self.generate_unipercept_critique(image_path, metadata, custom_prompt=UNIPERCEPT_IAA_PROMPT)
+        res_iqa = self.generate_unipercept_critique(image_path, metadata, custom_prompt=UNIPERCEPT_IQA_PROMPT)
+        res_ista = self.generate_unipercept_critique(image_path, metadata, custom_prompt=UNIPERCEPT_ISTA_PROMPT)
+
+        text_comp = res_comp.get("critique", "")
+        text_iaa = res_iaa.get("critique", "")
+        text_iqa = res_iqa.get("critique", "")
+        text_ista = res_ista.get("critique", "")
+
+        def _extract_score(text: str, prefixes: list[str]) -> Optional[int]:
+            if not text:
+                return None
+            for pfx in prefixes:
+                pattern = rf"(?:{pfx})\s*[:=]\s*(\d{{1,3}})"
+                m = re.search(pattern, text, re.IGNORECASE)
+                if m:
+                    val = int(m.group(1))
+                    if 0 <= val <= 100:
+                        return val
+            scores_found = re.findall(r"(\d{1,3})\s*(?:out of|/)\s*100", text, re.IGNORECASE)
+            for s in scores_found:
+                val = int(s)
+                if 0 <= val <= 100:
+                    return val
+            return None
+
+        # Extract direct and component scores
+        s_comp_direct = _extract_score(text_comp, ["Overall Score", "Score", "Final Score"]) or res_comp.get("quality_score") or 70
+        s_iaa_comp = _extract_score(text_comp, ["IAA Score", "Aesthetic Score"]) or s_comp_direct
+        s_iqa_comp = _extract_score(text_comp, ["IQA Score", "Quality Score"]) or s_comp_direct
+        s_ista_comp = _extract_score(text_comp, ["ISTA Score", "Structure Score"]) or s_comp_direct
+
+        s_iaa_spec = _extract_score(text_iaa, ["Aesthetic Score", "IAA Score", "Score"]) or s_iaa_comp
+        s_iqa_spec = _extract_score(text_iqa, ["Quality Score", "IQA Score", "Score"]) or s_iqa_comp
+        s_ista_spec = _extract_score(text_ista, ["Structure Score", "ISTA Score", "Score"]) or s_ista_comp
+
+        # Calculate cross-ensemble means
+        final_iaa = round((s_iaa_spec + s_iaa_comp) / 2.0, 1)
+        final_iqa = round((s_iqa_spec + s_iqa_comp) / 2.0, 1)
+        final_ista = round((s_ista_spec + s_ista_comp) / 2.0, 1)
+
+        # Apply Aesthetic-Weighted Fusion (IAA: 0.4, IQA: 0.3, ISTA: 0.3)
+        s_analysis = round((0.4 * final_iaa) + (0.3 * final_iqa) + (0.3 * final_ista), 1)
+
+        # Global-Local Dual Fusion
+        s_raw = (s_comp_direct + s_analysis) / 2.0
+        final_overall = min(100, max(0, round(s_raw)))
+
+        scores_summary = {
+            "overall": final_overall,
+            "iaa": final_iaa,
+            "iqa": final_iqa,
+            "ista": final_ista,
+            "comp_direct": s_comp_direct,
+            "weighted_analysis": s_analysis
+        }
+
+        combined_critique_en = (
+            f"### 종합 평가 (Comprehensive Overview)\n{text_comp}\n\n"
+            f"### 미학 및 구도 (Aesthetics Detail)\n{text_iaa}\n\n"
+            f"### 화질 및 기술 (Quality Detail)\n{text_iqa}\n\n"
+            f"### 구조 및 질감 (Structure Detail)\n{text_ista}"
+        )
+
+        return {
+            "critique": combined_critique_en,
+            "quality_score": final_overall,
+            "scores": scores_summary,
+            "text_comp": text_comp,
+            "text_iaa": text_iaa,
+            "text_iqa": text_iqa,
+            "text_ista": text_ista
+        }
+
 _unipercept_adapter_instance = None
 _unipercept_lock = threading.Lock()
 

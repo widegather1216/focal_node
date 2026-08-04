@@ -46,18 +46,60 @@ GEMMA_TRANSLATE_CRITIQUE_SYSTEM_PROMPT = (
 )
 
 UNIPERCEPT_CRITIQUE_PROMPT = (
-    "Evaluate this image across three domains: 1. Image Aesthetics (IAA), "
+    "Evaluate this image comprehensively across three domains: 1. Image Aesthetics (IAA), "
     "2. Image Quality (IQA), and 3. Structure & Texture (ISTA). "
-    "Provide concise reasons for each domain and a final score out of 100."
+    "Provide concise technical reasons for each domain. "
+    "At the very end, strictly output scores in format: "
+    "'Overall Score: XX/100', 'IAA Score: XX/100', 'IQA Score: XX/100', 'ISTA Score: XX/100'."
 )
 
-def format_unipercept_translate_user_prompt(raw_en_critique: str, quality_score: int | None = None) -> str:
-    score_info = f"[품질/미학 점수: {quality_score}점 / 100점]\n" if quality_score is not None else ""
+UNIPERCEPT_IAA_PROMPT = (
+    "Focus deeply on Image Aesthetics (IAA). "
+    "Analyze composition, lighting, color harmony, subject placement, and visual impact. "
+    "Detail how aesthetic choices elevate or weaken the photo. "
+    "At the very end, strictly output 'Aesthetic Score: XX/100'."
+)
+
+UNIPERCEPT_IQA_PROMPT = (
+    "Focus strictly on Image Quality (IQA). "
+    "Evaluate technical sharpness, sensor noise, exposure balance, focus accuracy, chromatic aberration, and dynamic range. "
+    "Detail technical artifacts. "
+    "At the very end, strictly output 'Quality Score: XX/100'."
+)
+
+UNIPERCEPT_ISTA_PROMPT = (
+    "Focus intently on Structure & Texture (ISTA). "
+    "Inspect fine detail resolution, micro-contrast, edge definitions, surface texture rendering, and tonal gradations. "
+    "Detail textural fidelity. "
+    "At the very end, strictly output 'Structure Score: XX/100'."
+)
+
+def format_unipercept_translate_user_prompt(
+    raw_en_critique: str,
+    scores_dict: dict | None = None,
+    quality_score: int | None = None
+) -> str:
+    score_info = ""
+    if scores_dict and isinstance(scores_dict, dict):
+        overall = scores_dict.get("overall", quality_score)
+        iaa = scores_dict.get("iaa")
+        iqa = scores_dict.get("iqa")
+        ista = scores_dict.get("ista")
+        score_info = (
+            f"[📊 4대 앙상블 비평 스코어보드]\n"
+            f"- 최종 종합 평점: {overall}점 / 100점\n"
+            f"- 🎨 미학 & 구도 (IAA): {iaa}점\n"
+            f"- 🔍 화질 & 기술 (IQA): {iqa}점\n"
+            f"- 🧱 구조 & 질감 (ISTA): {ista}점\n\n"
+        )
+    elif quality_score is not None:
+        score_info = f"[품질/미학 점수: {quality_score}점 / 100점]\n\n"
+
     return (
-        f"다음은 시각 분석 모델(UniPercept)이 생성한 사진의 기술적 영문 비평입니다:\n\n"
+        f"다음은 시각 분석 모델(UniPercept)이 4개 프롬프트 연쇄 앙상블로 생성한 사진의 기술적 영문 비평 데이터입니다:\n\n"
         f"{score_info}{raw_en_critique}\n\n"
         "위 영문 분석 내용을 전문 사진작가의 품격 있고 다정한 어조로 한국어로 번역하고 다음 구체적인 5개 영역으로 정돈하여 불렛포인트로 리포트를 작성해주십시오:\n"
-        "1. 📊 종합 품질 & 미학 점수\n"
+        "1. 📊 종합 품질 & 미학 점수 (상단 스코어보드 수치 반영)\n"
         "2. ✨ 미학 및 구도 (IAA)\n"
         "3. 🔍 화질 및 기술적 품질 (IQA)\n"
         "4. 🎨 구조 및 질감 (ISTA)\n"

@@ -30,11 +30,12 @@ class ChatService:
         if payload.engine == "unipercept":
             from services.unipercept_adapter import get_unipercept_adapter
             res_dict = await asyncio.to_thread(
-                get_unipercept_adapter().generate_unipercept_critique,
+                get_unipercept_adapter().generate_full_ensemble_critique,
                 file_path,
                 meta_data
             )
             raw_en = res_dict.get("critique", "")
+            scores_dict = res_dict.get("scores", {})
             quality_score = res_dict.get("quality_score")
             
             get_unipercept_adapter().unload_model()
@@ -45,6 +46,15 @@ class ChatService:
                     raw_en,
                     quality_score
                 )
+                if scores_dict and not critique_text.startswith("[📊"):
+                    sb_header = (
+                        f"[📊 4대 앙상블 비평 스코어보드]\n"
+                        f"- 최종 종합 평점: {scores_dict.get('overall')}점 / 100점\n"
+                        f"- 🎨 미학 & 구도 (IAA): {scores_dict.get('iaa')}점\n"
+                        f"- 🔍 화질 & 기술 (IQA): {scores_dict.get('iqa')}점\n"
+                        f"- 🧱 구조 & 질감 (ISTA): {scores_dict.get('ista')}점\n\n"
+                    )
+                    critique_text = f"{sb_header}{critique_text}"
             except Exception as tr_err:
                 print(f"[ChatService] Gemma 4 translation fallback: {tr_err}", flush=True)
                 critique_text = raw_en
