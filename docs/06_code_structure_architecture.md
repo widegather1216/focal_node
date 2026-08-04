@@ -25,7 +25,28 @@ focal_node/
 ├── src-tauri/               # Tauri(Rust) 백엔드 및 앱 패키징 로직
 │   ├── tauri.conf.json      # Tauri 앱 설정 및 Sidecar 바이너리 매핑 설정
 │   └── src/lib.rs           # Sidecar 기동, 포트 파싱 및 이벤트 브로드캐스팅
-├── src/                     # React/Vite 프론트엔드 코드
+├── src/                     # React/Vite 프론트엔드 코드 모듈 [NEW]
+│   ├── types/               # 중앙 데이터 타입 정의 (photo.ts, critique.ts)
+│   ├── hooks/               # 커스텀 훅 (useDebounce, useFullscreenControls, usePhotoDetail 등)
+│   ├── services/            # API 통신 클라이언트 (api.ts)
+│   ├── store/               # Zustand 로컬 전역 상태 (useAppStore.ts)
+│   ├── constants/           # 디자인 시스템 및 테마 상수 (theme.ts)
+│   └── components/          # 단일 책임 원칙(SRP) 적용 서브 컴포넌트 패키지
+│       ├── common/          # 공통 UI 컴포넌트 (LoadingSpinner, AppSplash)
+│       ├── gallery/         # 갤러리 그리드 셀 (PhotoCard)
+│       ├── critique/        # AI 비평 종합 요약 및 개별 카드 (CritiqueSummaryCard, CritiqueCard)
+│       ├── fullscreen/      # 풀스크린 EXIF 오버레이 (FullscreenMetadataOverlay)
+│       ├── sidebar/         # 폴더 다이얼로그 및 인덱싱 프로그레스 (FolderList, IndexingProgressCard)
+│       ├── analytics/       # 통계 요약 및 차트 (AnalyticsKpiGrid, GearDonutCharts, ExifBarCharts)
+│       ├── filter/          # 필터 범위 입력 (FilterRangeInput)
+│       ├── detail/          # 상세 패널 뷰 (PhotoExifView, PhotoCritiqueView, PhotoAiAnalysisView)
+│       ├── PhotoGallery.tsx # 가상화 수직 그리드 레이아웃 뷰
+│       ├── CritiqueView.tsx # AI 비평 대시보드 레이아웃 뷰
+│       ├── FullscreenViewer.tsx # 풀스크린 뷰어 조립 레이아웃
+│       ├── Sidebar.tsx      # 네비게이션 탭 및 사이드바 레이아웃
+│       ├── AnalyticsView.tsx # 장비 분석 대시보드 레이아웃 뷰
+│       ├── DetailPanel.tsx  # 우측 상세 슬라이드 패널 래퍼
+│       └── SearchFilterMenu.tsx # 검색 필터 드롭다운 폼
 ├── backend/                 # Python FastAPI 백엔드 (AI 추론 / DB 관리)
 │   ├── app/
 │   │   ├── api/             # 슬림화된 FastAPI 라우터 모듈 모음
@@ -103,3 +124,18 @@ focal_node/
 
 ## 4. 프론트엔드 연동 흐름 (Tauri Sidecar)
 Tauri 백엔드(`src-tauri/src/lib.rs`)는 구동 시 Python 백엔드 프로세스를 실행하고 stdout 스트림에서 `[Sidecar] PORT: {port}` 구문을 정규식으로 파싱하여 프론트엔드 React 앱에 API 포트를 동적으로 주입합니다. 프론트엔드는 이 동적 포트 URL을 기반으로 갤러리 조회, 백그라운드 인덱싱 제어, 검색 및 AI 비평 요청을 전송합니다.
+
+---
+
+## 5. 프론트엔드 모듈화 및 SRP 아키텍처 (`src/`)
+
+프론트엔드 코드는 거대 모놀리식 뷰를 피하고 **단일 책임 원칙(SRP)**과 **리렌더링 성능 최적화**를 보장하도록 구조화되어 있습니다.
+
+* **타입 중앙화 (`src/types/`)**: `photo.ts`와 `critique.ts`로 데이터 타입을 모듈화하여 `api.ts` 및 Zustand Store 간 타입 안전성을 보장합니다.
+* **커스텀 훅 (`src/hooks/`)**: `useFullscreenControls`(뷰어 단축키/확대/이동), `useDebounce`(입력 디바운싱), `usePhotoDetail` 등 비즈니스 및 이벤트 로직을 전용 훅으로 추출했습니다.
+* **서브 컴포넌트 패키지 (`src/components/`)**:
+  * **`analytics/`**: `AnalyticsKpiGrid`, `GearDonutCharts`, `ExifBarCharts`로 분리하고, 화각 토글 상태(`use35mmMode`)를 캡슐화하여 페이지 전체 리렌더링을 차단합니다.
+  * **`critique/`**: `CritiqueSummaryCard`, `CritiqueCard`로 분리하여 AI 종합 비평 요약 카드와 개별 비평 항목을 핀포인트 제어합니다.
+  * **`fullscreen/` & `sidebar/`**: `FullscreenMetadataOverlay`, `FolderList`, `IndexingProgressCard`로 분리하여 각 오버레이 및 동적 리스트 렌더링에만 전념합니다.
+  * **`detail/` & `common/`**: `PhotoAiAnalysisView`(캡션/태그 편집), `AppSplash`(앱 구동 대기), `LoadingSpinner`(공통 로더) 등 명확한 목적의 서브 뷰로 구성됩니다.
+

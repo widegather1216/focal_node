@@ -178,6 +178,30 @@ API 라우터로부터 비즈니스 로직을 분리 캡슐화한 서비스 모�
 
 ---
 
+### 3.2. 프론트엔드 서브 컴포넌트, 커스텀 훅 및 타입 모듈 (`src/`)
+
+| 컴포넌트 / 훅 / 타입 모듈 | 위치 (Path) | 주요 입력 (Props / Params) | 역할 및 사양 |
+| :--- | :--- | :--- | :--- |
+| `PhotoCard` | `components/gallery/PhotoCard.tsx` | `photo, isSelected, onSelectPhoto, onToggleSelection, onToggleFavorite` | 갤러리 가상화 그리드의 개별 사진 셀 (체크박스, 하트, 썸네일, hover 배지) |
+| `CritiqueSummaryCard` | `components/critique/CritiqueSummaryCard.tsx` | `summaryData, isGeneratingSummary, summaryError, onCopySummary...` | AI 비평 종합 요약 정보 및 토글/복사 모달 카드 |
+| `CritiqueCard` | `components/critique/CritiqueCard.tsx` | `item, index, copiedId, onSelectPhoto, onOpenFullscreen...` | 개별 이미지 AI 비평 정보 및 액션 버튼 카드 |
+| `FullscreenMetadataOverlay` | `components/fullscreen/FullscreenMetadataOverlay.tsx` | `photo, isVisible` | 뷰어 하단 플로팅 EXIF 메타데이터(카메라, 렌즈, 화각, 조리개, ISO) 패널 |
+| `FolderList` | `components/sidebar/FolderList.tsx` | `folders, selectedFolder, onSelectFolder, removeFolder...` | 등록된 인덱싱 폴더 목록 표시 및 추가/삭제 다이얼로그 |
+| `IndexingProgressCard` | `components/sidebar/IndexingProgressCard.tsx` | `isIndexing, indexingState, indexingProgress` | 실시간 백그라운드 인덱싱 진행률(%) 및 파일 경로 표시 |
+| `AnalyticsKpiGrid` | `components/analytics/AnalyticsKpiGrid.tsx` | `stats` | 총 사진, 사용 카메라, 렌즈 라인업, 최다 조리개 요약 KPI 카드 4종 |
+| `GearDonutCharts` | `components/analytics/GearDonutCharts.tsx` | `cameras, lenses, colors, customTooltip` | 카메라 바디 및 렌즈 모델 점유율 도넛 차트 2종 시각화 |
+| `ExifBarCharts` | `components/analytics/ExifBarCharts.tsx` | `focal_lengths, focal_lengths_35mm, apertures, customTooltip` | 화각(`use35mmMode` 상태 캡슐화) 및 조리개 사용 분포 막대 차트 2종 시각화 |
+| `PhotoAiAnalysisView` | `components/detail/PhotoAiAnalysisView.tsx` | `aiAnalysis, editing, captionEdit, tagsEdit, handleSave...` | AI 캡션/태그/미학 태그 렌더링 및 사용자 편집/저장 폼 |
+| `FilterRangeInput` | `components/filter/FilterRangeInput.tsx` | `label, minValue, maxValue, onMinChange, onMaxChange` | 검색 필터의 ISO/조리개/초점거리 Min-Max 숫자 범위 입력 컴포넌트 |
+| `AppSplash` | `components/common/AppSplash.tsx` | `backendStatus, backendError, isDownloadingModel` | 앱 초기 구동 시 백엔드 포트 수신 및 환경 준비 대기 화면 |
+| `LoadingSpinner` | `components/common/LoadingSpinner.tsx` | `size, color, message, fullScreen` | 공통 로딩 스피너 및 무한 회전 애니메이션 컴포넌트 |
+| `useDebounce` | `hooks/useDebounce.ts` | `value: T, delay: number = 500` | 입력값(검색어 등) 500ms 디바운스 처리 범용 커스텀 훅 |
+| `useFullscreenControls` | `hooks/useFullscreenControls.ts` | 없음 | 풀스크린 뷰어 단축키(Esc, Arrow, Zoom, Zen), 확대/축소, 이전/다음 탐색 훅 |
+| `types/photo.ts` | `types/photo.ts` | N/A | `Photo`, `PhotoMetadata`, `SearchFilters` 타입 정의 모듈 |
+| `types/critique.ts` | `types/critique.ts` | N/A | `CritiqueItem`, `CritiqueSummaryResponse` 타입 정의 모듈 |
+
+---
+
 ## 🚀 4. 소스 코드 추상화 및 아키텍처 달성 현황
 
 1. **인덱싱 워크플로우 파이프라인 패턴 적용 완료 (`services/pipeline.py`)**
@@ -186,3 +210,7 @@ API 라우터로부터 비즈니스 로직을 분리 캡슐화한 서비스 모�
    - 547줄의 monolith 구성을 `status.py`, `scanner.py`, `cleaner.py`, `worker.py`로 SRP 분리 완료.
 3. **API Repositories 및 Business Services 계층 완비**
    - Router의 직렬 쿼리와 비즈니스 로직을 `PhotoRepository`, `VectorRepository`, `SearchService`, `ChatService`로 완벽 캡슐화 완료.
+4. **프론트엔드 단일 책임 원칙(SRP) 적용 및 리렌더링 최적화 완료 (`src/`)** [NEW]
+   - `CritiqueView`, `FullscreenViewer`, `Sidebar`, `AnalyticsView`, `DetailPanel` 등 대형 모놀리식 뷰를 12개 서브 컴포넌트 및 커스텀 훅으로 해체하여 슬림화.
+   - `use35mmMode` 상태 캡슐화를 통해 화각 토글 시 전체 페이지 리렌더링 차단 및 `src/types/` 중앙 타입 모듈화 완수.
+

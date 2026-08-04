@@ -20,7 +20,7 @@
 
 3. 🎨 **[프론트엔드 아키텍처 및 UI/UX 설계](./03_frontend_ui_ux.md)**
    * Zustand 전역 상태 및 TanStack Query 서버 상태 관리
-   * 가상 스크롤, `AnalyticsView`, AI 비평 패널 및 UI/UX 최적화
+   * 가상 스크롤, `AnalyticsView`, AI 비평 패널 및 단일 책임 원칙(SRP) 서브 컴포넌트 모듈화
 
 4. ⚠️ **[에이전트 구현 제약사항 명세 (중요)](./04_implementation_constraints.md)**
    * FastAPI 동적 포트 할당 및 Tauri 포트 주입 규칙
@@ -33,21 +33,21 @@
    * SigLIP 2 설치 및 PyTorch MPS 가속 구동 방법
    * UniPercept 8B 비평 모델 구동 및 메모리 수동 언로드 지침
 
-6. 🏗️ **[코드 구조 및 백엔드 아키텍처 명세](./06_code_structure_architecture.md)**
-   * 전체 디렉터리 및 백엔드 3계층 분리 아키텍처
+6. 🏗️ **[코드 구조 및 백엔드/프론트엔드 아키텍처 명세](./06_code_structure_architecture.md)**
+   * 전체 디렉터리 및 백엔드 3계층/프론트엔드 서브패키지 모듈화 아키텍처
    * 모듈화된 인덱서 서브 패키지 (`services/indexer/`) 구조
-   * `SearchService`, `ChatService`, `PhotoRepository`, `VectorRepository` 역할
+   * `SearchService`, `ChatService`, `PhotoRepository`, `VectorRepository` 및 프론트엔드 SRP 서브컴포넌트 역할
 
 7. 💡 **[스마트 앨범 기획서](./07_plan_smart_albums.md)** & **[장비 통계 기획서](./08_plan_gear_analytics.md)**
    * 저장 검색 조건 기반 스마트 앨범 기획
    * 장비 사용 비율(카메라, 렌즈, 화각, 조리개) 통계 집계 명세
 
 8. 📚 **[코드베이스 함수 인벤토리 및 명세서](./09_codebase_function_inventory.md)**
-   * 백엔드(FastAPI), 데스크탑 호스트(Tauri/Rust), 프론트엔드(React/TS) 파일별 함수 및 API 명세
-   * 소스 코드 추상화(Abstraction) 및 리팩토링 모듈화 달성 현황
+   * 백엔드(FastAPI), 데스크탑 호스트(Tauri/Rust), 프론트엔드(React/TS 서브컴포넌트/훅/타입) 파일별 함수 및 API 명세
+   * 백엔드 및 프론트엔드 소스 코드 추상화(Abstraction) 및 모듈화 달성 현황
 
 9. 🗺️ **[전체 개발 로드맵 (ROADMAP.md)](./ROADMAP.md)**
-   * Phase 1~18 마일스톤 완료 및 백엔드 리팩토링 현황
+   * Phase 1~18 마일스톤 완료 및 백엔드/프론트엔드 모듈화 리팩토링 현황
 
 ---
 

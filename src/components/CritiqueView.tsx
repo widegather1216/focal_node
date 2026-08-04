@@ -1,29 +1,13 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Sparkles, 
-  Search, 
-  Trash2, 
-  Copy, 
-  Check, 
-  Camera, 
-  Calendar, 
-  Eye, 
-  ExternalLink, 
-  Loader2, 
-  FileText,
-  Maximize2,
-  Wand2,
-  RefreshCw,
-  X,
-  Award,
-  ChevronDown,
-  ChevronUp,
-  AlertCircle
-} from 'lucide-react';
-import { api, CritiqueItem, CritiqueSummaryResponse } from '../services/api';
+import { Sparkles, Search, Wand2, FileText, Loader2 } from 'lucide-react';
+import { api } from '../services/api';
+import { CritiqueItem, CritiqueSummaryResponse } from '../types/critique';
 import { useAppStore } from '../store/useAppStore';
+import { CritiqueSummaryCard } from './critique/CritiqueSummaryCard';
+import { CritiqueCard } from './critique/CritiqueCard';
+import { LoadingSpinner } from './common/LoadingSpinner';
 
 export const CritiqueView: React.FC = () => {
   const queryClient = useQueryClient();
@@ -93,28 +77,7 @@ export const CritiqueView: React.FC = () => {
   });
 
   if (isLoading) {
-    return (
-      <div style={{
-        flex: 1,
-        height: '100vh',
-        backgroundColor: '#0c0c0e',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        color: '#a1a1aa'
-      }}>
-        <Loader2 size={36} className="spin" style={{ color: '#c084fc', marginBottom: '16px' }} />
-        <p style={{ fontSize: '15px', fontWeight: 500 }}>AI 비평 목록을 불러오는 중...</p>
-        <style>{`
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-          .spin { animation: spin 1s linear infinite; }
-        `}</style>
-      </div>
-    );
+    return <LoadingSpinner fullScreen message="AI 비평 목록을 불러오는 중..." />;
   }
 
   return (
@@ -248,171 +211,25 @@ export const CritiqueView: React.FC = () => {
       }}>
         {/* Aggregated Critique Summary Card Section */}
         <AnimatePresence>
-          {(isGeneratingSummary || summaryData || summaryError) && (
-            <motion.div
-              initial={{ opacity: 0, y: -15, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -15, scale: 0.98 }}
-              transition={{ duration: 0.3 }}
-              style={{
-                maxWidth: '1600px',
-                margin: '0 auto 28px auto',
-                background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.08) 0%, rgba(99, 102, 241, 0.05) 100%)',
-                border: '1px solid rgba(168, 85, 247, 0.25)',
-                borderRadius: '16px',
-                overflow: 'hidden',
-                boxShadow: '0 8px 32px rgba(168, 85, 247, 0.12)',
-                position: 'relative'
-              }}
-            >
-              {/* Card Header */}
-              <div style={{
-                padding: '16px 20px',
-                borderBottom: isSummaryExpanded ? '1px solid rgba(168, 85, 247, 0.15)' : 'none',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                background: 'rgba(24, 24, 27, 0.4)'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <Award size={20} color="#c084fc" />
-                  <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#fff' }}>
-                    AI 포트폴리오 비평 종합 리포트
-                  </h3>
-                  {summaryData && (
-                    <span style={{
-                      background: 'rgba(168, 85, 247, 0.2)',
-                      color: '#e9d5ff',
-                      fontSize: '11px',
-                      padding: '2px 8px',
-                      borderRadius: '10px',
-                      fontWeight: 500
-                    }}>
-                      {summaryData.total_critiques_analyzed}개 비평 종합 분석
-                    </span>
-                  )}
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  {summaryData && (
-                    <>
-                      <button
-                        onClick={handleCopySummary}
-                        style={{
-                          background: copiedSummary ? 'rgba(74, 222, 128, 0.15)' : 'rgba(255, 255, 255, 0.06)',
-                          border: '1px solid rgba(255, 255, 255, 0.1)',
-                          color: copiedSummary ? '#4ade80' : '#e4e4e7',
-                          padding: '5px 10px',
-                          borderRadius: '6px',
-                          fontSize: '12px',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '5px'
-                        }}
-                      >
-                        {copiedSummary ? <Check size={13} /> : <Copy size={13} />}
-                        {copiedSummary ? '복사됨' : '요약 복사'}
-                      </button>
-                      <button
-                        onClick={handleGenerateSummary}
-                        disabled={isGeneratingSummary}
-                        style={{
-                          background: 'rgba(255, 255, 255, 0.06)',
-                          border: '1px solid rgba(255, 255, 255, 0.1)',
-                          color: '#e4e4e7',
-                          padding: '5px 10px',
-                          borderRadius: '6px',
-                          fontSize: '12px',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '5px'
-                        }}
-                      >
-                        <RefreshCw size={13} className={isGeneratingSummary ? 'spin' : ''} />
-                        다시 요약
-                      </button>
-                    </>
-                  )}
-
-                  <button
-                    onClick={() => setIsSummaryExpanded(!isSummaryExpanded)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: '#a1a1aa',
-                      cursor: 'pointer',
-                      padding: '4px',
-                      display: 'flex',
-                      alignItems: 'center'
-                    }}
-                  >
-                    {isSummaryExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setSummaryData(null);
-                      setSummaryError(null);
-                    }}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: '#71717a',
-                      cursor: 'pointer',
-                      padding: '4px',
-                      display: 'flex',
-                      alignItems: 'center'
-                    }}
-                    title="요약 닫기"
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Card Body */}
-              {isSummaryExpanded && (
-                <div style={{ padding: '20px 24px' }}>
-                  {isGeneratingSummary && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#c084fc', padding: '12px 0' }}>
-                      <Loader2 size={20} className="spin" />
-                      <span style={{ fontSize: '14px', fontWeight: 500 }}>
-                        Gemma VLM이 {critiques.length}개의 사진 비평 데이터와 EXIF 정보를 종합하여 포트폴리오를 총체적으로 분석하고 있습니다...
-                      </span>
-                    </div>
-                  )}
-
-                  {summaryError && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ef4444', fontSize: '13px' }}>
-                      <AlertCircle size={16} />
-                      <span>{summaryError}</span>
-                    </div>
-                  )}
-
-                  {!isGeneratingSummary && summaryData && (
-                    <div style={{
-                      fontSize: '14px',
-                      lineHeight: '1.75',
-                      color: '#f4f4f5',
-                      whiteSpace: 'pre-line',
-                      maxHeight: '400px',
-                      overflowY: 'auto',
-                      paddingRight: '8px'
-                    }}>
-                      {summaryData.summary}
-                    </div>
-                  )}
-                </div>
-              )}
-            </motion.div>
-          )}
+          <CritiqueSummaryCard
+            isGeneratingSummary={isGeneratingSummary}
+            summaryData={summaryData}
+            summaryError={summaryError}
+            copiedSummary={copiedSummary}
+            isSummaryExpanded={isSummaryExpanded}
+            totalCritiques={critiques.length}
+            onCopySummary={handleCopySummary}
+            onGenerateSummary={handleGenerateSummary}
+            onToggleExpand={() => setIsSummaryExpanded(!isSummaryExpanded)}
+            onCloseSummary={() => {
+              setSummaryData(null);
+              setSummaryError(null);
+            }}
+          />
         </AnimatePresence>
 
         {/* Critiques Grid or Empty States */}
         {critiques.length === 0 ? (
-          /* Empty State */
           <motion.div
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
@@ -449,19 +266,18 @@ export const CritiqueView: React.FC = () => {
             <h3 style={{ fontSize: '18px', fontWeight: 600, color: '#f4f4f5', margin: '0 0 8px 0' }}>
               아직 작성된 AI 비평이 없습니다
             </h3>
-            <p style={{ fontSize: '14px', color: '#a1a1aa', maxWidth: '440px', lineHeight: 1.6, margin: '0 0 24px 0' }}>
-              갤러리에서 마음에 드는 사진을 선택하고 우측 상세 패널에서 <strong style={{ color: '#c084fc' }}>'AI 비평 생성'</strong>을 누르면,
-              Gemma VLM 비전 모델이 구도와 색감에 대해 남겨준 전문 비평이 이곳에 모아집니다.
+            <p style={{ fontSize: '14px', color: '#a1a1aa', maxWidth: '420px', margin: '0 0 24px 0', lineHeight: 1.6 }}>
+              갤러리에서 원하는 사진을 클릭하여 우측 상세 정보 패널에서 AI 피드백을 요청해보세요!
             </p>
             <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
               onClick={() => setActiveTab('gallery')}
-              whileHover={{ scale: 1.04, boxShadow: '0 4px 20px rgba(168, 85, 247, 0.4)' }}
-              whileTap={{ scale: 0.97 }}
               style={{
-                background: 'linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)',
+                background: 'linear-gradient(135deg, #a855f7 0%, #6366f1 100%)',
                 color: '#fff',
                 border: 'none',
-                padding: '10px 22px',
+                padding: '10px 20px',
                 borderRadius: '10px',
                 fontSize: '14px',
                 fontWeight: 600,
@@ -475,13 +291,11 @@ export const CritiqueView: React.FC = () => {
             </motion.button>
           </motion.div>
         ) : filteredCritiques.length === 0 ? (
-          /* Filter No Results */
           <div style={{ textAlign: 'center', padding: '60px 20px', color: '#71717a' }}>
             <Search size={32} style={{ marginBottom: '12px', opacity: 0.5 }} />
             <p style={{ fontSize: '15px', margin: 0 }}>'{filterQuery}' 검색 결과와 일치하는 비평이 없습니다.</p>
           </div>
         ) : (
-          /* Critiques Grid */
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))',
@@ -490,262 +304,22 @@ export const CritiqueView: React.FC = () => {
             margin: '0 auto'
           }}>
             <AnimatePresence>
-              {filteredCritiques.map((item, index) => {
-                const thumbUrl = `http://127.0.0.1:${apiPort}/api/photos/${item.photo_id}/thumbnail`;
-                const formattedDate = item.critique_updated_at 
-                  ? new Date(item.critique_updated_at).toLocaleDateString('ko-KR', {
-                      year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
-                    })
-                  : null;
-
-                return (
-                  <motion.div
-                    key={item.photo_id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{ duration: 0.3, delay: Math.min(index * 0.05, 0.3) }}
-                    style={{
-                      backgroundColor: 'rgba(24, 24, 27, 0.7)',
-                      borderRadius: '16px',
-                      border: '1px solid rgba(255, 255, 255, 0.08)',
-                      overflow: 'hidden',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      boxShadow: '0 8px 30px rgba(0, 0, 0, 0.3)',
-                      transition: 'border-color 0.2s ease, box-shadow 0.2s ease'
-                    }}
-                    whileHover={{
-                      borderColor: 'rgba(168, 85, 247, 0.3)',
-                      boxShadow: '0 12px 36px rgba(168, 85, 247, 0.12)'
-                    }}
-                  >
-                    {/* Top Thumbnail & Photo Info Bar */}
-                    <div style={{
-                      display: 'flex',
-                      height: '140px',
-                      background: '#121215',
-                      borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
-                      position: 'relative'
-                    }}>
-                      <div 
-                        onClick={() => setSelectedPhotoId(item.photo_id)}
-                        style={{
-                          width: '140px',
-                          height: '140px',
-                          flexShrink: 0,
-                          cursor: 'pointer',
-                          position: 'relative',
-                          overflow: 'hidden',
-                          backgroundColor: '#18181b'
-                        }}
-                      >
-                        <img
-                          src={thumbUrl}
-                          alt={item.file_name}
-                          style={{
-                            width: '100%',
-                            height: '100%',
-                            objectFit: 'cover',
-                            transition: 'transform 0.3s ease'
-                          }}
-                        />
-                        <div style={{
-                          position: 'absolute',
-                          inset: 0,
-                          background: 'rgba(0,0,0,0.3)',
-                          opacity: 0,
-                          transition: 'opacity 0.2s ease',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '8px'
-                        }}
-                        className="thumb-overlay"
-                        >
-                          <Eye size={20} color="#fff" />
-                        </div>
-                      </div>
-
-                      <div style={{
-                        flex: 1,
-                        padding: '14px 16px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        overflow: 'hidden'
-                      }}>
-                        <div>
-                          <h4 
-                            onClick={() => setSelectedPhotoId(item.photo_id)}
-                            style={{
-                              margin: '0 0 6px 0',
-                              fontSize: '14px',
-                              fontWeight: 600,
-                              color: '#f4f4f5',
-                              whiteSpace: 'nowrap',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              cursor: 'pointer'
-                            }}
-                            title={item.file_name}
-                          >
-                            {item.file_name}
-                          </h4>
-
-                          {/* Metadata Tags */}
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', color: '#a1a1aa' }}>
-                            {item.camera_model && (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                <Camera size={12} color="#c084fc" />
-                                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                  {item.camera_model} {item.lens_model ? `• ${item.lens_model}` : ''}
-                                </span>
-                              </div>
-                            )}
-
-                            {(item.f_number || item.shutter_speed || item.iso) && (
-                              <div style={{ display: 'flex', gap: '8px', color: '#71717a' }}>
-                                {item.f_number && <span>f/{item.f_number}</span>}
-                                {item.shutter_speed && <span>{item.shutter_speed}s</span>}
-                                {item.iso && <span>ISO {item.iso}</span>}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {formattedDate && (
-                          <div style={{ fontSize: '11px', color: '#71717a', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <Calendar size={11} />
-                            <span>{formattedDate} 생성</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Critique Text Box */}
-                    <div style={{
-                      padding: '18px 20px',
-                      flex: 1,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'space-between',
-                      gap: '16px'
-                    }}>
-                      <div style={{
-                        fontSize: '13px',
-                        lineHeight: '1.65',
-                        color: '#e4e4e7',
-                        whiteSpace: 'pre-line',
-                        maxHeight: '180px',
-                        overflowY: 'auto',
-                        paddingRight: '6px'
-                      }}>
-                        {item.critique}
-                      </div>
-
-                      {/* Card Action Footer */}
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        paddingTop: '12px',
-                        borderTop: '1px solid rgba(255, 255, 255, 0.06)'
-                      }}>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <button
-                            onClick={() => setSelectedPhotoId(item.photo_id)}
-                            style={{
-                              background: 'rgba(255, 255, 255, 0.06)',
-                              border: '1px solid rgba(255, 255, 255, 0.1)',
-                              color: '#f4f4f5',
-                              padding: '5px 11px',
-                              borderRadius: '6px',
-                              fontSize: '12px',
-                              fontWeight: 500,
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '5px'
-                            }}
-                          >
-                            <ExternalLink size={12} /> 상세 패널
-                          </button>
-                          <button
-                            onClick={() => openFullscreen(item.photo_id)}
-                            style={{
-                              background: 'rgba(255, 255, 255, 0.06)',
-                              border: '1px solid rgba(255, 255, 255, 0.1)',
-                              color: '#f4f4f5',
-                              padding: '5px 11px',
-                              borderRadius: '6px',
-                              fontSize: '12px',
-                              fontWeight: 500,
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '5px'
-                            }}
-                          >
-                            <Maximize2 size={12} /> 원본 보기
-                          </button>
-                        </div>
-
-                        <div style={{ display: 'flex', gap: '6px' }}>
-                          <button
-                            onClick={() => handleCopy(item.photo_id, item.critique)}
-                            style={{
-                              background: copiedId === item.photo_id ? 'rgba(74, 222, 128, 0.15)' : 'transparent',
-                              border: 'none',
-                              color: copiedId === item.photo_id ? '#4ade80' : '#a1a1aa',
-                              padding: '6px',
-                              borderRadius: '6px',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center'
-                            }}
-                            title="비평 텍스트 복사"
-                          >
-                            {copiedId === item.photo_id ? <Check size={14} /> : <Copy size={14} />}
-                          </button>
-                          <button
-                            onClick={() => {
-                              if (confirm(`'${item.file_name}'의 저장된 비평을 삭제하시겠습니까?`)) {
-                                deleteMutation.mutate(item.photo_id);
-                              }
-                            }}
-                            style={{
-                              background: 'transparent',
-                              border: 'none',
-                              color: '#ef4444',
-                              padding: '6px',
-                              borderRadius: '6px',
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center'
-                            }}
-                            title="비평 삭제"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                );
-              })}
+              {filteredCritiques.map((item, index) => (
+                <CritiqueCard
+                  key={item.photo_id}
+                  item={item}
+                  index={index}
+                  copiedId={copiedId}
+                  onSelectPhoto={setSelectedPhotoId}
+                  onOpenFullscreen={openFullscreen}
+                  onCopy={handleCopy}
+                  onDelete={(id) => deleteMutation.mutate(id)}
+                />
+              ))}
             </AnimatePresence>
           </div>
         )}
       </div>
-
-      <style>{`
-        .thumb-overlay:hover {
-          opacity: 1 !important;
-        }
-      `}</style>
     </div>
   );
 };

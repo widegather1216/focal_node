@@ -1,4 +1,7 @@
 import { create } from 'zustand';
+import { SearchFilters } from '../types/photo';
+
+export type { SearchFilters };
 
 interface IndexingProgress {
   processed: number;
@@ -9,20 +12,6 @@ interface IndexingProgress {
 export interface IndexedFolder {
   path: string;
   created_at: string;
-}
-
-export interface SearchFilters {
-  is_favorite?: boolean;
-  camera_model?: string;
-  lens_model?: string;
-  iso_min?: number;
-  iso_max?: number;
-  f_number_min?: number;
-  f_number_max?: number;
-  focal_length_min?: number;
-  focal_length_max?: number;
-  date_from?: string;
-  date_to?: string;
 }
 
 interface AppState {

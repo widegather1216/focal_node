@@ -1,0 +1,44 @@
+{
+  "total_rounds": 1,
+  "images_per_round": 1,
+  "total_images": 1,
+  "total_evaluations": 4,
+  "total_time_sec": 126.55,
+  "rounds_data": [
+    {
+      "round": 1,
+      "images": [
+        {
+          "file_name": "DSC_0232_edit.jpg",
+          "file_path": "/Users/kimbeomjun/Desktop/photo/jpeg/DSC_0232_edit.jpg",
+          "prompt_results": {
+            "Comprehensive (종합 평가)": {
+              "prompt_text": "Evaluate this image comprehensively across three core domains: 1. Image Aesthetics (IAA), 2. Image Quality (IQA), and 3. Structure & Texture (ISTA). Provide concise technical reasons for each domain and a final score out of 100.",
+              "critique": "### Image Aesthetic Quality (IAA)\nThe image presents a modest urban alleyway with decent composition but lacks strong visual impact. The scene captures everyday elements effectively, though the aesthetic appeal is somewhat muted due to its ordinary subject matter and subdued lighting. It demonstrates moderate clarity in theme communication of an abandoned or neglected space.\n\n### Image Quality (IQA)\nHigh quality overall; sharp focus on architectural details like stairs and walls enhances realism. Good exposure balances shadows and highlights adequately without significant noise issues. Minor clutter adds authenticity yet slightly detracts from perfection.\n\n### Structure & Texture (ISTA)\nWell-defined textures such as brickwork, concrete surfaces, and metal railings contribute positively. However balance between simplicity and detail exists moderately well. Composition maintains coherence despite slight disarray within foreground objects.\n\nOverall Score: 68/100",
+              "quality_score": 68,
+              "latency_sec": 92.54
+            },
+            "Aesthetics Focus (IAA 미학/구도)": {
+              "prompt_text": "Focus deeply on Image Aesthetics (IAA). Analyze composition, lighting, color harmony, subject placement, and visual impact. Detail how aesthetic choices elevate or weaken the photo, and rate the aesthetic score out of 100.",
+              "critique": "The image presents a modest urban alleyway with concrete stairs and scattered debris, capturing an everyday scene. Its strengths include balanced composition and natural lighting that highlights textures but lacks vibrancy due to muted tones. The subject placement is straightforward yet somewhat mundane, contributing moderately to visual impact. While the photograph communicates its theme effectively through simplicity, it falls short in artistic depth and emotional resonance. It captures realism well but misses dynamic elements or striking contrasts.\n\nOverall aesthetic merit: Moderate execution of ordinary scenes; decent technical quality but limited engagement.\"",
+              "quality_score": null,
+              "latency_sec": 13.59
+            },
+            "Quality Focus (IQA 화질/기술)": {
+              "prompt_text": "Focus strictly on Image Quality (IQA). Evaluate technical sharpness, sensor noise, exposure balance, focus accuracy, chromatic aberration, and dynamic range. Detail technical artifacts and rate technical quality out of 100.",
+              "critique": "The image demonstrates excellent clarity and sharpnessness, with well-balanced exposure capturing the scene's details effectively. The lighting is natural and even, contributing to a high-quality representation of urban textures. There are no significant noise or chromatic aberration issues visible in this photograph. Minor shadows add depth but do not detract from overall quality. Excellent focus accuracy ensures all elements appear crisp.\n\nIn summary: This exceptional composition excelssses technical excellence through its flawless execution rendering merits 95 score impeccably.\"",
+              "quality_score": null,
+              "latency_sec": 9.76
+            },
+            "Structure Focus (ISTA 구조/질감)": {
+              "prompt_text": "Focus intently on Structure & Texture (ISTA). Inspect fine detail resolution, micro-contrast, edge definitions, surface texture rendering, and tonal gradations. Detail textural fidelity and rate structural quality out of 100.",
+              "critique": "The image demonstrates strong structural clarity with well-defined textures. The staircase and brick walls exhibit clear surface details, while the shadows enhance depth perception effectively. Micro-contrast is moderate but sufficient to distinguish elements like debris on stairs versus smoother surfaces of concrete steps.\n\nStrengths include accurate texture rendering for materials such as bricks, cement, metal railings, glass windows—all contributing realistic fidelity in architectural context. However weakness lies slightly muted tonal gradation due minor lighting inconsistencies yet overall balanced exposure maintains realism.'\n\nOverall quality merit reflects commendable detail resolution: 85/100",
+              "quality_score": 85,
+              "latency_sec": 10.65
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

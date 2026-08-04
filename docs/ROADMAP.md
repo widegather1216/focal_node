@@ -81,3 +81,17 @@ graph TD
   - `PhotoRepository` 및 `VectorRepository` 데이터 액세스 계층 캡슐화 완료.
   - `main.py` 슬림화 및 `run_migrations()` 캡슐화 완료.
   - 14개 백엔드 단위/통합 테스트 전 부문 100% 통과 완료.
+
+## ✅ [완료] Phase 19: 프론트엔드 단일 책임 원칙(SRP) 모듈화 & 성능 최적화 (Frontend Refactoring)
+* **목표:** 거대 모놀리식 뷰 해체, 리렌더링 성능 최적화 및 명확한 단일 목적 서브컴포넌트 구조 확보.
+* **상세 작업:**
+  - `CritiqueView` (752줄 ➔ `CritiqueSummaryCard`, `CritiqueCard` 분리 완료)
+  - `FullscreenViewer` (648줄 ➔ `FullscreenMetadataOverlay`, `useFullscreenControls` 훅 분리 완료)
+  - `Sidebar` (488줄 ➔ `FolderList`, `IndexingProgressCard` 분리 완료)
+  - `AnalyticsView` (313줄 ➔ `AnalyticsKpiGrid`, `GearDonutCharts`, `ExifBarCharts` 분리 및 `use35mmMode` 캡슐화 완료)
+  - `DetailPanel` (278줄 ➔ `PhotoAiAnalysisView` 분리 완료)
+  - `PhotoGallery` (289줄 ➔ `PhotoCard` 분리 및 `useDebounce` 적용 완료)
+  - `SearchFilterMenu` (195줄 ➔ `FilterRangeInput` 도입 완료)
+  - `App` (85줄 ➔ `AppSplash` 분리 완료)
+  - `src/types/` 중앙 모듈화 (`photo.ts`, `critique.ts`) 및 `npx tsc --noEmit` 타입 검증 100% 통과 완료.
+

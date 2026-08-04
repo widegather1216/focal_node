@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { useAppStore, SearchFilters } from '../store/useAppStore';
+import { useAppStore } from '../store/useAppStore';
+import { SearchFilters } from '../types/photo';
 import { SlidersHorizontal, X } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { FilterRangeInput } from './filter/FilterRangeInput';
 
 export function SearchFilterMenu() {
   const { searchFilters, setSearchFilters, clearSearchFilters } = useAppStore();
   const [isOpen, setIsOpen] = useState(false);
-
   const [localFilters, setLocalFilters] = useState<SearchFilters>(searchFilters);
 
   const handleApply = () => {
@@ -38,8 +39,8 @@ export function SearchFilterMenu() {
     <div style={{ position: 'relative' }}>
       <motion.button
         onClick={() => {
-            setLocalFilters(searchFilters);
-            setIsOpen(!isOpen);
+          setLocalFilters(searchFilters);
+          setIsOpen(!isOpen);
         }}
         whileHover={{ 
           scale: 1.08, 
@@ -104,46 +105,49 @@ export function SearchFilterMenu() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <label style={{ fontSize: '12px', color: '#aaa' }}>Camera Model</label>
-              <input type="text" value={localFilters.camera_model || ''} onChange={e => setLocalFilters({...localFilters, camera_model: e.target.value})} style={inputStyle} placeholder="e.g. ILCE-7RM3" />
+              <input 
+                type="text" 
+                value={localFilters.camera_model || ''} 
+                onChange={e => setLocalFilters({...localFilters, camera_model: e.target.value})} 
+                style={inputStyle} 
+                placeholder="e.g. ILCE-7RM3" 
+              />
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <label style={{ fontSize: '12px', color: '#aaa' }}>Lens Model</label>
-              <input type="text" value={localFilters.lens_model || ''} onChange={e => setLocalFilters({...localFilters, lens_model: e.target.value})} style={inputStyle} placeholder="e.g. FE 50mm F1.2 GM" />
+              <input 
+                type="text" 
+                value={localFilters.lens_model || ''} 
+                onChange={e => setLocalFilters({...localFilters, lens_model: e.target.value})} 
+                style={inputStyle} 
+                placeholder="e.g. FE 50mm F1.2 GM" 
+              />
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'row', gap: '8px' }}>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: '12px', color: '#aaa' }}>ISO Min</label>
-                <input type="number" value={localFilters.iso_min || ''} onChange={e => setLocalFilters({...localFilters, iso_min: parseInt(e.target.value) || undefined})} style={inputStyle} />
-              </div>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: '12px', color: '#aaa' }}>ISO Max</label>
-                <input type="number" value={localFilters.iso_max || ''} onChange={e => setLocalFilters({...localFilters, iso_max: parseInt(e.target.value) || undefined})} style={inputStyle} />
-              </div>
-            </div>
+            <FilterRangeInput
+              label="ISO Range"
+              minValue={localFilters.iso_min || ''}
+              maxValue={localFilters.iso_max || ''}
+              onMinChange={val => setLocalFilters({...localFilters, iso_min: parseInt(val) || undefined})}
+              onMaxChange={val => setLocalFilters({...localFilters, iso_max: parseInt(val) || undefined})}
+            />
 
-            <div style={{ display: 'flex', flexDirection: 'row', gap: '8px' }}>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: '12px', color: '#aaa' }}>f/ Min</label>
-                <input type="number" step="0.1" value={localFilters.f_number_min || ''} onChange={e => setLocalFilters({...localFilters, f_number_min: parseFloat(e.target.value) || undefined})} style={inputStyle} />
-              </div>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: '12px', color: '#aaa' }}>f/ Max</label>
-                <input type="number" step="0.1" value={localFilters.f_number_max || ''} onChange={e => setLocalFilters({...localFilters, f_number_max: parseFloat(e.target.value) || undefined})} style={inputStyle} />
-              </div>
-            </div>
+            <FilterRangeInput
+              label="Aperture (f/)"
+              minValue={localFilters.f_number_min || ''}
+              maxValue={localFilters.f_number_max || ''}
+              onMinChange={val => setLocalFilters({...localFilters, f_number_min: parseFloat(val) || undefined})}
+              onMaxChange={val => setLocalFilters({...localFilters, f_number_max: parseFloat(val) || undefined})}
+            />
 
-            <div style={{ display: 'flex', flexDirection: 'row', gap: '8px' }}>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: '12px', color: '#aaa' }}>Focal Length Min (mm)</label>
-                <input type="number" step="0.1" value={localFilters.focal_length_min || ''} onChange={e => setLocalFilters({...localFilters, focal_length_min: parseFloat(e.target.value) || undefined})} style={inputStyle} />
-              </div>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <label style={{ fontSize: '12px', color: '#aaa' }}>Focal Length Max (mm)</label>
-                <input type="number" step="0.1" value={localFilters.focal_length_max || ''} onChange={e => setLocalFilters({...localFilters, focal_length_max: parseFloat(e.target.value) || undefined})} style={inputStyle} />
-              </div>
-            </div>
+            <FilterRangeInput
+              label="Focal Length (mm)"
+              minValue={localFilters.focal_length_min || ''}
+              maxValue={localFilters.focal_length_max || ''}
+              onMinChange={val => setLocalFilters({...localFilters, focal_length_min: parseFloat(val) || undefined})}
+              onMaxChange={val => setLocalFilters({...localFilters, focal_length_max: parseFloat(val) || undefined})}
+            />
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <label style={{ fontSize: '12px', color: '#aaa' }}>From Date</label>

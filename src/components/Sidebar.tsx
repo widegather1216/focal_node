@@ -1,10 +1,11 @@
 import { useEffect } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../store/useAppStore';
 import { open } from '@tauri-apps/plugin-dialog';
-import { FolderPlus, Folder, Loader2, Search, RefreshCw, Trash2, Heart, Pause, Play, Square, BarChart3, Image as ImageIcon, Sparkles } from 'lucide-react';
+import { FolderPlus, Search, RefreshCw, Heart, BarChart3, Image as ImageIcon, Sparkles } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { SearchFilterMenu } from './SearchFilterMenu';
+import { FolderList } from './sidebar/FolderList';
+import { IndexingProgressCard } from './sidebar/IndexingProgressCard';
 import { api } from '../services/api';
 
 interface SidebarProps {
@@ -13,7 +14,6 @@ interface SidebarProps {
 }
 
 export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
-  const queryClient = useQueryClient();
   const { 
     apiPort, 
     activeTab,
@@ -99,12 +99,14 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
               padding: '6px 4px',
               borderRadius: '6px',
               fontSize: '12px',
-              fontWeight: 600,
+              fontWeight: 500,
               cursor: 'pointer'
             }}
           >
-            <ImageIcon size={13} /> 갤러리
+            <ImageIcon size={14} />
+            <span>갤러리</span>
           </button>
+
           <button
             onClick={() => setActiveTab('analytics')}
             style={{
@@ -114,17 +116,19 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
               justifyContent: 'center',
               gap: '4px',
               background: activeTab === 'analytics' ? '#27272a' : 'transparent',
-              color: activeTab === 'analytics' ? '#fff' : '#a1a1aa',
+              color: activeTab === 'analytics' ? '#38bdf8' : '#a1a1aa',
               border: 'none',
               padding: '6px 4px',
               borderRadius: '6px',
               fontSize: '12px',
-              fontWeight: 600,
+              fontWeight: 500,
               cursor: 'pointer'
             }}
           >
-            <BarChart3 size={13} color={activeTab === 'analytics' ? '#38bdf8' : '#a1a1aa'} /> 인사이트
+            <BarChart3 size={14} />
+            <span>분석</span>
           </button>
+
           <button
             onClick={() => setActiveTab('critique')}
             style={{
@@ -134,69 +138,70 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
               justifyContent: 'center',
               gap: '4px',
               background: activeTab === 'critique' ? '#27272a' : 'transparent',
-              color: activeTab === 'critique' ? '#fff' : '#a1a1aa',
+              color: activeTab === 'critique' ? '#c084fc' : '#a1a1aa',
               border: 'none',
               padding: '6px 4px',
               borderRadius: '6px',
               fontSize: '12px',
-              fontWeight: 600,
+              fontWeight: 500,
               cursor: 'pointer'
             }}
           >
-            <Sparkles size={13} color={activeTab === 'critique' ? '#c084fc' : '#a1a1aa'} /> 비평
+            <Sparkles size={14} />
+            <span>AI 비평</span>
           </button>
         </div>
 
+        {/* Search & Filter Inputs (Only active in Gallery Tab) */}
         <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
           <div style={{ position: 'relative', flex: 1 }}>
-            <Search size={16} color="#aaa" style={{ position: 'absolute', left: '10px', top: '10px' }} />
+            <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#888' }} />
             <input 
               type="text" 
-              placeholder="Search photos..." 
-              value={searchQuery.startsWith('similar:') ? '✨ 유사의미지 검색 중...' : searchQuery}
-              onChange={(e) => {
-                if (searchQuery.startsWith('similar:')) {
-                  setSearchQuery('');
-                } else {
-                  setSearchQuery(e.target.value);
-                }
-              }}
+              placeholder="자연어/유사검색..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
               style={{
                 width: '100%',
-                backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                border: '1px solid rgba(255, 255, 255, 0.2)',
+                backgroundColor: '#333',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
                 borderRadius: '8px',
-                padding: '8px 10px 8px 32px',
+                padding: '8px 8px 8px 32px',
                 color: '#fff',
+                fontSize: '13px',
                 outline: 'none',
                 boxSizing: 'border-box'
               }}
             />
           </div>
+          
           <SearchFilterMenu />
+
+          {/* Favorite Toggle Button */}
           <motion.button
             onClick={() => {
-              const { is_favorite, ...rest } = searchFilters;
-              if (is_favorite) {
-                setSearchFilters(rest);
-              } else {
-                setSearchFilters({ ...rest, is_favorite: true });
-              }
+              setSearchFilters({
+                ...searchFilters,
+                is_favorite: searchFilters.is_favorite ? undefined : true
+              });
             }}
-            whileHover={{ 
-              scale: 1.05, 
-              y: -1,
-              backgroundColor: searchFilters.is_favorite ? 'rgba(239, 68, 68, 0.25)' : 'rgba(255, 255, 255, 0.08)'
-            }}
-            whileTap={{ scale: 0.92 }}
-            transition={{ type: "spring", stiffness: 400, damping: 15 }}
+            whileHover={{ scale: 1.08, y: -1 }}
+            whileTap={{ scale: 0.9 }}
+            transition={{ type: "spring", stiffness: 500, damping: 15 }}
             style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              width: '36px', height: '36px',
-              backgroundColor: searchFilters.is_favorite ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255, 255, 255, 0.05)',
-              border: searchFilters.is_favorite ? '1px solid #ef4444' : '1px solid rgba(255, 255, 255, 0.2)',
-              boxShadow: searchFilters.is_favorite ? '0 0 12px rgba(239, 68, 68, 0.4)' : 'none',
-              borderRadius: '8px', cursor: 'pointer', flexShrink: 0
+              backgroundColor: searchFilters.is_favorite ? 'rgba(239, 68, 68, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+              border: `1px solid ${searchFilters.is_favorite ? '#ef4444' : 'rgba(255, 255, 255, 0.2)'}`,
+              boxShadow: searchFilters.is_favorite ? '0 0 10px rgba(239, 68, 68, 0.4)' : 'none',
+              borderRadius: '8px',
+              padding: '8px',
+              color: searchFilters.is_favorite ? '#ef4444' : '#aaa',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '34px',
+              width: '34px',
+              outline: 'none',
             }}
             title="즐겨찾기 모아보기"
           >
@@ -286,202 +291,20 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
         </motion.button>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto' }}>
-        <motion.div 
-          onClick={() => {
-            setActiveTab('gallery');
-            onSelectFolder(null);
-          }}
-          whileHover={{ 
-            backgroundColor: selectedFolder === null ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.05)',
-            color: '#fff'
-          }}
-          whileTap={{ scale: 0.98 }}
-          transition={{ type: "spring", stiffness: 400, damping: 20 }}
-          style={{
-            padding: '8px 10px',
-            borderRadius: '6px',
-            cursor: 'pointer',
-            backgroundColor: selectedFolder === null ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            color: selectedFolder === null ? '#fff' : '#aaa',
-          }}
-        >
-          <Folder size={16} />
-          <span style={{ fontSize: '14px' }}>All Photos</span>
-        </motion.div>
-        
-        {folders.map(folder => (
-          <motion.div 
-            key={folder.path}
-            whileHover={{ 
-              backgroundColor: selectedFolder === folder.path ? 'rgba(255, 255, 255, 0.12)' : 'rgba(255, 255, 255, 0.03)' 
-            }}
-            transition={{ type: "spring", stiffness: 400, damping: 20 }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '8px 10px',
-              borderRadius: '6px',
-              backgroundColor: selectedFolder === folder.path ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
-              marginTop: '4px',
-            }}
-          >
-            <motion.div 
-              onClick={() => {
-                setActiveTab('gallery');
-                onSelectFolder(folder.path);
-              }}
-              whileTap={{ scale: 0.98 }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                color: selectedFolder === folder.path ? '#fff' : '#aaa',
-                cursor: 'pointer',
-                overflow: 'hidden',
-                flex: 1
-              }}
-              title={folder.path}
-            >
-              <Folder size={16} style={{ flexShrink: 0 }} />
-              <span style={{ fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {folder.path.split('/').filter(Boolean).pop() || folder.path}
-              </span>
-            </motion.div>
-            
-            <motion.button
-              onClick={async (e) => {
-                e.stopPropagation();
-                if (apiPort && confirm(`Remove folder ${folder.path} and all its indexed photos?`)) {
-                  await removeFolder(folder.path);
-                  queryClient.invalidateQueries({ queryKey: ['photos'] });
-                  queryClient.invalidateQueries({ queryKey: ['analyticsStats'] });
-                  if (selectedFolder === folder.path) {
-                    onSelectFolder(null);
-                  }
-                }
-              }}
-              whileHover={{ scale: 1.15, color: '#ff6666' }}
-              whileTap={{ scale: 0.9 }}
-              transition={{ type: "spring", stiffness: 500, damping: 15 }}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: '#ff4d4d',
-                cursor: 'pointer',
-                padding: '4px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-              title="Remove Folder"
-            >
-              <Trash2 size={14} />
-            </motion.button>
-          </motion.div>
-        ))}
-      </div>
+      <FolderList
+        folders={folders}
+        selectedFolder={selectedFolder}
+        apiPort={apiPort}
+        onSelectFolder={onSelectFolder}
+        setActiveTab={setActiveTab}
+        removeFolder={removeFolder}
+      />
 
-      {isIndexing && indexingProgress && (
-        <div style={{
-          marginTop: 'auto',
-          padding: '14px',
-          backgroundColor: indexingState === 'paused' ? 'rgba(234, 179, 8, 0.12)' : 'rgba(0, 0, 0, 0.35)',
-          borderRadius: '8px',
-          border: indexingState === 'paused' ? '1px solid rgba(234, 179, 8, 0.3)' : '1px solid rgba(255, 255, 255, 0.1)',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {indexingState === 'paused' ? (
-                <span style={{ fontSize: '12px' }}>⏸️</span>
-              ) : (
-                <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
-              )}
-              <span style={{ fontSize: '12px', fontWeight: '600', color: indexingState === 'paused' ? '#fde047' : '#fff' }}>
-                {indexingState === 'paused' ? 'Indexing Paused' : 'Indexing Photos'}
-              </span>
-            </div>
-            
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              {indexingState === 'processing' ? (
-                <button
-                  onClick={async () => {
-                    try {
-                      await api.pauseIndexing();
-                    } catch (e: any) {
-                      console.error("Pause error:", e);
-                    }
-                  }}
-                  style={{ background: 'none', border: 'none', color: '#fbbf24', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
-                  title="Pause Indexing"
-                >
-                  <Pause size={14} />
-                </button>
-              ) : (
-                <button
-                  onClick={async () => {
-                    try {
-                      await api.resumeIndexing();
-                    } catch (e: any) {
-                      console.error("Resume error:", e);
-                    }
-                  }}
-                  style={{ background: 'none', border: 'none', color: '#4ade80', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
-                  title="Resume Indexing"
-                >
-                  <Play size={14} />
-                </button>
-              )}
-              
-              <button
-                onClick={async () => {
-                  try {
-                    await api.cancelIndexing();
-                  } catch (e: any) {
-                    console.error("Cancel error:", e);
-                  }
-                }}
-                style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
-                title="Cancel Indexing"
-              >
-                <Square size={12} fill="#ef4444" />
-              </button>
-            </div>
-          </div>
-
-          <div style={{
-            width: '100%',
-            height: '4px',
-            backgroundColor: 'rgba(255, 255, 255, 0.2)',
-            borderRadius: '2px',
-            marginBottom: '8px',
-            overflow: 'hidden'
-          }}>
-            <div style={{
-              width: `${(indexingProgress.processed / Math.max(1, indexingProgress.total)) * 100}%`,
-              height: '100%',
-              backgroundColor: indexingState === 'paused' ? '#facc15' : '#4ade80',
-              transition: 'width 0.3s ease'
-            }} />
-          </div>
-          <div style={{ fontSize: '11px', color: '#aaa', display: 'flex', justifyContent: 'space-between' }}>
-            <span>{indexingProgress.processed} / {indexingProgress.total}</span>
-            <span style={{ maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={indexingProgress.filePath}>
-              {indexingProgress.filePath.split('/').pop()}
-            </span>
-          </div>
-        </div>
-      )}
-      <style>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
+      <IndexingProgressCard
+        isIndexing={isIndexing}
+        indexingState={indexingState}
+        indexingProgress={indexingProgress}
+      />
     </div>
   );
 }

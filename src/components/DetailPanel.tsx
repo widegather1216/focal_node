@@ -1,10 +1,12 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Save, FolderOpen, RefreshCw, Heart, Maximize2 } from 'lucide-react';
+import { X, FolderOpen, Heart, Maximize2 } from 'lucide-react';
 import { api } from '../services/api';
 import { usePhotoDetail } from '../hooks/usePhotoDetail';
 import { useAppStore } from '../store/useAppStore';
 import { PhotoExifView } from './detail/PhotoExifView';
 import { PhotoCritiqueView } from './detail/PhotoCritiqueView';
+import { PhotoAiAnalysisView } from './detail/PhotoAiAnalysisView';
+import { LoadingSpinner } from './common/LoadingSpinner';
 
 export function DetailPanel() {
   const openFullscreen = useAppStore(state => state.openFullscreen);
@@ -83,15 +85,11 @@ export function DetailPanel() {
 
             {/* Panel Content */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
-              {loading && (
-                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '200px', color: '#71717a' }}>
-                  로딩 중...
-                </div>
-              )}
+              {loading && <LoadingSpinner message="사진 정보를 불러오는 중입니다..." />}
 
               {!loading && photo && (
                 <>
-                  {/* Image Preview with Fullscreen Zoom Trigger */}
+                  {/* Image Preview */}
                   <motion.div
                     initial="rest"
                     whileHover="hover"
@@ -176,88 +174,21 @@ export function DetailPanel() {
                     <PhotoExifView metadata={photo.metadata} />
                   </div>
 
-                  {/* AI Analysis Section */}
-                  <div style={{ marginBottom: '20px', backgroundColor: '#18181b', borderRadius: '8px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                      <h4 style={{ margin: 0, fontSize: '13px', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>AI 메타데이터 묘사</h4>
-                      <div style={{ display: 'flex', gap: '8px' }}>
-                        <button
-                          onClick={handleReindex}
-                          disabled={reindexing}
-                          style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}
-                          title="AI 분석 다시 실행"
-                        >
-                          <RefreshCw size={12} className={reindexing ? 'spin' : ''} /> Re-index
-                        </button>
-                        {!editing ? (
-                          <button
-                            onClick={() => setEditing(true)}
-                            style={{ background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', fontSize: '12px' }}
-                          >
-                            편집
-                          </button>
-                        ) : (
-                          <button
-                            onClick={handleSave}
-                            disabled={saving}
-                            style={{ background: '#38bdf8', border: 'none', color: '#000', cursor: 'pointer', fontSize: '12px', padding: '2px 8px', borderRadius: '4px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}
-                          >
-                            <Save size={12} /> {saving ? '저장 중...' : '저장'}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {!editing ? (
-                      <div>
-                        <p style={{ fontSize: '13px', color: '#d4d4d8', lineHeight: 1.5, margin: '0 0 12px 0', background: '#09090b', padding: '10px 12px', borderRadius: '6px' }}>
-                          {photo.ai_analysis.caption || "생성된 캡션이 없습니다."}
-                        </p>
-                        
-                        {/* Keyword Tags */}
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
-                          {photo.ai_analysis.tags.map((tag, idx) => (
-                            <span
-                              key={idx}
-                              onClick={() => handleTagClick(tag)}
-                              style={{ background: '#27272a', color: '#e4e4e7', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', cursor: 'pointer' }}
-                            >
-                              #{tag}
-                            </span>
-                          ))}
-                        </div>
-
-                        {/* Aesthetic Tags */}
-                        {photo.ai_analysis.aesthetic_tags && photo.ai_analysis.aesthetic_tags.length > 0 && (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
-                            {photo.ai_analysis.aesthetic_tags.map((tag, idx) => (
-                              <span
-                                key={idx}
-                                style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', border: '1px solid rgba(168, 85, 247, 0.3)', padding: '3px 8px', borderRadius: '4px', fontSize: '11px' }}
-                              >
-                                {tag}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                        <textarea
-                          value={captionEdit}
-                          onChange={(e) => setCaptionEdit(e.target.value)}
-                          style={{ background: '#09090b', border: '1px solid #3f3f46', color: '#fff', padding: '8px', borderRadius: '4px', fontSize: '13px', minHeight: '80px', width: '100%', boxSizing: 'border-box' }}
-                        />
-                        <input
-                          type="text"
-                          value={tagsEdit.join(', ')}
-                          onChange={(e) => setTagsEdit(e.target.value.split(',').map(t => t.trim()).filter(Boolean))}
-                          placeholder="태그 (쉼표로 구분)"
-                          style={{ background: '#09090b', border: '1px solid #3f3f46', color: '#fff', padding: '8px', borderRadius: '4px', fontSize: '12px', width: '100%', boxSizing: 'border-box' }}
-                        />
-                      </div>
-                    )}
-                  </div>
+                  {/* AI Analysis Component */}
+                  <PhotoAiAnalysisView
+                    aiAnalysis={photo.ai_analysis}
+                    editing={editing}
+                    reindexing={reindexing}
+                    saving={saving}
+                    captionEdit={captionEdit}
+                    tagsEdit={tagsEdit}
+                    setEditing={setEditing}
+                    setCaptionEdit={setCaptionEdit}
+                    setTagsEdit={setTagsEdit}
+                    handleSave={handleSave}
+                    handleReindex={handleReindex}
+                    handleTagClick={handleTagClick}
+                  />
 
                   {/* AI Critique Component */}
                   <PhotoCritiqueView

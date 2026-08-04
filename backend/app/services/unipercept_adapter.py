@@ -172,7 +172,12 @@ class UniPerceptAdapter:
                     self.timer_active = False
                     print("[UniPerceptAdapter] UniPercept Model explicitly unloaded from memory.", flush=True)
 
-    def generate_unipercept_critique(self, image_path: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def generate_unipercept_critique(
+        self,
+        image_path: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        custom_prompt: Optional[str] = None
+    ) -> Dict[str, Any]:
         with self.lock:
             self._load_model_locked()
             self.last_used_time = time.time()
@@ -205,7 +210,8 @@ class UniPerceptAdapter:
                     exif_desc = f"[EXIF: {', '.join(parts)}]\n"
 
             from services.ai_parser import UNIPERCEPT_CRITIQUE_PROMPT
-            prompt_text = f"{exif_desc}{UNIPERCEPT_CRITIQUE_PROMPT}"
+            base_prompt = custom_prompt if custom_prompt is not None else UNIPERCEPT_CRITIQUE_PROMPT
+            prompt_text = f"{exif_desc}{base_prompt}"
 
             # Build preprocessed 448x448 pixel_values
             transform = build_transform(input_size=448)
