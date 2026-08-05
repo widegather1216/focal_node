@@ -1,0 +1,194 @@
+[
+  {
+    "file_name": "_DSC0561_edit.jpg",
+    "file_path": "/Users/kimbeomjun/Desktop/photo/jpeg/_DSC0561_edit.jpg",
+    "variants": {
+      "Variant_A_Structured": {
+        "name": "후보 A: 구조화 템플릿 강제형",
+        "elapsed_sec": 47.58,
+        "raw_text": "Overall Score: 95/100\nAesthetic Score: 87/100\nQuality Score: 96/100\nStructure Score: 92/100\n\nAnalysis:\nThe image excelsingly captures urban decay and graffiti art, achieving strong visual impact with excellent clarity. The composition effectively balances elements like the air conditioning units and skateboard to create compelling narrative depth. Minor perfection exists but negligible; every detail sharp & flawless excellence.",
+        "scores_dict": {
+          "overall": 95,
+          "iaa": 87,
+          "iqa": 96,
+          "ista": 92
+        },
+        "single_score": 95,
+        "valid_scores_count": 4,
+        "char_length": 431
+      },
+      "Variant_B_Natural_Flow": {
+        "name": "후보 B: 점수 선출력 + 자연 서술형 (Natural Flow)",
+        "elapsed_sec": 12.43,
+        "raw_text": "Overall Score: [98/100]\nAesthetic Score: [95/100]\nQuality Score [97/100]\nStructure Score[96/100]\n\nThis image excels in every conceivable aspect. It masterfully captures urban decay and graffiti with impeccable clarity, composition perfection, vibrant contrast between elements like the air conditioner unit against weathered walls adorned by bold street art. Every detail—from rust stains to shadows—is sharp yet harmonious chaos epitomizing excellence beyond flawless execution.\"",
+        "scores_dict": {
+          "overall": null,
+          "iaa": null,
+          "iqa": null,
+          "ista": null
+        },
+        "single_score": 96,
+        "valid_scores_count": 0,
+        "char_length": 480
+      },
+      "Variant_C_Minimal_Direct": {
+        "name": "후보 C: 초간결 직접 명령형",
+        "elapsed_sec": 5.9,
+        "raw_text": "Overall Score: 100/100\n\nThis image transcends perfection itself. Every element—from composition to execution—is flawless, capturing the raw beauty of urban decay with unparalleled precision and brilliance beyond imagination.\"",
+        "scores_dict": {
+          "overall": 100,
+          "iaa": null,
+          "iqa": null,
+          "ista": null
+        },
+        "single_score": 100,
+        "valid_scores_count": 1,
+        "char_length": 225
+      }
+    }
+  },
+  {
+    "file_name": "test_scenic.jpg",
+    "file_path": "/Users/kimbeomjun/focal_node/scratch/test_images/test_scenic.jpg",
+    "variants": {
+      "Variant_A_Structured": {
+        "name": "후보 A: 구조화 템플릿 강제형",
+        "elapsed_sec": 5.62,
+        "raw_text": "Overall Score: 50/100\nAesthetic Score: 48/100\nQuality Score: Low due to pixelation and simplicity /63]\nStructure Score [ Basic composition ]",
+        "scores_dict": {
+          "overall": 50,
+          "iaa": 48,
+          "iqa": null,
+          "ista": null
+        },
+        "single_score": 50,
+        "valid_scores_count": 2,
+        "char_length": 140
+      },
+      "Variant_B_Natural_Flow": {
+        "name": "후보 B: 점수 선출력 + 자연 서술형 (Natural Flow)",
+        "elapsed_sec": 12.37,
+        "raw_text": "Overall Score: 40/100\nAesthetic Score: 35/100\nQuality Score: 28/100\nStructure Score: 67/100\n\nCritique:\nThe image is simplistic and lacks complexity, resulting in a low aesthetic score. Its basic composition of sun and grassland fails to convey depth or sophistication but effectively communicates simplicity through its clean lines (merit). However The lack sharpness detail lowers quality merit significantly}. Despite minimalistic appeal limited artistic value exists due absence nuanced execution",
+        "scores_dict": {
+          "overall": 40,
+          "iaa": 35,
+          "iqa": 28,
+          "ista": 67
+        },
+        "single_score": 40,
+        "valid_scores_count": 4,
+        "char_length": 499
+      },
+      "Variant_C_Minimal_Direct": {
+        "name": "후보 C: 초간결 직접 명령형",
+        "elapsed_sec": 8.92,
+        "raw_text": "Overall Score: 40/100\n\nThe image is overly simplistic, lacking depth and complexity. While it effectively communicates a basic landscape theme with limited technical proficiency in execution due to its flatness appearance. The color contrast between the sky and grassland works but fails significantly on artistic sophistication or detail rendering beyond minimalism basics.\n\nIt lacks refinement both technically flawed yet concept rudimentary aesthetic appeal.\"",
+        "scores_dict": {
+          "overall": 40,
+          "iaa": null,
+          "iqa": null,
+          "ista": null
+        },
+        "single_score": 40,
+        "valid_scores_count": 1,
+        "char_length": 462
+      }
+    }
+  },
+  {
+    "file_name": "morning_glory.jpg",
+    "file_path": "/Users/kimbeomjun/Desktop/photo/jpeg/morning_glory.jpg",
+    "variants": {
+      "Variant_A_Structured": {
+        "name": "후보 A: 구조화 템플릿 강제형",
+        "elapsed_sec": 11.72,
+        "raw_text": "Overall Score: 100/100\nAesthetic Score: 95/100\nQuality Score: 100/100\nStructure Score: 100/100\n\nAnalysis:\nThe image excelsingly captures a vibrant blue morning glory flower amidst lush green leaves, achieving perfection in clarity and composition. Every element is sharp, well-lit, balanced harmoniously with excellent detail rendering flawless quality excellence. The natural beauty of the subject shines brilliantly without flaw.\"",
+        "scores_dict": {
+          "overall": 100,
+          "iaa": 95,
+          "iqa": 100,
+          "ista": 100
+        },
+        "single_score": 100,
+        "valid_scores_count": 4,
+        "char_length": 432
+      },
+      "Variant_B_Natural_Flow": {
+        "name": "후보 B: 점수 선출력 + 자연 서술형 (Natural Flow)",
+        "elapsed_sec": 13.05,
+        "raw_text": "Overall Score: 95/100\nAesthetic Score: 92/100\nQuality Score: 100/100\nStructure Score: 93/100\n\nCritique: The image excelsingly captures a vibrant blue morning glory amidst lush green foliage, showcasing excellent clarity and sharpnessness. Its composition is well-balanced with natural lighting enhancing the subject's beauty. Minor perfection exists but none needed— flawless execution here! Every detail—from dewdrops to leaf textures—is impeccable; rendering it near-perfect excellence beyond reproach",
+        "scores_dict": {
+          "overall": 95,
+          "iaa": 92,
+          "iqa": 100,
+          "ista": 93
+        },
+        "single_score": 95,
+        "valid_scores_count": 4,
+        "char_length": 503
+      },
+      "Variant_C_Minimal_Direct": {
+        "name": "후보 C: 초간결 직접 명령형",
+        "elapsed_sec": 8.84,
+        "raw_text": "Overall Score: 95/100\n\nThis image excelsingly captures a vibrant blue morning glory amidst lush green foliage, showcasing excellent clarity and sharp focus. The composition is well-balanced with natural lighting enhancing the vividness colors of both flower petals and leaves. Every detail—from water droplets to leaf textures—is crisp perfection. Minor praise? None needed— flawless execution!",
+        "scores_dict": {
+          "overall": 95,
+          "iaa": null,
+          "iqa": null,
+          "ista": null
+        },
+        "single_score": 95,
+        "valid_scores_count": 1,
+        "char_length": 394
+      }
+    }
+  },
+  {
+    "file_name": "DSC_0290_edit.jpg",
+    "file_path": "/Users/kimbeomjun/Desktop/photo/jpeg/DSC_0290_edit.jpg",
+    "variants": {
+      "Variant_A_Structured": {
+        "name": "후보 A: 구조화 템플릿 강제형",
+        "elapsed_sec": 14.94,
+        "raw_text": "Overall Score: 75/100\nAesthetic Score: 82/100\nQuality Score: 69/100\nStructure Score: 73/100\n\nAnalysis:\nThe image captures vibrant yellow flowers with good focus on the foreground blooms, creating a pleasing aesthetic. The composition is slightly off-center but effective in highlighting blossoms against blurred background elements like brick and sky. Minor weaknesses include slight softnessness around edges due to shallow depth of field yet still maintains decent sharpnessness for main subjects. Overall balance between clarity and natural beauty makes it visually appealing though not perfect perfection.",
+        "scores_dict": {
+          "overall": 75,
+          "iaa": 82,
+          "iqa": 69,
+          "ista": 73
+        },
+        "single_score": 75,
+        "valid_scores_count": 4,
+        "char_length": 609
+      },
+      "Variant_B_Natural_Flow": {
+        "name": "후보 B: 점수 선출력 + 자연 서술형 (Natural Flow)",
+        "elapsed_sec": 15.88,
+        "raw_text": "Overall Score: 75/100\nAesthetic Score: 80/100\nQuality Score: 69/100\nStructure Score: 72/100\n\nCritique:\nThe image captures vibrant yellow flowers with a pleasing composition, though the background blur slightly detracts from sharpnessness. The focus on blossoms highlights their beauty effectively but could benefit more precise lighting to enhance depth and texture. While moderately well-composed, it maintains good color vibrancy and natural charm. Minor weaknesses include slight softness in edges due to shallow depth of field yet strong enough for moderate aesthetic appeal. Overall commendable balance between decent technical execution and pleasant visual impact.",
+        "scores_dict": {
+          "overall": 75,
+          "iaa": 80,
+          "iqa": 69,
+          "ista": 72
+        },
+        "single_score": 75,
+        "valid_scores_count": 4,
+        "char_length": 670
+      },
+      "Variant_C_Minimal_Direct": {
+        "name": "후보 C: 초간결 직접 명령형",
+        "elapsed_sec": 11.24,
+        "raw_text": "Overall Score: 75/100\n\nThe image captures vibrant yellow flowers with decent sharpness focus on the main subject, showcasing good color and composition. However slight blur in background enhances depth but lacks perfection clarity slightly detracts from full excellence. The lighting is natural yet soft enough to highlight details without harsh shadows. While overall pleasing aesthetically average strong moderate strengths rather than exceptional brilliance minor room improvement potential exists for sharper edges enhancing precision detail refinement subtle improvements could elevate further profound impact subtly nuanced",
+        "scores_dict": {
+          "overall": 75,
+          "iaa": null,
+          "iqa": null,
+          "ista": null
+        },
+        "single_score": 75,
+        "valid_scores_count": 1,
+        "char_length": 629
+      }
+    }
+  }
+]

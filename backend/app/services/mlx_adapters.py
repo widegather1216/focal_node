@@ -382,7 +382,7 @@ class GemmaAdapter(ImageCaptioningPort):
                 self.last_used_time = time.time()
                 self.active_requests -= 1
 
-    def translate_and_format_critique(self, raw_en_critique: str, quality_score: int = None) -> str:
+    def translate_and_format_critique(self, raw_en_critique: str, scores_dict: dict = None, quality_score: int = None) -> str:
         with self.lock:
             self._load_model_locked()
             self.last_used_time = time.time()
@@ -393,7 +393,7 @@ class GemmaAdapter(ImageCaptioningPort):
                 GEMMA_TRANSLATE_CRITIQUE_SYSTEM_PROMPT,
                 format_unipercept_translate_user_prompt
             )
-            user_prompt = format_unipercept_translate_user_prompt(raw_en_critique, quality_score)
+            user_prompt = format_unipercept_translate_user_prompt(raw_en_critique, scores_dict, quality_score)
             messages = [
                 {
                     "role": "system",

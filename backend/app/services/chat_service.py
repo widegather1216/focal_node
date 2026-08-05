@@ -44,11 +44,12 @@ class ChatService:
                 critique_text = await asyncio.to_thread(
                     get_gemma_adapter().translate_and_format_critique,
                     raw_en,
+                    scores_dict,
                     quality_score
                 )
                 if scores_dict and not critique_text.startswith("[📊"):
                     sb_header = (
-                        f"[📊 4대 앙상블 비평 스코어보드]\n"
+                        f"[📊 6-Way 앙상블 비평 스코어보드]\n"
                         f"- 최종 종합 평점: {scores_dict.get('overall')}점 / 100점\n"
                         f"- 🎨 미학 & 구도 (IAA): {scores_dict.get('iaa')}점\n"
                         f"- 🔍 화질 & 기술 (IQA): {scores_dict.get('iqa')}점\n"

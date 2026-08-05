@@ -42,37 +42,35 @@ GEMMA_CRITIQUE_SUMMARY_SYSTEM_PROMPT = (
 )
 
 GEMMA_TRANSLATE_CRITIQUE_SYSTEM_PROMPT = (
-    "당신은 세계적인 사진 비평가 및 예술 감독입니다. 영문 시각 모델(UniPercept)의 기술적 비평 데이터를 바탕으로 품격 있고 체계적인 한국어 사진 비평 리포트를 생성하십시오."
+    "당신은 정밀한 시각 비평 전문 번역가입니다.\n"
+    "제공된 영문 사진 비평 데이터를 한국어로 번역하고 통합 정리할 때 다음 규칙을 절대적으로 준수하십시오:\n\n"
+    "[엄격 준수 지침]\n"
+    "1. 절대 임의로 새로운 내용을 지어내거나(Hallucination), 원문에 없는 추측/해설/조언을 덧붙이지 마십시오.\n"
+    "2. 원문 비평에 포함된 기술적 분석, 구체적 근거, 시각적 아쉬움 및 단점 내용을 단 하나도 누락하지 말고 100% 충실히 번역하십시오.\n"
+    "3. 사진 전문 용어는 자연스러운 한국어 표준 용어로 정확히 번역하십시오.\n"
+    "4. 주관적 감상평이나 원문에 없는 조언을 배제하고, 입력된 영문 비평 4개 파트의 내용을 영역별로 정확하고 충실하게 한국어로 통합하여 출력하십시오."
 )
 
-UNIPERCEPT_CRITIQUE_PROMPT = (
-    "Evaluate this image comprehensively across three domains: 1. Image Aesthetics (IAA), "
-    "2. Image Quality (IQA), and 3. Structure & Texture (ISTA). "
-    "Provide concise technical reasons for each domain. "
-    "At the very end, strictly output scores in format: "
-    "'Overall Score: XX/100', 'IAA Score: XX/100', 'IQA Score: XX/100', 'ISTA Score: XX/100'."
+UNIPERCEPT_VR_SCORE_PROMPT = (
+    "Rate this photo from 1 to 100 across 3 perceptual dimensions. Output ONLY the numeric scores without any explanation in this exact format:\n\n"
+    "Aesthetic Score: [1-100]\n"
+    "Quality Score: [1-100]\n"
+    "Structure Score: [1-100]"
 )
 
-UNIPERCEPT_IAA_PROMPT = (
-    "Focus deeply on Image Aesthetics (IAA). "
-    "Analyze composition, lighting, color harmony, subject placement, and visual impact. "
-    "Detail how aesthetic choices elevate or weaken the photo. "
-    "At the very end, strictly output 'Aesthetic Score: XX/100'."
+UNIPERCEPT_VQA_IAA_PROMPT = (
+    "Analyze the aesthetic qualities of this image in detail, focusing on composition, visual balance, lighting mood, color grading harmony, and artistic impact."
 )
 
-UNIPERCEPT_IQA_PROMPT = (
-    "Focus strictly on Image Quality (IQA). "
-    "Evaluate technical sharpness, sensor noise, exposure balance, focus accuracy, chromatic aberration, and dynamic range. "
-    "Detail technical artifacts. "
-    "At the very end, strictly output 'Quality Score: XX/100'."
+UNIPERCEPT_VQA_IQA_PROMPT = (
+    "Analyze the technical image quality in detail, focusing on sharpness, optical clarity, depth of field, exposure balance, sensor noise, and lens characteristics."
 )
 
-UNIPERCEPT_ISTA_PROMPT = (
-    "Focus intently on Structure & Texture (ISTA). "
-    "Inspect fine detail resolution, micro-contrast, edge definitions, surface texture rendering, and tonal gradations. "
-    "Detail textural fidelity. "
-    "At the very end, strictly output 'Structure Score: XX/100'."
+UNIPERCEPT_VQA_ISTA_PROMPT = (
+    "Analyze the structural and textural details in detail, focusing on surface textures, material definitions, edge clarity, geometry, and micro-contrast."
 )
+
+UNIPERCEPT_CRITIQUE_PROMPT = UNIPERCEPT_VQA_IAA_PROMPT
 
 def format_unipercept_translate_user_prompt(
     raw_en_critique: str,
@@ -86,7 +84,7 @@ def format_unipercept_translate_user_prompt(
         iqa = scores_dict.get("iqa")
         ista = scores_dict.get("ista")
         score_info = (
-            f"[📊 4대 앙상블 비평 스코어보드]\n"
+            f"[📊 6-Way 앙상블 비평 스코어보드]\n"
             f"- 최종 종합 평점: {overall}점 / 100점\n"
             f"- 🎨 미학 & 구도 (IAA): {iaa}점\n"
             f"- 🔍 화질 & 기술 (IQA): {iqa}점\n"
@@ -96,14 +94,14 @@ def format_unipercept_translate_user_prompt(
         score_info = f"[품질/미학 점수: {quality_score}점 / 100점]\n\n"
 
     return (
-        f"다음은 시각 분석 모델(UniPercept)이 4개 프롬프트 연쇄 앙상블로 생성한 사진의 기술적 영문 비평 데이터입니다:\n\n"
+        f"다음은 영문 시각 분석 모델(UniPercept)이 6-Way 앙상블(VR 3회 + VQA 3회)로 평가한 사진의 기술적 비평 원문 데이터입니다:\n\n"
         f"{score_info}{raw_en_critique}\n\n"
-        "위 영문 분석 내용을 전문 사진작가의 품격 있고 다정한 어조로 한국어로 번역하고 다음 구체적인 5개 영역으로 정돈하여 불렛포인트로 리포트를 작성해주십시오:\n"
-        "1. 📊 종합 품질 & 미학 점수 (상단 스코어보드 수치 반영)\n"
-        "2. ✨ 미학 및 구도 (IAA)\n"
-        "3. 🔍 화질 및 기술적 품질 (IQA)\n"
-        "4. 🎨 구조 및 질감 (ISTA)\n"
-        "5. 💡 전문가 총평 및 조언"
+        "[작성 지침]\n"
+        "상단 스코어보드를 유지하고, 위 영문 원문의 내용을 단 하나의 사실도 누락하거나 임의 덧붙임 없이 순수하게 한국어로 충실히 번역하여 다음 3개 영역으로 깔끔하게 정돈해 주십시오:\n\n"
+        "1. 📊 종합 품질 & 미학 점수 (상단 스코어보드 수치 명시)\n"
+        "2. ✨ 미학 및 구도 요약 (미학 원문 충실 번역)\n"
+        "3. 🔍 화질 및 기술적 품질 요약 (화질 원문 충실 번역)\n"
+        "4. 🧱 구조 및 질감 요약 (구조 및 질감 원문 충실 번역)\n"
     )
 
 def format_exif_text(metadata: dict | None) -> str:
