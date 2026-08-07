@@ -1,0 +1,452 @@
+[
+  {
+    "file_name": "_DSC2126_edit.jpg",
+    "trials": [
+      {
+        "trial": 1,
+        "scores": {
+          "overall": 48,
+          "iaa": 38.25,
+          "iqa": 74.5,
+          "ista": 33.75,
+          "raw_vr_text": "IAA: 38.25, IQA: 74.5, ISTA: 33.75 -> Overall: 48"
+        },
+        "latency_sec": 32.15
+      },
+      {
+        "trial": 2,
+        "scores": {
+          "overall": 48,
+          "iaa": 38.25,
+          "iqa": 74.5,
+          "ista": 33.75,
+          "raw_vr_text": "IAA: 38.25, IQA: 74.5, ISTA: 33.75 -> Overall: 48"
+        },
+        "latency_sec": 5.93
+      },
+      {
+        "trial": 3,
+        "scores": {
+          "overall": 48,
+          "iaa": 38.25,
+          "iqa": 74.5,
+          "ista": 33.75,
+          "raw_vr_text": "IAA: 38.25, IQA: 74.5, ISTA: 33.75 -> Overall: 48"
+        },
+        "latency_sec": 5.76
+      },
+      {
+        "trial": 4,
+        "scores": {
+          "overall": 48,
+          "iaa": 38.25,
+          "iqa": 74.5,
+          "ista": 33.75,
+          "raw_vr_text": "IAA: 38.25, IQA: 74.5, ISTA: 33.75 -> Overall: 48"
+        },
+        "latency_sec": 5.89
+      },
+      {
+        "trial": 5,
+        "scores": {
+          "overall": 48,
+          "iaa": 38.25,
+          "iqa": 74.5,
+          "ista": 33.75,
+          "raw_vr_text": "IAA: 38.25, IQA: 74.5, ISTA: 33.75 -> Overall: 48"
+        },
+        "latency_sec": 5.98
+      }
+    ],
+    "stats": {
+      "overall": {
+        "mean": 48.0,
+        "std": 0.0,
+        "min": 48,
+        "max": 48,
+        "range": 0
+      },
+      "iaa": {
+        "mean": 38.25,
+        "std": 0.0,
+        "min": 38.25,
+        "max": 38.25,
+        "range": 0.0
+      },
+      "iqa": {
+        "mean": 74.5,
+        "std": 0.0,
+        "min": 74.5,
+        "max": 74.5,
+        "range": 0.0
+      },
+      "ista": {
+        "mean": 33.75,
+        "std": 0.0,
+        "min": 33.75,
+        "max": 33.75,
+        "range": 0.0
+      }
+    }
+  },
+  {
+    "file_name": "_DSC2250_edit.jpg",
+    "trials": [
+      {
+        "trial": 1,
+        "scores": {
+          "overall": 60,
+          "iaa": 57.25,
+          "iqa": 69.5,
+          "ista": 54.25,
+          "raw_vr_text": "IAA: 57.25, IQA: 69.5, ISTA: 54.25 -> Overall: 60"
+        },
+        "latency_sec": 7.63
+      },
+      {
+        "trial": 2,
+        "scores": {
+          "overall": 60,
+          "iaa": 57.25,
+          "iqa": 69.5,
+          "ista": 54.25,
+          "raw_vr_text": "IAA: 57.25, IQA: 69.5, ISTA: 54.25 -> Overall: 60"
+        },
+        "latency_sec": 6.03
+      },
+      {
+        "trial": 3,
+        "scores": {
+          "overall": 60,
+          "iaa": 57.25,
+          "iqa": 69.5,
+          "ista": 54.25,
+          "raw_vr_text": "IAA: 57.25, IQA: 69.5, ISTA: 54.25 -> Overall: 60"
+        },
+        "latency_sec": 5.88
+      },
+      {
+        "trial": 4,
+        "scores": {
+          "overall": 60,
+          "iaa": 57.25,
+          "iqa": 69.5,
+          "ista": 54.25,
+          "raw_vr_text": "IAA: 57.25, IQA: 69.5, ISTA: 54.25 -> Overall: 60"
+        },
+        "latency_sec": 5.96
+      },
+      {
+        "trial": 5,
+        "scores": {
+          "overall": 60,
+          "iaa": 57.25,
+          "iqa": 69.5,
+          "ista": 54.25,
+          "raw_vr_text": "IAA: 57.25, IQA: 69.5, ISTA: 54.25 -> Overall: 60"
+        },
+        "latency_sec": 5.71
+      }
+    ],
+    "stats": {
+      "overall": {
+        "mean": 60.0,
+        "std": 0.0,
+        "min": 60,
+        "max": 60,
+        "range": 0
+      },
+      "iaa": {
+        "mean": 57.25,
+        "std": 0.0,
+        "min": 57.25,
+        "max": 57.25,
+        "range": 0.0
+      },
+      "iqa": {
+        "mean": 69.5,
+        "std": 0.0,
+        "min": 69.5,
+        "max": 69.5,
+        "range": 0.0
+      },
+      "ista": {
+        "mean": 54.25,
+        "std": 0.0,
+        "min": 54.25,
+        "max": 54.25,
+        "range": 0.0
+      }
+    }
+  },
+  {
+    "file_name": "_DSC1924_edit.jpg",
+    "trials": [
+      {
+        "trial": 1,
+        "scores": {
+          "overall": 59,
+          "iaa": 58.75,
+          "iqa": 66.0,
+          "ista": 53.75,
+          "raw_vr_text": "IAA: 58.75, IQA: 66.0, ISTA: 53.75 -> Overall: 59"
+        },
+        "latency_sec": 6.04
+      },
+      {
+        "trial": 2,
+        "scores": {
+          "overall": 59,
+          "iaa": 58.75,
+          "iqa": 66.0,
+          "ista": 53.75,
+          "raw_vr_text": "IAA: 58.75, IQA: 66.0, ISTA: 53.75 -> Overall: 59"
+        },
+        "latency_sec": 6.36
+      },
+      {
+        "trial": 3,
+        "scores": {
+          "overall": 59,
+          "iaa": 58.75,
+          "iqa": 66.0,
+          "ista": 53.75,
+          "raw_vr_text": "IAA: 58.75, IQA: 66.0, ISTA: 53.75 -> Overall: 59"
+        },
+        "latency_sec": 6.29
+      },
+      {
+        "trial": 4,
+        "scores": {
+          "overall": 59,
+          "iaa": 58.75,
+          "iqa": 66.0,
+          "ista": 53.75,
+          "raw_vr_text": "IAA: 58.75, IQA: 66.0, ISTA: 53.75 -> Overall: 59"
+        },
+        "latency_sec": 5.9
+      },
+      {
+        "trial": 5,
+        "scores": {
+          "overall": 59,
+          "iaa": 58.75,
+          "iqa": 66.0,
+          "ista": 53.75,
+          "raw_vr_text": "IAA: 58.75, IQA: 66.0, ISTA: 53.75 -> Overall: 59"
+        },
+        "latency_sec": 5.7
+      }
+    ],
+    "stats": {
+      "overall": {
+        "mean": 59.0,
+        "std": 0.0,
+        "min": 59,
+        "max": 59,
+        "range": 0
+      },
+      "iaa": {
+        "mean": 58.75,
+        "std": 0.0,
+        "min": 58.75,
+        "max": 58.75,
+        "range": 0.0
+      },
+      "iqa": {
+        "mean": 66.0,
+        "std": 0.0,
+        "min": 66.0,
+        "max": 66.0,
+        "range": 0.0
+      },
+      "ista": {
+        "mean": 53.75,
+        "std": 0.0,
+        "min": 53.75,
+        "max": 53.75,
+        "range": 0.0
+      }
+    }
+  },
+  {
+    "file_name": "_DSC2081_edit.jpg",
+    "trials": [
+      {
+        "trial": 1,
+        "scores": {
+          "overall": 51,
+          "iaa": 58.5,
+          "iqa": 67.0,
+          "ista": 26.25,
+          "raw_vr_text": "IAA: 58.5, IQA: 67.0, ISTA: 26.25 -> Overall: 51"
+        },
+        "latency_sec": 6.78
+      },
+      {
+        "trial": 2,
+        "scores": {
+          "overall": 51,
+          "iaa": 58.5,
+          "iqa": 67.0,
+          "ista": 26.25,
+          "raw_vr_text": "IAA: 58.5, IQA: 67.0, ISTA: 26.25 -> Overall: 51"
+        },
+        "latency_sec": 6.03
+      },
+      {
+        "trial": 3,
+        "scores": {
+          "overall": 51,
+          "iaa": 58.5,
+          "iqa": 67.0,
+          "ista": 26.25,
+          "raw_vr_text": "IAA: 58.5, IQA: 67.0, ISTA: 26.25 -> Overall: 51"
+        },
+        "latency_sec": 5.86
+      },
+      {
+        "trial": 4,
+        "scores": {
+          "overall": 51,
+          "iaa": 58.5,
+          "iqa": 67.0,
+          "ista": 26.25,
+          "raw_vr_text": "IAA: 58.5, IQA: 67.0, ISTA: 26.25 -> Overall: 51"
+        },
+        "latency_sec": 5.9
+      },
+      {
+        "trial": 5,
+        "scores": {
+          "overall": 51,
+          "iaa": 58.5,
+          "iqa": 67.0,
+          "ista": 26.25,
+          "raw_vr_text": "IAA: 58.5, IQA: 67.0, ISTA: 26.25 -> Overall: 51"
+        },
+        "latency_sec": 5.74
+      }
+    ],
+    "stats": {
+      "overall": {
+        "mean": 51.0,
+        "std": 0.0,
+        "min": 51,
+        "max": 51,
+        "range": 0
+      },
+      "iaa": {
+        "mean": 58.5,
+        "std": 0.0,
+        "min": 58.5,
+        "max": 58.5,
+        "range": 0.0
+      },
+      "iqa": {
+        "mean": 67.0,
+        "std": 0.0,
+        "min": 67.0,
+        "max": 67.0,
+        "range": 0.0
+      },
+      "ista": {
+        "mean": 26.25,
+        "std": 0.0,
+        "min": 26.25,
+        "max": 26.25,
+        "range": 0.0
+      }
+    }
+  },
+  {
+    "file_name": "_DSC2073_edit.jpg",
+    "trials": [
+      {
+        "trial": 1,
+        "scores": {
+          "overall": 53,
+          "iaa": 51.5,
+          "iqa": 75.5,
+          "ista": 33.25,
+          "raw_vr_text": "IAA: 51.5, IQA: 75.5, ISTA: 33.25 -> Overall: 53"
+        },
+        "latency_sec": 5.95
+      },
+      {
+        "trial": 2,
+        "scores": {
+          "overall": 53,
+          "iaa": 51.5,
+          "iqa": 75.5,
+          "ista": 33.25,
+          "raw_vr_text": "IAA: 51.5, IQA: 75.5, ISTA: 33.25 -> Overall: 53"
+        },
+        "latency_sec": 5.73
+      },
+      {
+        "trial": 3,
+        "scores": {
+          "overall": 53,
+          "iaa": 51.5,
+          "iqa": 75.5,
+          "ista": 33.25,
+          "raw_vr_text": "IAA: 51.5, IQA: 75.5, ISTA: 33.25 -> Overall: 53"
+        },
+        "latency_sec": 5.73
+      },
+      {
+        "trial": 4,
+        "scores": {
+          "overall": 53,
+          "iaa": 51.5,
+          "iqa": 75.5,
+          "ista": 33.25,
+          "raw_vr_text": "IAA: 51.5, IQA: 75.5, ISTA: 33.25 -> Overall: 53"
+        },
+        "latency_sec": 5.76
+      },
+      {
+        "trial": 5,
+        "scores": {
+          "overall": 53,
+          "iaa": 51.5,
+          "iqa": 75.5,
+          "ista": 33.25,
+          "raw_vr_text": "IAA: 51.5, IQA: 75.5, ISTA: 33.25 -> Overall: 53"
+        },
+        "latency_sec": 5.87
+      }
+    ],
+    "stats": {
+      "overall": {
+        "mean": 53.0,
+        "std": 0.0,
+        "min": 53,
+        "max": 53,
+        "range": 0
+      },
+      "iaa": {
+        "mean": 51.5,
+        "std": 0.0,
+        "min": 51.5,
+        "max": 51.5,
+        "range": 0.0
+      },
+      "iqa": {
+        "mean": 75.5,
+        "std": 0.0,
+        "min": 75.5,
+        "max": 75.5,
+        "range": 0.0
+      },
+      "ista": {
+        "mean": 33.25,
+        "std": 0.0,
+        "min": 33.25,
+        "max": 33.25,
+        "range": 0.0
+      }
+    }
+  }
+]

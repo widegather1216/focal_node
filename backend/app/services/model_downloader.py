@@ -45,7 +45,7 @@ def download_with_retry(repo_id: str, label: str, max_retries: int = 3, **kwargs
 
 def download_models_background():
     download_with_retry("google/siglip2-base-patch16-224", "SigLIP 2 (검색 엔진)")
-    download_with_retry("google/gemma-4-E4B-it", "Gemma 4 (비전 분석 엔진)")
+    download_with_retry("mlx-community/gemma-4-26B-A4B-it-qat-OptiQ-4bit", "Gemma 4 (비전 분석 엔진)")
     
     # Check local checkpoint folder first for UniPercept
     local_unipercept = os.path.abspath("checkpoints/UniPercept")

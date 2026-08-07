@@ -132,7 +132,7 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
 
 class GemmaAdapter(ImageCaptioningPort):
     def __init__(self):
-        self.model_id = "google/gemma-4-E4B-it"
+        self.model_id = "mlx-community/gemma-4-26B-A4B-it-qat-OptiQ-4bit"
         self.model = None
         self.processor = None
         self.last_used_time = 0.0

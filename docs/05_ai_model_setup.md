@@ -11,9 +11,9 @@
 1. **SigLIP 2 (google/siglip2-base-patch16-224)**
    * **역할:** 이미지 및 텍스트의 768차원 특징 임베딩 추출 (ChromaDB 저장 및 코사인 유사도 검색용) 및 Zero-shot 키워드 추출.
    * **특징:** 메모리 상주(Keep-alive) 상태로 빠른 검색 응답을 보장합니다.
-2. **Gemma 4 E4B-it (google/gemma-4-E4B-it / mlx-community/gemma-4-e4b-it-4bit)**
-   * **역할:** 이미지의 감각적인 상세 묘사(Caption) 생성, 태그 추출 및 비평 요약 보고서 작성.
-   * **특징:** 4-bit 양자화 모델로 60초 Keep-alive 데몬 관리를 적용하여 VRAM을 자진 반환합니다.
+2. **Gemma 4 26B-A4B (mlx-community/gemma-4-26B-A4B-it-qat-OptiQ-4bit)**
+   * **역할:** 이미지의 감각적인 상세 묘사(Caption) 생성, 태그 추출, 시각 키워드 교차 검증 및 비평 요약 보고서 작성.
+   * **특징:** 26B MoE(Active 4B) 아키텍처에 QAT + OptiQ 4-bit 양자화를 적용하여 빠른 추론 속도와 뛰어난 지침 준수 능력을 제공합니다. 60초 Keep-alive 데몬 관리를 적용하여 VRAM을 자진 반환합니다.
 3. **UniPercept 8B (unipercept/UniPercept-8B)**
    * **역할:** 전문 포트폴리오 수준의 사진 구도, 조명, 색감 기술 분석 및 깊이 있는 비평/점수 산출.
    * **특징:** 대용량 비평 전문 VLM으로 16GB 메모리 절약을 위해 비평 생성이 완료되면 즉시 메모리를 언로드(`mx.clear_cache()`)합니다.
@@ -50,7 +50,7 @@ python3 -c "import mlx.core as mx; print(mx.default_device())"
 
 VRAM 점유율을 획기적으로 낮추기 위해 **4-bit 양자화(Quantized) 버전** 사용을 권장합니다.
 
-* **추천 모델 식별자:** `mlx-community/gemma-4-e4b-it-4bit`
+* **추천 모델 식별자:** `mlx-community/gemma-4-26B-A4B-it-qat-OptiQ-4bit`
 
 ---
 
