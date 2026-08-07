@@ -47,7 +47,7 @@ class ChatService:
                     scores_dict,
                     quality_score
                 )
-                if scores_dict and not critique_text.startswith("[📊"):
+                if scores_dict and "앙상블 비평 스코어보드" not in critique_text:
                     sb_header = (
                         f"[📊 6-Way 앙상블 비평 스코어보드]\n"
                         f"- 최종 종합 평점: {scores_dict.get('overall')}점 / 100점\n"

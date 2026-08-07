@@ -360,10 +360,11 @@ class UniPerceptAdapter:
     def generate_vqa_critiques_3way(
         self,
         image_path: str,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        scores_context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, str]:
         """
-        Runs 3-Way Dedicated VQA inference:
+        Runs 3-Way Dedicated VQA inference with optional Stage 1 Score Conditioning:
         1. IAA (Aesthetics, Lighting, Composition, Color Harmony)
         2. IQA (Technical Quality, Sharpness, Noise, Depth of Field)
         3. ISTA (Surface Texture, Edge Definition, Micro-contrast)
@@ -406,6 +407,21 @@ class UniPerceptAdapter:
                 if parts:
                     exif_desc = f"[EXIF: {', '.join(parts)}]\n"
 
+            score_desc = ""
+            if scores_context and isinstance(scores_context, dict):
+                ov = scores_context.get("overall")
+                iaa = scores_context.get("iaa")
+                iqa = scores_context.get("iqa")
+                ista = scores_context.get("ista")
+                score_desc = (
+                    f"[Target Perceptual Metric Scores]\n"
+                    f"- Overall Photo Rating: {ov}/100\n"
+                    f"- Aesthetics & Composition (IAA): {iaa}/100\n"
+                    f"- Technical Quality & Clarity (IQA): {iqa}/100\n"
+                    f"- Structure & Textural Details (ISTA): {ista}/100\n"
+                    f"Instruction: Analyze this photo reflecting these exact scores. If any score is under 70, strictly focus on identifying the specific visual defects, noise, blur, lighting imbalance, or compositional flaws. Do NOT use inflated praise words like 'masterpiece', 'flawless', or 'impeccable' unless scores exceed 90.\n\n"
+                )
+
             target_dtype = self.torch_dtype
             if self.model is not None and hasattr(self.model, "parameters"):
                 try:
@@ -423,13 +439,13 @@ class UniPerceptAdapter:
             )
 
             vqa_prompts = {
-                "iaa": f"{exif_desc}{UNIPERCEPT_VQA_IAA_PROMPT}",
-                "iqa": f"{exif_desc}{UNIPERCEPT_VQA_IQA_PROMPT}",
-                "ista": f"{exif_desc}{UNIPERCEPT_VQA_ISTA_PROMPT}",
+                "iaa": f"{exif_desc}{score_desc}{UNIPERCEPT_VQA_IAA_PROMPT}",
+                "iqa": f"{exif_desc}{score_desc}{UNIPERCEPT_VQA_IQA_PROMPT}",
+                "ista": f"{exif_desc}{score_desc}{UNIPERCEPT_VQA_ISTA_PROMPT}",
             }
 
             generation_config = dict(
-                max_new_tokens=512,
+                max_new_tokens=1024,
                 do_sample=False,
                 num_beams=1,
                 repetition_penalty=1.2
@@ -449,7 +465,7 @@ class UniPerceptAdapter:
                         else:
                             inputs = self.processor(images=pil_img, text=prompt_text, return_tensors="pt").to(self.device, dtype=self.torch_dtype)
                             with torch.no_grad():
-                                outputs = self.model.generate(**inputs, max_new_tokens=512)
+                                outputs = self.model.generate(**inputs, max_new_tokens=1024)
                             txt = self.processor.decode(outputs[0], skip_special_tokens=True)
                         critiques[domain_key] = txt.strip()
                     except Exception as eval_err:
@@ -467,10 +483,10 @@ class UniPerceptAdapter:
         self,
         image_path: str,
         metadata: Optional[Dict[str, Any]] = None,
-        custom_prompt: Optional[str] = None
+        scores_context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Backward-compatible single VQA critique generator."""
-        res_3way = self.generate_vqa_critiques_3way(image_path, metadata)
+        """Backward-compatible single VQA critique generator with optional score conditioning."""
+        res_3way = self.generate_vqa_critiques_3way(image_path, metadata, scores_context=scores_context)
         merged = (
             f"[Aesthetics & Composition]\n{res_3way.get('iaa', '')}\n\n"
             f"[Technical Quality & Clarity]\n{res_3way.get('iqa', '')}\n\n"
@@ -755,10 +771,6 @@ class UniPerceptAdapter:
         final_iqa = vr_result["iqa"]
         final_ista = vr_result["ista"]
 
-        # 2. Stage 2: VQA Mode (Pure Photographic Critique)
-        vqa_result = self.generate_vqa_critique(image_path, metadata=metadata)
-        vqa_critique = vqa_result["critique"]
-
         scores_summary = {
             "overall": final_overall,
             "iaa": final_iaa,
@@ -767,6 +779,10 @@ class UniPerceptAdapter:
             "comp_direct": final_overall,
             "weighted_analysis": final_overall
         }
+
+        # 2. Stage 2: VQA Mode (Score-Conditioned Photographic Critique)
+        vqa_result = self.generate_vqa_critique(image_path, metadata=metadata, scores_context=scores_summary)
+        vqa_critique = vqa_result["critique"]
 
         return {
             "critique": vqa_critique,

@@ -198,6 +198,24 @@ class GemmaAdapter(ImageCaptioningPort):
                             print("[GemmaAdapter] Model unloaded.", flush=True)
                             break
 
+    def unload_model(self):
+        """Explicitly unload Gemma model from memory and clear Metal cache immediately."""
+        import gc
+        with self.lock:
+            with GPU_LOCK:
+                if self.model is not None:
+                    print("[GemmaAdapter] Explicitly unloading Gemma model to free memory...", flush=True)
+                    self.model = None
+                    self.processor = None
+                    gc.collect()
+                    try:
+                        import mlx.core as mx
+                        mx.clear_cache()
+                    except Exception as e:
+                        print(f"[GemmaAdapter] Failed to clear metal cache: {e}", flush=True)
+                    self.timer_active = False
+                    print("[GemmaAdapter] Gemma Model explicitly unloaded from memory.", flush=True)
+
     def generate_caption_and_tags(self, image_path: str, metadata: dict = None, siglip_hints: list[str] = None) -> dict:
         with self.lock:
             self._load_model_locked()
@@ -361,7 +379,7 @@ class GemmaAdapter(ImageCaptioningPort):
                     prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
                     from mlx_vlm import generate
-                    result = generate(self.model, self.processor, prompt=prompt, verbose=False)
+                    result = generate(self.model, self.processor, prompt=prompt, max_tokens=1024, verbose=False)
                     output = result.text if hasattr(result, "text") else str(result)
                 except RuntimeError as e:
                     print(f"[GemmaAdapter] MLX OOM during critique summary: {e}. Recovering...", flush=True)
@@ -413,7 +431,7 @@ class GemmaAdapter(ImageCaptioningPort):
                     prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
                     from mlx_vlm import generate
-                    result = generate(self.model, self.processor, prompt=prompt, verbose=False)
+                    result = generate(self.model, self.processor, prompt=prompt, max_tokens=1024, verbose=False)
                     output = result.text if hasattr(result, "text") else str(result)
                     return output.strip()
                 except Exception as e:

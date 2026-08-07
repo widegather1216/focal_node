@@ -1,0 +1,471 @@
+[
+  {
+    "file_name": "_DSC1942_edit.jpg",
+    "source": "Current DB (6-Way Engine)",
+    "char_len": 1281,
+    "word_count": 292,
+    "sb_scores": {
+      "overall": 65.0,
+      "iaa": 66.0,
+      "iqa": 72.0,
+      "ista": 55.25
+    },
+    "sections_found": [
+      "scoreboard",
+      "section_1_overview",
+      "section_2_aesthetics",
+      "section_3_quality",
+      "section_4_structure"
+    ],
+    "section_lengths": {
+      "scoreboard": 122,
+      "section_1_overview": 16,
+      "section_2_aesthetics": 306,
+      "section_3_quality": 283,
+      "section_4_structure": 333
+    },
+    "anomalies": [
+      "중복 스코어보드 헤더",
+      "원문 점수 파싱 왜곡 잔재 (XX/XX, 19/0, / 1 등)",
+      "프롬프트 지침 메타 텍스트 노출 ((상단 스코어보드 수치 명시))"
+    ],
+    "korean_word_count": 246
+  },
+  {
+    "file_name": "_DSC1967_edit.jpg",
+    "source": "Current DB (6-Way Engine)",
+    "char_len": 1325,
+    "word_count": 296,
+    "sb_scores": {
+      "overall": 56.0,
+      "iaa": 60.0,
+      "iqa": 65.5,
+      "ista": 40.25
+    },
+    "sections_found": [
+      "scoreboard",
+      "section_1_overview",
+      "section_2_aesthetics",
+      "section_3_quality",
+      "section_4_structure"
+    ],
+    "section_lengths": {
+      "scoreboard": 122,
+      "section_1_overview": 16,
+      "section_2_aesthetics": 348,
+      "section_3_quality": 345,
+      "section_4_structure": 273
+    },
+    "anomalies": [
+      "중복 스코어보드 헤더",
+      "원문 점수 파싱 왜곡 잔재 (XX/XX, 19/0, / 1 등)",
+      "프롬프트 지침 메타 텍스트 노출 ((상단 스코어보드 수치 명시))"
+    ],
+    "korean_word_count": 253
+  },
+  {
+    "file_name": "_DSC1072_edit.jpg",
+    "source": "Current DB (6-Way Engine)",
+    "char_len": 1343,
+    "word_count": 291,
+    "sb_scores": {
+      "overall": 61.0,
+      "iaa": 57.75,
+      "iqa": 74.0,
+      "ista": 51.5
+    },
+    "sections_found": [
+      "scoreboard",
+      "section_1_overview",
+      "section_2_aesthetics",
+      "section_3_quality",
+      "section_4_structure"
+    ],
+    "section_lengths": {
+      "scoreboard": 122,
+      "section_1_overview": 16,
+      "section_2_aesthetics": 349,
+      "section_3_quality": 275,
+      "section_4_structure": 360
+    },
+    "anomalies": [
+      "중복 스코어보드 헤더",
+      "원문 점수 파싱 왜곡 잔재 (XX/XX, 19/0, / 1 등)",
+      "프롬프트 지침 메타 텍스트 노출 ((상단 스코어보드 수치 명시))",
+      "극단적 찬사/미사여구 사용"
+    ],
+    "korean_word_count": 240
+  },
+  {
+    "file_name": "_DSC2057_edit.jpg",
+    "source": "Current DB (6-Way Engine)",
+    "char_len": 1288,
+    "word_count": 286,
+    "sb_scores": {
+      "overall": 50.0,
+      "iaa": 51.5,
+      "iqa": 65.0,
+      "ista": 33.5
+    },
+    "sections_found": [
+      "scoreboard"
+    ],
+    "section_lengths": {
+      "scoreboard": 121
+    },
+    "anomalies": [
+      "중복 스코어보드 헤더",
+      "원문 점수 파싱 왜곡 잔재 (XX/XX, 19/0, / 1 등)"
+    ],
+    "korean_word_count": 248
+  },
+  {
+    "file_name": "_DSC0686_edit.jpg",
+    "source": "Current DB (6-Way Engine)",
+    "char_len": 1404,
+    "word_count": 314,
+    "sb_scores": {
+      "overall": 66.0,
+      "iaa": 63.0,
+      "iqa": 77.5,
+      "ista": 58.75
+    },
+    "sections_found": [
+      "scoreboard",
+      "section_1_overview",
+      "section_2_aesthetics",
+      "section_3_quality",
+      "section_4_structure"
+    ],
+    "section_lengths": {
+      "scoreboard": 122,
+      "section_1_overview": 16,
+      "section_2_aesthetics": 384,
+      "section_3_quality": 306,
+      "section_4_structure": 355
+    },
+    "anomalies": [
+      "중복 스코어보드 헤더",
+      "원문 점수 파싱 왜곡 잔재 (XX/XX, 19/0, / 1 등)",
+      "프롬프트 지침 메타 텍스트 노출 ((상단 스코어보드 수치 명시))",
+      "극단적 찬사/미사여구 사용"
+    ],
+    "korean_word_count": 265
+  },
+  {
+    "file_name": "_DSC0561_edit.jpg",
+    "source": "Current DB (6-Way Engine)",
+    "char_len": 1826,
+    "word_count": 395,
+    "sb_scores": {
+      "overall": 68.0,
+      "iaa": 72.5,
+      "iqa": 74.0,
+      "ista": 56.0
+    },
+    "sections_found": [
+      "scoreboard",
+      "section_1_overview",
+      "section_2_aesthetics",
+      "section_3_quality",
+      "section_4_structure"
+    ],
+    "section_lengths": {
+      "scoreboard": 121,
+      "section_1_overview": 16,
+      "section_2_aesthetics": 339,
+      "section_3_quality": 319,
+      "section_4_structure": 811
+    },
+    "anomalies": [
+      "중복 스코어보드 헤더",
+      "원문 점수 파싱 왜곡 잔재 (XX/XX, 19/0, / 1 등)",
+      "프롬프트 지침 메타 텍스트 노출 ((상단 스코어보드 수치 명시))",
+      "극단적 찬사/미사여구 사용",
+      "UniPercept ISTA 구조적 템플릿(재질/윤곽/추론) 직역"
+    ],
+    "korean_word_count": 349
+  },
+  {
+    "file_name": "_DSC1045_edit.jpg",
+    "source": "Historical DB (4-Way Benchmark)",
+    "char_len": 1496,
+    "word_count": 309,
+    "sb_scores": {
+      "overall": 73.0,
+      "iaa": 68.5,
+      "iqa": 55.5,
+      "ista": 78.0
+    },
+    "sections_found": [
+      "scoreboard",
+      "section_1_overview",
+      "section_2_aesthetics",
+      "section_3_quality",
+      "section_4_structure"
+    ],
+    "section_lengths": {
+      "scoreboard": 118,
+      "section_1_overview": 212,
+      "section_2_aesthetics": 436,
+      "section_3_quality": 177,
+      "section_4_structure": 366
+    },
+    "anomalies": [
+      "중복 스코어보드 헤더",
+      "원문 점수 파싱 왜곡 잔재 (XX/XX, 19/0, / 1 등)"
+    ],
+    "korean_word_count": 248
+  },
+  {
+    "file_name": "DSC_0522_edit_2.jpg",
+    "source": "Historical DB (4-Way Benchmark)",
+    "char_len": 1089,
+    "word_count": 245,
+    "sb_scores": {
+      "overall": 98.0,
+      "iaa": 97.0,
+      "iqa": 97.0,
+      "ista": 98.0
+    },
+    "sections_found": [
+      "scoreboard",
+      "section_1_overview",
+      "section_2_aesthetics",
+      "section_3_quality",
+      "section_4_structure"
+    ],
+    "section_lengths": {
+      "scoreboard": 118,
+      "section_1_overview": 253,
+      "section_2_aesthetics": 218,
+      "section_3_quality": 172,
+      "section_4_structure": 141
+    },
+    "anomalies": [
+      "중복 스코어보드 헤더",
+      "원문 점수 파싱 왜곡 잔재 (XX/XX, 19/0, / 1 등)",
+      "극단적 찬사/미사여구 사용"
+    ],
+    "korean_word_count": 191
+  },
+  {
+    "file_name": "_DSC2126_edit.jpg",
+    "source": "Historical DB (4-Way Benchmark)",
+    "char_len": 1535,
+    "word_count": 311,
+    "sb_scores": {
+      "overall": 70.0,
+      "iaa": 46.5,
+      "iqa": 92.0,
+      "ista": 98.0
+    },
+    "sections_found": [
+      "scoreboard",
+      "section_1_overview",
+      "section_2_aesthetics",
+      "section_3_quality",
+      "section_4_structure"
+    ],
+    "section_lengths": {
+      "scoreboard": 118,
+      "section_1_overview": 302,
+      "section_2_aesthetics": 428,
+      "section_3_quality": 306,
+      "section_4_structure": 194
+    },
+    "anomalies": [
+      "중복 스코어보드 헤더",
+      "원문 점수 파싱 왜곡 잔재 (XX/XX, 19/0, / 1 등)"
+    ],
+    "korean_word_count": 236
+  },
+  {
+    "file_name": "_DSC1028_edit.jpg",
+    "source": "Historical DB (4-Way Benchmark)",
+    "char_len": 1702,
+    "word_count": 354,
+    "sb_scores": {
+      "overall": 80.0,
+      "iaa": 68.0,
+      "iqa": 95.0,
+      "ista": 95.0
+    },
+    "sections_found": [
+      "scoreboard",
+      "section_1_overview",
+      "section_2_aesthetics",
+      "section_3_quality",
+      "section_4_structure"
+    ],
+    "section_lengths": {
+      "scoreboard": 118,
+      "section_1_overview": 293,
+      "section_2_aesthetics": 421,
+      "section_3_quality": 350,
+      "section_4_structure": 333
+    },
+    "anomalies": [
+      "중복 스코어보드 헤더",
+      "원문 점수 파싱 왜곡 잔재 (XX/XX, 19/0, / 1 등)"
+    ],
+    "korean_word_count": 291
+  },
+  {
+    "file_name": "_DSC1924_edit.jpg",
+    "source": "Historical DB (4-Way Benchmark)",
+    "char_len": 1598,
+    "word_count": 330,
+    "sb_scores": {
+      "overall": 85.0,
+      "iaa": 82.0,
+      "iqa": 92.0,
+      "ista": 85.0
+    },
+    "sections_found": [
+      "scoreboard",
+      "section_1_overview",
+      "section_2_aesthetics",
+      "section_3_quality",
+      "section_4_structure"
+    ],
+    "section_lengths": {
+      "scoreboard": 118,
+      "section_1_overview": 217,
+      "section_2_aesthetics": 374,
+      "section_3_quality": 312,
+      "section_4_structure": 390
+    },
+    "anomalies": [
+      "중복 스코어보드 헤더",
+      "원문 점수 파싱 왜곡 잔재 (XX/XX, 19/0, / 1 등)"
+    ],
+    "korean_word_count": 270
+  },
+  {
+    "file_name": "_DSC1967_edit.jpg",
+    "source": "Historical DB (4-Way Benchmark)",
+    "char_len": 1635,
+    "word_count": 340,
+    "sb_scores": {
+      "overall": 81.0,
+      "iaa": 83.5,
+      "iqa": 93.0,
+      "ista": 85.0
+    },
+    "sections_found": [
+      "scoreboard",
+      "section_1_overview",
+      "section_2_aesthetics",
+      "section_3_quality",
+      "section_4_structure"
+    ],
+    "section_lengths": {
+      "scoreboard": 118,
+      "section_1_overview": 284,
+      "section_2_aesthetics": 385,
+      "section_3_quality": 285,
+      "section_4_structure": 376
+    },
+    "anomalies": [
+      "중복 스코어보드 헤더",
+      "원문 점수 파싱 왜곡 잔재 (XX/XX, 19/0, / 1 등)"
+    ],
+    "korean_word_count": 274
+  },
+  {
+    "file_name": "_DSC0686_edit.jpg",
+    "source": "Historical DB (4-Way Benchmark)",
+    "char_len": 1283,
+    "word_count": 289,
+    "sb_scores": {
+      "overall": 98.0,
+      "iaa": 97.0,
+      "iqa": 99.0,
+      "ista": 98.0
+    },
+    "sections_found": [
+      "scoreboard",
+      "section_1_overview",
+      "section_2_aesthetics",
+      "section_3_quality",
+      "section_4_structure"
+    ],
+    "section_lengths": {
+      "scoreboard": 118,
+      "section_1_overview": 222,
+      "section_2_aesthetics": 248,
+      "section_3_quality": 220,
+      "section_4_structure": 253
+    },
+    "anomalies": [
+      "중복 스코어보드 헤더",
+      "원문 점수 파싱 왜곡 잔재 (XX/XX, 19/0, / 1 등)"
+    ],
+    "korean_word_count": 227
+  },
+  {
+    "file_name": "_DSC1715_edit.jpg",
+    "source": "Historical DB (4-Way Benchmark)",
+    "char_len": 1686,
+    "word_count": 349,
+    "sb_scores": {
+      "overall": 74.0,
+      "iaa": 76.5,
+      "iqa": 73.5,
+      "ista": 65.0
+    },
+    "sections_found": [
+      "scoreboard",
+      "section_1_overview",
+      "section_2_aesthetics",
+      "section_3_quality",
+      "section_4_structure"
+    ],
+    "section_lengths": {
+      "scoreboard": 118,
+      "section_1_overview": 317,
+      "section_2_aesthetics": 415,
+      "section_3_quality": 374,
+      "section_4_structure": 275
+    },
+    "anomalies": [
+      "중복 스코어보드 헤더",
+      "원문 점수 파싱 왜곡 잔재 (XX/XX, 19/0, / 1 등)",
+      "극단적 찬사/미사여구 사용"
+    ],
+    "korean_word_count": 279
+  },
+  {
+    "file_name": "_DSC0561_edit.jpg",
+    "source": "Historical DB (4-Way Benchmark)",
+    "char_len": 1040,
+    "word_count": 219,
+    "sb_scores": {
+      "overall": 97.0,
+      "iaa": 95.0,
+      "iqa": 97.0,
+      "ista": 98.0
+    },
+    "sections_found": [
+      "scoreboard",
+      "section_1_overview",
+      "section_2_aesthetics",
+      "section_3_quality",
+      "section_4_structure"
+    ],
+    "section_lengths": {
+      "scoreboard": 118,
+      "section_1_overview": 80,
+      "section_2_aesthetics": 265,
+      "section_3_quality": 179,
+      "section_4_structure": 211
+    },
+    "anomalies": [
+      "중복 스코어보드 헤더",
+      "원문 점수 파싱 왜곡 잔재 (XX/XX, 19/0, / 1 등)",
+      "극단적 찬사/미사여구 사용"
+    ],
+    "korean_word_count": 173
+  }
+]
