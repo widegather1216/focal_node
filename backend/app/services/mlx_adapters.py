@@ -105,10 +105,10 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
             embedding = text_features[0].tolist()
         return embedding
 
-    def get_zero_shot_hints(self, image_input: Any, top_k: int = 5) -> list[str]:
+    def get_zero_shot_hints(self, image_input: Any, top_k: int = 15, min_score: float = 0.22) -> list[str]:
         """
         Calculates cosine similarity between image embedding and precomputed taxonomy embeddings.
-        Returns Top-K matching visual keyword strings.
+        Returns matching visual keyword strings exceeding min_score threshold up to top_k.
         """
         import numpy as np
         if self.cached_taxonomy_embeddings is None:
@@ -124,10 +124,19 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
             
         img_vec = np.array(image_emb, dtype=np.float32)
         scores = np.dot(self.cached_taxonomy_embeddings, img_vec)
-        top_indices = np.argsort(scores)[::-1][:top_k]
+        sorted_indices = np.argsort(scores)[::-1]
         
         from services.taxonomy import SIGLIP_VISUAL_TAXONOMY
-        return [SIGLIP_VISUAL_TAXONOMY[i] for i in top_indices]
+        filtered_hints = [
+            SIGLIP_VISUAL_TAXONOMY[i] for i in sorted_indices
+            if scores[i] >= min_score
+        ][:top_k]
+        
+        # Fallback to top 3 if no terms pass min_score for very sparse/unique images
+        if not filtered_hints and len(sorted_indices) > 0:
+            filtered_hints = [SIGLIP_VISUAL_TAXONOMY[i] for i in sorted_indices[:3]]
+            
+        return filtered_hints
 
 
 class GemmaAdapter(ImageCaptioningPort):
@@ -408,35 +417,59 @@ class GemmaAdapter(ImageCaptioningPort):
 
         try:
             from services.ai_parser import (
-                GEMMA_TRANSLATE_CRITIQUE_SYSTEM_PROMPT,
-                format_unipercept_translate_user_prompt
+                GEMMA_TRANSLATE_STEP1_SYSTEM_PROMPT,
+                GEMMA_TRANSLATE_STEP2_SYSTEM_PROMPT,
+                format_unipercept_translate_step1_user_prompt,
+                format_unipercept_translate_step2_user_prompt,
             )
-            user_prompt = format_unipercept_translate_user_prompt(raw_en_critique, scores_dict, quality_score)
-            messages = [
+
+            # --- Pass 1: 1차 무왜곡 100% 직역 추론 (Direct Translation) ---
+            step1_prompt_text = format_unipercept_translate_step1_user_prompt(raw_en_critique, scores_dict, quality_score)
+            messages_step1 = [
                 {
                     "role": "system",
-                    "content": GEMMA_TRANSLATE_CRITIQUE_SYSTEM_PROMPT
+                    "content": GEMMA_TRANSLATE_STEP1_SYSTEM_PROMPT
                 },
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": user_prompt}
+                        {"type": "text", "text": step1_prompt_text}
                     ]
                 }
             ]
 
             with GPU_LOCK:
-                try:
-                    tokenizer = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
-                    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+                tokenizer = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
+                prompt1 = tokenizer.apply_chat_template(messages_step1, tokenize=False, add_generation_prompt=True)
 
-                    from mlx_vlm import generate
-                    result = generate(self.model, self.processor, prompt=prompt, max_tokens=1024, verbose=False)
-                    output = result.text if hasattr(result, "text") else str(result)
-                    return output.strip()
-                except Exception as e:
-                    print(f"[GemmaAdapter] Translation failed ({e}). Returning raw UniPercept critique.", flush=True)
-                    return raw_en_critique
+                from mlx_vlm import generate
+                result1 = generate(self.model, self.processor, prompt=prompt1, max_tokens=1024, verbose=False)
+                step1_output = (result1.text if hasattr(result1, "text") else str(result1)).strip()
+
+            # --- Pass 2: 2차 문맥 & 미학 스타일 다듬기 추론 (Style & Context Refinement) ---
+            step2_prompt_text = format_unipercept_translate_step2_user_prompt(step1_output, scores_dict, quality_score)
+            messages_step2 = [
+                {
+                    "role": "system",
+                    "content": GEMMA_TRANSLATE_STEP2_SYSTEM_PROMPT
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": step2_prompt_text}
+                    ]
+                }
+            ]
+
+            with GPU_LOCK:
+                prompt2 = tokenizer.apply_chat_template(messages_step2, tokenize=False, add_generation_prompt=True)
+                result2 = generate(self.model, self.processor, prompt=prompt2, max_tokens=1024, verbose=False)
+                step2_output = (result2.text if hasattr(result2, "text") else str(result2)).strip()
+                return step2_output
+
+        except Exception as e:
+            print(f"[GemmaAdapter] 2-Pass Translation failed ({e}). Returning raw UniPercept critique.", flush=True)
+            return raw_en_critique
         finally:
             with self.lock:
                 self.last_used_time = time.time()

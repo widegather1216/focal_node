@@ -10,9 +10,9 @@ class ImageEmbeddingPort(ABC):
         pass
 
     @abstractmethod
-    def get_zero_shot_hints(self, image_input: Any, top_k: int = 5) -> List[str]:
+    def get_zero_shot_hints(self, image_input: Any, top_k: int = 15, min_score: float = 0.22) -> List[str]:
         """
-        Extracts top-k zero-shot visual keyword candidates for the given image embedding or path.
+        Extracts zero-shot visual keyword candidates for the given image embedding or path using dynamic threshold filtering.
         """
         pass
 

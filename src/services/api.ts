@@ -273,7 +273,34 @@ class ApiClient {
     if (!res.ok) throw new Error("Failed to fetch analytics stats");
     return res.json();
   }
-}
 
+  async getModelDownloadStatus(): Promise<{
+    statuses: Record<string, {
+      repo_id: string;
+      label: string;
+      status: 'cached' | 'downloading' | 'completed' | 'error';
+      progress?: number;
+      downloaded_bytes?: number;
+      total_bytes?: number;
+      step?: number;
+      total_steps?: number;
+      error_message: string | null;
+      updated_at: number;
+    }>;
+    overall?: {
+      progress: number;
+      downloaded_bytes: number;
+      total_bytes: number;
+      current_label: string;
+      step: number;
+      total_steps: number;
+      is_all_done: boolean;
+    };
+  }> {
+    const res = await fetch(`${this.baseUrl}/api/system/models/status`);
+    if (!res.ok) throw new Error("Failed to fetch model download status");
+    return res.json();
+  }
+}
 
 export const api = new ApiClient();

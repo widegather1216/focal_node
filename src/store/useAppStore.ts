@@ -45,6 +45,9 @@ interface AppState {
   setIsDownloadingModel: (isDownloading: boolean) => void;
   downloadProgress: number;
   setDownloadProgress: (progress: number) => void;
+  downloadedBytes: number;
+  totalBytes: number;
+  setDownloadBytes: (downloaded: number, total: number) => void;
   downloadModelName: string;
   setDownloadModelName: (name: string) => void;
 
@@ -104,6 +107,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   setIsDownloadingModel: (isDownloadingModel) => set({ isDownloadingModel }),
   downloadProgress: 0,
   setDownloadProgress: (downloadProgress) => set({ downloadProgress }),
+  downloadedBytes: 0,
+  totalBytes: 0,
+  setDownloadBytes: (downloadedBytes, totalBytes) => set({ downloadedBytes, totalBytes }),
   downloadModelName: "AI 모델",
   setDownloadModelName: (downloadModelName) => set({ downloadModelName }),
 

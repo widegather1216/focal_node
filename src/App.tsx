@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useAppStore } from "./store/useAppStore";
 import { useBackendInit } from "./hooks/useBackendInit";
 import { useTauriEvents } from "./hooks/useTauriEvents";
+import { useModelDownloadStatus } from "./hooks/useModelDownloadStatus";
 import { Sidebar } from "./components/Sidebar";
 import { PhotoGallery } from "./components/PhotoGallery";
 import { AnalyticsView } from "./components/AnalyticsView";
@@ -17,6 +18,7 @@ function App() {
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const { loading, backendStatus, backendError } = useBackendInit();
   useTauriEvents();
+  useModelDownloadStatus();
 
   const { isDownloadingModel, activeTab } = useAppStore();
 

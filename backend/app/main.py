@@ -87,6 +87,24 @@ app.include_router(api.analytics.router)
 def health_check():
     return {"status": "ok"}
 
+# --- Model Download Status & Trigger Endpoints ---
+@app.get("/api/system/models/status")
+def get_model_download_status():
+    from services.model_downloader import get_model_download_tracker, start_background_model_downloader
+    tracker = get_model_download_tracker()
+    statuses = tracker.get_all_statuses()
+    if not statuses:
+        start_background_model_downloader()
+        statuses = tracker.get_all_statuses()
+    return {"statuses": statuses}
+
+@app.post("/api/system/models/download")
+def trigger_model_download():
+    from services.model_downloader import start_background_model_downloader, get_model_download_tracker
+    started = start_background_model_downloader(force=True)
+    tracker = get_model_download_tracker()
+    return {"started": started, "statuses": tracker.get_all_statuses()}
+
 # --- Uvicorn Port Dynamic Mapping ---
 
 class CustomServer(uvicorn.Server):
