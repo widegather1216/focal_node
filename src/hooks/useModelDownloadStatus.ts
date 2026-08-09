@@ -8,13 +8,14 @@ export function useModelDownloadStatus() {
     setIsDownloadingModel,
     setDownloadModelName,
     setDownloadProgress,
+    setDownloadBytes,
+    setDownloadError,
   } = useAppStore();
 
   useEffect(() => {
     if (!apiPort) return;
 
     let isMounted = true;
-    let smoothProgress = 10;
 
     const checkStatus = async () => {
       try {
@@ -26,20 +27,32 @@ export function useModelDownloadStatus() {
 
         if (downloadingModel) {
           setIsDownloadingModel(true);
+          setDownloadError(null);
           setDownloadModelName(downloadingModel.label);
 
-          // Smoothly advance progress up to 95% without ever dropping back down
-          smoothProgress = Math.min(95, smoothProgress + Math.floor(Math.random() * 3) + 2);
-          setDownloadProgress(smoothProgress);
+          const realProgress = typeof downloadingModel.progress === 'number' ? downloadingModel.progress : 0;
+          setDownloadProgress(realProgress);
+
+          if (typeof downloadingModel.downloaded_bytes === 'number' && typeof downloadingModel.total_bytes === 'number') {
+            setDownloadBytes(downloadingModel.downloaded_bytes, downloadingModel.total_bytes);
+          }
         } else {
-          const isAllDone = statusList.length > 0 && statusList.every(item => item.status === 'completed' || item.status === 'cached');
-          if (isAllDone) {
-            setDownloadProgress(100);
-            setTimeout(() => {
-              if (isMounted) {
-                setIsDownloadingModel(false);
-              }
-            }, 800);
+          const errorModel = statusList.find((item) => item.status === 'error');
+          if (errorModel) {
+            setIsDownloadingModel(true);
+            setDownloadModelName(errorModel.label);
+            setDownloadError(errorModel.error_message || '모델 다운로드 중 오류가 발생했습니다.');
+          } else {
+            const isAllDone = data.overall?.is_all_done || (statusList.length > 0 && statusList.every(item => item.status === 'completed' || item.status === 'cached'));
+            if (isAllDone) {
+              setDownloadProgress(100);
+              setDownloadError(null);
+              setTimeout(() => {
+                if (isMounted) {
+                  setIsDownloadingModel(false);
+                }
+              }, 800);
+            }
           }
         }
       } catch (err) {
@@ -55,5 +68,5 @@ export function useModelDownloadStatus() {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [apiPort, setIsDownloadingModel, setDownloadModelName, setDownloadProgress]);
+  }, [apiPort, setIsDownloadingModel, setDownloadModelName, setDownloadProgress, setDownloadBytes, setDownloadError]);
 }

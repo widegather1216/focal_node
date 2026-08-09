@@ -301,6 +301,18 @@ class ApiClient {
     if (!res.ok) throw new Error("Failed to fetch model download status");
     return res.json();
   }
+
+  async triggerModelDownload(): Promise<{
+    started: boolean;
+    statuses: Record<string, any>;
+    overall: any;
+  }> {
+    const res = await fetch(`${this.baseUrl}/api/system/models/download`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error("Failed to trigger model download");
+    return res.json();
+  }
 }
 
 export const api = new ApiClient();

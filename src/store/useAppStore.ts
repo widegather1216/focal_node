@@ -50,6 +50,8 @@ interface AppState {
   setDownloadBytes: (downloaded: number, total: number) => void;
   downloadModelName: string;
   setDownloadModelName: (name: string) => void;
+  downloadError: string | null;
+  setDownloadError: (error: string | null) => void;
 
   isSearching: boolean;
   setIsSearching: (isSearching: boolean) => void;
@@ -112,6 +114,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   setDownloadBytes: (downloadedBytes, totalBytes) => set({ downloadedBytes, totalBytes }),
   downloadModelName: "AI 모델",
   setDownloadModelName: (downloadModelName) => set({ downloadModelName }),
+  downloadError: null,
+  setDownloadError: (downloadError) => set({ downloadError }),
 
   isSearching: false,
   setIsSearching: (isSearching) => set({ isSearching }),

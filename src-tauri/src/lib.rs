@@ -314,7 +314,7 @@ pub fn run() {
                                     let model_name = parts[1].trim().to_string();
                                     let _ = app_handle.emit("model-download-started", model_name);
                                 }
-                            } else if line_str.contains("[Downloader] Completed") || line_str.contains("Model loaded successfully.") || line_str.contains("Model unloaded.") {
+                            } else if line_str.contains("[Downloader] Completed") {
                                 let _ = app_handle.emit("model-download-completed", ());
                             } else if line_str.contains("[Indexer] Background indexing completed.") {
                                 let _ = app_handle.emit("indexing-completed", ());

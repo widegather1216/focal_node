@@ -96,14 +96,45 @@ def get_model_download_status():
     if not statuses:
         start_background_model_downloader()
         statuses = tracker.get_all_statuses()
-    return {"statuses": statuses}
+        
+    total_dl = sum(item.get("downloaded_bytes", 0) for item in statuses.values())
+    total_sz = sum(item.get("total_bytes", 0) for item in statuses.values())
+    overall_progress = min(100, int((total_dl / total_sz) * 100)) if total_sz > 0 else 0
+    is_all_done = len(statuses) > 0 and all(item.get("status") in ("completed", "cached") for item in statuses.values())
+    
+    downloading_item = next((item for item in statuses.values() if item.get("status") == "downloading"), None)
+    current_label = downloading_item.get("label", "") if downloading_item else ""
+
+    return {
+        "statuses": statuses,
+        "overall": {
+            "progress": overall_progress,
+            "downloaded_bytes": total_dl,
+            "total_bytes": total_sz,
+            "current_label": current_label,
+            "is_all_done": is_all_done
+        }
+    }
 
 @app.post("/api/system/models/download")
 def trigger_model_download():
     from services.model_downloader import start_background_model_downloader, get_model_download_tracker
     started = start_background_model_downloader(force=True)
     tracker = get_model_download_tracker()
-    return {"started": started, "statuses": tracker.get_all_statuses()}
+    statuses = tracker.get_all_statuses()
+    total_dl = sum(item.get("downloaded_bytes", 0) for item in statuses.values())
+    total_sz = sum(item.get("total_bytes", 0) for item in statuses.values())
+    overall_progress = min(100, int((total_dl / total_sz) * 100)) if total_sz > 0 else 0
+    return {
+        "started": started,
+        "statuses": statuses,
+        "overall": {
+            "progress": overall_progress,
+            "downloaded_bytes": total_dl,
+            "total_bytes": total_sz,
+            "is_all_done": False
+        }
+    }
 
 # --- Uvicorn Port Dynamic Mapping ---
 

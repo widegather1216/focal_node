@@ -141,7 +141,7 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
 
 class GemmaAdapter(ImageCaptioningPort):
     def __init__(self):
-        self.model_id = "mlx-community/gemma-4-26B-A4B-it-qat-OptiQ-4bit"
+        self.model_id = "mlx-community/gemma-4-12B-it-8bit"
         self.model = None
         self.processor = None
         self.last_used_time = 0.0
@@ -169,6 +169,32 @@ class GemmaAdapter(ImageCaptioningPort):
                         if os.path.exists(c):
                             os.environ["MLX_METAL_PATH"] = c
                             break
+                # mlx_vlm.load only searches top-level directory for *.safetensors.
+                # Auto-link any subfolder safetensors (e.g. optiq/optiq_vision.safetensors) to top-level.
+                try:
+                    from huggingface_hub import snapshot_download
+                    import glob, shutil
+                    if os.path.exists(self.model_id):
+                        model_dir = self.model_id
+                    else:
+                        model_dir = snapshot_download(repo_id=self.model_id, local_files_only=True)
+                    
+                    sub_safetensors = glob.glob(os.path.join(model_dir, "**", "*.safetensors"), recursive=True)
+                    for s_path in sub_safetensors:
+                        rel_dir = os.path.relpath(os.path.dirname(s_path), model_dir)
+                        if rel_dir != ".":
+                            dst_name = f"{os.path.basename(os.path.dirname(s_path))}_{os.path.basename(s_path)}"
+                            top_dst = os.path.join(model_dir, dst_name)
+                            direct_dst = os.path.join(model_dir, os.path.basename(s_path))
+                            for dst in [top_dst, direct_dst]:
+                                if not os.path.exists(dst):
+                                    try:
+                                        os.symlink(s_path, dst)
+                                    except Exception:
+                                        shutil.copy2(s_path, dst)
+                except Exception as link_err:
+                    print(f"[GemmaAdapter] Subfolder safetensors link warning: {link_err}", flush=True)
+
                 from mlx_vlm import load
                 self.model, self.processor = load(self.model_id)
                 print("[GemmaAdapter] Model loaded successfully.", flush=True)
@@ -423,6 +449,8 @@ class GemmaAdapter(ImageCaptioningPort):
                 format_unipercept_translate_step2_user_prompt,
             )
 
+            import mlx.core as mx
+
             # --- Pass 1: 1차 무왜곡 100% 직역 추론 (Direct Translation) ---
             step1_prompt_text = format_unipercept_translate_step1_user_prompt(raw_en_critique, scores_dict, quality_score)
             messages_step1 = [
@@ -439,11 +467,13 @@ class GemmaAdapter(ImageCaptioningPort):
             ]
 
             with GPU_LOCK:
+                mx.clear_cache()
+                gc.collect()
                 tokenizer = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
                 prompt1 = tokenizer.apply_chat_template(messages_step1, tokenize=False, add_generation_prompt=True)
 
                 from mlx_vlm import generate
-                result1 = generate(self.model, self.processor, prompt=prompt1, max_tokens=1024, verbose=False)
+                result1 = generate(self.model, self.processor, prompt=prompt1, max_tokens=768, verbose=False)
                 step1_output = (result1.text if hasattr(result1, "text") else str(result1)).strip()
 
             # --- Pass 2: 2차 문맥 & 미학 스타일 다듬기 추론 (Style & Context Refinement) ---
@@ -461,16 +491,28 @@ class GemmaAdapter(ImageCaptioningPort):
                 }
             ]
 
-            with GPU_LOCK:
-                prompt2 = tokenizer.apply_chat_template(messages_step2, tokenize=False, add_generation_prompt=True)
-                result2 = generate(self.model, self.processor, prompt=prompt2, max_tokens=1024, verbose=False)
-                step2_output = (result2.text if hasattr(result2, "text") else str(result2)).strip()
-                return step2_output
+            try:
+                with GPU_LOCK:
+                    mx.clear_cache()
+                    gc.collect()
+                    prompt2 = tokenizer.apply_chat_template(messages_step2, tokenize=False, add_generation_prompt=True)
+                    result2 = generate(self.model, self.processor, prompt=prompt2, max_tokens=768, verbose=False)
+                    step2_output = (result2.text if hasattr(result2, "text") else str(result2)).strip()
+                    return step2_output
+            except Exception as pass2_err:
+                print(f"[GemmaAdapter] Pass 2 context refinement warning ({pass2_err}). Returning Pass 1 direct translation.", flush=True)
+                return step1_output
 
         except Exception as e:
             print(f"[GemmaAdapter] 2-Pass Translation failed ({e}). Returning raw UniPercept critique.", flush=True)
             return raw_en_critique
         finally:
+            try:
+                import mlx.core as mx
+                mx.clear_cache()
+            except Exception:
+                pass
+            gc.collect()
             with self.lock:
                 self.last_used_time = time.time()
                 self.active_requests -= 1
