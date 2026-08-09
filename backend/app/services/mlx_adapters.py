@@ -452,6 +452,7 @@ class GemmaAdapter(ImageCaptioningPort):
             import mlx.core as mx
 
             # --- Pass 1: 1차 무왜곡 100% 직역 추론 (Direct Translation) ---
+            print("[GemmaAdapter] [Pass 1/2] Generating direct Korean translation...", flush=True)
             step1_prompt_text = format_unipercept_translate_step1_user_prompt(raw_en_critique, scores_dict, quality_score)
             messages_step1 = [
                 {
@@ -475,8 +476,10 @@ class GemmaAdapter(ImageCaptioningPort):
                 from mlx_vlm import generate
                 result1 = generate(self.model, self.processor, prompt=prompt1, max_tokens=768, verbose=False)
                 step1_output = (result1.text if hasattr(result1, "text") else str(result1)).strip()
+                print("[GemmaAdapter] [Pass 1/2] Direct Korean translation finished.", flush=True)
 
             # --- Pass 2: 2차 문맥 & 미학 스타일 다듬기 추론 (Style & Context Refinement) ---
+            print("[GemmaAdapter] [Pass 2/2] Refining style and photographic context...", flush=True)
             step2_prompt_text = format_unipercept_translate_step2_user_prompt(step1_output, scores_dict, quality_score)
             messages_step2 = [
                 {
@@ -498,6 +501,7 @@ class GemmaAdapter(ImageCaptioningPort):
                     prompt2 = tokenizer.apply_chat_template(messages_step2, tokenize=False, add_generation_prompt=True)
                     result2 = generate(self.model, self.processor, prompt=prompt2, max_tokens=768, verbose=False)
                     step2_output = (result2.text if hasattr(result2, "text") else str(result2)).strip()
+                    print("[GemmaAdapter] [Pass 2/2] Style refinement finished.", flush=True)
                     return step2_output
             except Exception as pass2_err:
                 print(f"[GemmaAdapter] Pass 2 context refinement warning ({pass2_err}). Returning Pass 1 direct translation.", flush=True)

@@ -27,6 +27,7 @@ class ChatService:
             file_path = img.file_path
 
         # Inference outside DB session lock
+        print(f"[ChatService] Generating photo critique for {payload.photo_id} (Engine: {payload.engine})...", flush=True)
         if payload.engine == "unipercept":
             from services.unipercept_adapter import get_unipercept_adapter
             res_dict = await asyncio.to_thread(
@@ -39,6 +40,7 @@ class ChatService:
             quality_score = res_dict.get("quality_score")
             
             get_unipercept_adapter().unload_model()
+            print("[ChatService] UniPercept ensemble completed. Starting Gemma 4 translation...", flush=True)
             
             try:
                 critique_text = await asyncio.to_thread(
@@ -60,6 +62,7 @@ class ChatService:
                 print(f"[ChatService] Gemma 4 translation fallback: {tr_err}", flush=True)
                 critique_text = raw_en
         else:
+            print("[ChatService] Starting Gemma 4 VLM direct critique generation...", flush=True)
             critique_text = await asyncio.to_thread(
                 get_gemma_adapter().generate_deep_critique, 
                 file_path, 

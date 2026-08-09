@@ -453,6 +453,7 @@ class UniPerceptAdapter:
 
             critiques = {}
             for domain_key, prompt_text in vqa_prompts.items():
+                print(f"[UniPerceptAdapter] -> Generating VQA critique domain: {domain_key.upper()}...", flush=True)
                 with GPU_LOCK:
                     try:
                         if hasattr(self.model, "chat"):
@@ -468,6 +469,7 @@ class UniPerceptAdapter:
                                 outputs = self.model.generate(**inputs, max_new_tokens=1024)
                             txt = self.processor.decode(outputs[0], skip_special_tokens=True)
                         critiques[domain_key] = txt.strip()
+                        print(f"[UniPerceptAdapter] -> Domain {domain_key.upper()} critique finished ({len(txt)} chars).", flush=True)
                     except Exception as eval_err:
                         print(f"[UniPerceptAdapter] VQA inference error ({domain_key}): {eval_err}", flush=True)
                         critiques[domain_key] = f"분석 오류: {eval_err}"
@@ -764,6 +766,7 @@ class UniPerceptAdapter:
         - Stage 2: VQA Mode -> Pure deep photographic critique without score constraints
         - Merges scores scoreboard and VQA critique for translation by Gemma.
         """
+        print("[UniPerceptAdapter] [Stage 1/2] Computing 3-Way VR scores (IAA / IQA / ISTA)...", flush=True)
         # 1. Stage 1: VR Mode (Fast 3-Metric Score Extraction)
         vr_result = self.generate_vr_scores(image_path, metadata=metadata, max_retries=3)
         final_overall = vr_result["overall"]
@@ -779,10 +782,13 @@ class UniPerceptAdapter:
             "comp_direct": final_overall,
             "weighted_analysis": final_overall
         }
+        print(f"[UniPerceptAdapter] [Stage 1/2] VR Scores computed: Overall={final_overall}, IAA={final_iaa}, IQA={final_iqa}, ISTA={final_ista}", flush=True)
 
+        print("[UniPerceptAdapter] [Stage 2/2] Generating 3-Way VQA deep critiques...", flush=True)
         # 2. Stage 2: VQA Mode (Score-Conditioned Photographic Critique)
         vqa_result = self.generate_vqa_critique(image_path, metadata=metadata, scores_context=scores_summary)
         vqa_critique = vqa_result["critique"]
+        print("[UniPerceptAdapter] UniPercept full ensemble critique generation finished.", flush=True)
 
         return {
             "critique": vqa_critique,
