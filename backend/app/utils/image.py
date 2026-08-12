@@ -67,6 +67,26 @@ def decode_raw_to_pil(file_path: str) -> Image.Image:
         )
         return Image.fromarray(rgb)
 
+def load_pil_image(file_path: str) -> Image.Image:
+    """
+    Loads any supported image (RAW or standard) as a PIL Image in RGB mode.
+    Handles EXIF orientation and ensures file handles are closed properly.
+    """
+    if is_raw_image(file_path):
+        return decode_raw_to_pil(file_path)
+    with Image.open(file_path) as raw_img:
+        img_t = ImageOps.exif_transpose(raw_img)
+        return img_t.convert("RGB") if img_t.mode != "RGB" else img_t.copy()
+
+def _get_tag_val(tags: dict, keys: list[str] | str):
+    if isinstance(keys, str):
+        keys = [keys]
+    for k in keys:
+        tag = tags.get(k)
+        if tag is not None:
+            return tag.values[0] if isinstance(tag.values, list) else tag.values
+    return None
+
 def _parse_ratio(ratio_obj) -> float | None:
     if ratio_obj is None:
         return None
@@ -147,60 +167,54 @@ def extract_metadata(file_path: str) -> dict:
             tags = exifread.process_file(f, details=False)
 
             # Camera model
-            model_tag = tags.get("Image Model")
-            if model_tag:
-                metadata["camera_model"] = str(model_tag).strip()
+            model = _get_tag_val(tags, "Image Model")
+            if model:
+                metadata["camera_model"] = str(model).strip()
 
             # Lens model
-            lens_tag = tags.get("EXIF LensModel") or tags.get("Image LensModel") or tags.get("EXIF LensModelName")
-            if lens_tag:
-                metadata["lens_model"] = str(lens_tag).strip()
+            lens = _get_tag_val(tags, ["EXIF LensModel", "Image LensModel", "EXIF LensModelName"])
+            if lens:
+                metadata["lens_model"] = str(lens).strip()
 
             # F-Number
-            f_tag = tags.get("EXIF FNumber")
-            if f_tag:
-                val = f_tag.values[0] if isinstance(f_tag.values, list) else f_tag.values
-                parsed_f = _parse_ratio(val)
+            f_val = _get_tag_val(tags, "EXIF FNumber")
+            if f_val is not None:
+                parsed_f = _parse_ratio(f_val)
                 if parsed_f is not None:
                     metadata["f_number"] = round(parsed_f, 2)
 
             # Focal Length
-            fl_tag = tags.get("EXIF FocalLength")
-            if fl_tag:
-                val = fl_tag.values[0] if isinstance(fl_tag.values, list) else fl_tag.values
-                metadata["focal_length"] = _parse_ratio(val)
+            fl_val = _get_tag_val(tags, "EXIF FocalLength")
+            if fl_val is not None:
+                metadata["focal_length"] = _parse_ratio(fl_val)
 
             # Focal Length in 35mm Film
-            fl35_tag = tags.get("EXIF FocalLengthIn35mmFilm") or tags.get("EXIF FocalLengthIn35mmFormat")
-            if fl35_tag:
-                val = fl35_tag.values[0] if isinstance(fl35_tag.values, list) else fl35_tag.values
+            fl35_val = _get_tag_val(tags, ["EXIF FocalLengthIn35mmFilm", "EXIF FocalLengthIn35mmFormat"])
+            if fl35_val is not None:
                 try:
-                    parsed_35 = float(val)
+                    parsed_35 = float(fl35_val)
                     if parsed_35 > 0:
                         metadata["focal_length_35mm"] = parsed_35
                 except ValueError:
                     pass
 
             # Shutter speed
-            shutter_tag = tags.get("EXIF ExposureTime")
-            if shutter_tag:
-                val = shutter_tag.values[0] if isinstance(shutter_tag.values, list) else shutter_tag.values
-                metadata["shutter_speed"] = _parse_shutter_speed(val)
+            shutter_val = _get_tag_val(tags, "EXIF ExposureTime")
+            if shutter_val is not None:
+                metadata["shutter_speed"] = _parse_shutter_speed(shutter_val)
 
             # ISO
-            iso_tag = tags.get("EXIF ISOSpeedRatings") or tags.get("EXIF ISOSpeed")
-            if iso_tag:
-                val = iso_tag.values[0] if isinstance(iso_tag.values, list) else iso_tag.values
+            iso_val = _get_tag_val(tags, ["EXIF ISOSpeedRatings", "EXIF ISOSpeed"])
+            if iso_val is not None:
                 try:
-                    metadata["iso"] = int(val)
+                    metadata["iso"] = int(iso_val)
                 except ValueError:
                     pass
 
             # Capture date
-            date_tag = tags.get("EXIF DateTimeOriginal") or tags.get("Image DateTime")
-            if date_tag:
-                val = str(date_tag.values[0] if isinstance(date_tag.values, list) else date_tag.values)
-                metadata["capture_date"] = _parse_date(val)
+            date_val = _get_tag_val(tags, ["EXIF DateTimeOriginal", "Image DateTime"])
+            if date_val is not None:
+                metadata["capture_date"] = _parse_date(str(date_val))
     except Exception:
         pass
 

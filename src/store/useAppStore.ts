@@ -144,11 +144,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearSelection: () => set({ selectedPhotoIds: new Set() }),
 
   generatingCritiquePhotoIds: new Set(),
-  addGeneratingCritiquePhotoId: (id) => set((state) => {
-    const nextSet = new Set(state.generatingCritiquePhotoIds);
-    nextSet.add(id);
-    return { generatingCritiquePhotoIds: nextSet };
-  }),
+  addGeneratingCritiquePhotoId: (id) => set((state) => ({ generatingCritiquePhotoIds: new Set(state.generatingCritiquePhotoIds).add(id) })),
   removeGeneratingCritiquePhotoId: (id) => set((state) => {
     const nextSet = new Set(state.generatingCritiquePhotoIds);
     nextSet.delete(id);

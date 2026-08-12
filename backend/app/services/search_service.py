@@ -39,11 +39,7 @@ class SearchService:
             # 4. Combine IDs prioritizing text matches
             combined_ids = []
             seen = set()
-            for pid in text_search_ids:
-                if pid not in seen:
-                    combined_ids.append(pid)
-                    seen.add(pid)
-            for pid in chroma_ids:
+            for pid in text_search_ids + chroma_ids:
                 if pid not in seen:
                     combined_ids.append(pid)
                     seen.add(pid)

@@ -11,18 +11,9 @@ export function SearchFilterMenu() {
   const [localFilters, setLocalFilters] = useState<SearchFilters>(searchFilters);
 
   const handleApply = () => {
-    const cleaned: SearchFilters = {};
-    if (localFilters.camera_model) cleaned.camera_model = localFilters.camera_model;
-    if (localFilters.lens_model) cleaned.lens_model = localFilters.lens_model;
-    if (localFilters.iso_min) cleaned.iso_min = Number(localFilters.iso_min);
-    if (localFilters.iso_max) cleaned.iso_max = Number(localFilters.iso_max);
-    if (localFilters.f_number_min) cleaned.f_number_min = Number(localFilters.f_number_min);
-    if (localFilters.f_number_max) cleaned.f_number_max = Number(localFilters.f_number_max);
-    if (localFilters.focal_length_min) cleaned.focal_length_min = Number(localFilters.focal_length_min);
-    if (localFilters.focal_length_max) cleaned.focal_length_max = Number(localFilters.focal_length_max);
-    if (localFilters.date_from) cleaned.date_from = localFilters.date_from;
-    if (localFilters.date_to) cleaned.date_to = localFilters.date_to;
-
+    const cleaned: SearchFilters = Object.fromEntries(
+      Object.entries(localFilters).filter(([_, v]) => v !== undefined && v !== '' && !Number.isNaN(v))
+    );
     setSearchFilters(cleaned);
     setIsOpen(false);
   };

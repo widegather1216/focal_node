@@ -233,6 +233,38 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         score = torch.softmax(output_logits, -1) @ weight_tensor
         return float(score.item())
 
+    @staticmethod
+    def _load_pil_image(image_path: str):
+        from utils.image import load_pil_image
+        return load_pil_image(image_path)
+
+    @staticmethod
+    def _format_exif_desc(metadata: Optional[Dict[str, Any]]) -> str:
+        if not metadata:
+            return ""
+        parts = []
+        if metadata.get("camera_model"):
+            parts.append(f"Camera: {metadata['camera_model']}")
+        if metadata.get("lens_model"):
+            parts.append(f"Lens: {metadata['lens_model']}")
+        if metadata.get("f_number"):
+            parts.append(f"F/{metadata['f_number']}")
+        if metadata.get("shutter_speed"):
+            parts.append(f"Shutter: {metadata['shutter_speed']}")
+        if metadata.get("iso"):
+            parts.append(f"ISO {metadata['iso']}")
+        return f"[EXIF: {', '.join(parts)}]\n" if parts else ""
+
+    def _prepare_pixel_values(self, pil_img) -> torch.Tensor:
+        target_dtype = self.torch_dtype
+        if self.model is not None and hasattr(self.model, "parameters"):
+            try:
+                target_dtype = next(self.model.parameters()).dtype
+            except Exception:
+                pass
+        transform = build_transform(input_size=448)
+        return transform(pil_img).unsqueeze(0).to(dtype=target_dtype).to(self.device)
+
     def generate_vr_scores(
         self,
         image_path: str,
@@ -255,24 +287,8 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             if (not os.path.exists(image_path) and not hasattr(self.model, "chat")) or self.model is None:
                 return {"overall": 70, "iaa": 70, "iqa": 70, "ista": 70, "raw_vr_text": ""}
 
-            from utils.image import is_raw_image, decode_raw_to_pil
-            if is_raw_image(image_path):
-                pil_img = decode_raw_to_pil(image_path)
-            else:
-                from PIL import ImageOps
-                with Image.open(image_path) as raw_img:
-                    t_img = ImageOps.exif_transpose(raw_img)
-                    pil_img = t_img.convert("RGB") if t_img.mode != "RGB" else t_img.copy()
-
-            target_dtype = self.torch_dtype
-            if self.model is not None and hasattr(self.model, "parameters"):
-                try:
-                    target_dtype = next(self.model.parameters()).dtype
-                except Exception:
-                    pass
-
-            transform = build_transform(input_size=448)
-            pixel_values = transform(pil_img).unsqueeze(0).to(dtype=target_dtype).to(self.device)
+            pil_img = self._load_pil_image(image_path)
+            pixel_values = self._prepare_pixel_values(pil_img)
 
             # 3 Official Perceptual Domains
             domains = {
@@ -337,30 +353,8 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                     "ista": "이미지를 분석할 수 없습니다."
                 }
 
-            from utils.image import is_raw_image, decode_raw_to_pil
-            if is_raw_image(image_path):
-                pil_img = decode_raw_to_pil(image_path)
-            else:
-                from PIL import ImageOps
-                with Image.open(image_path) as raw_img:
-                    t_img = ImageOps.exif_transpose(raw_img)
-                    pil_img = t_img.convert("RGB") if t_img.mode != "RGB" else t_img.copy()
-
-            exif_desc = ""
-            if metadata:
-                parts = []
-                if metadata.get("camera_model"):
-                    parts.append(f"Camera: {metadata['camera_model']}")
-                if metadata.get("lens_model"):
-                    parts.append(f"Lens: {metadata['lens_model']}")
-                if metadata.get("f_number"):
-                    parts.append(f"F/{metadata['f_number']}")
-                if metadata.get("shutter_speed"):
-                    parts.append(f"Shutter: {metadata['shutter_speed']}")
-                if metadata.get("iso"):
-                    parts.append(f"ISO {metadata['iso']}")
-                if parts:
-                    exif_desc = f"[EXIF: {', '.join(parts)}]\n"
+            pil_img = self._load_pil_image(image_path)
+            exif_desc = self._format_exif_desc(metadata)
 
             score_desc = ""
             if scores_context and isinstance(scores_context, dict):
@@ -377,15 +371,7 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                     f"Instruction: Analyze this photo reflecting these exact scores. If any score is under 70, strictly focus on identifying the specific visual defects, noise, blur, lighting imbalance, or compositional flaws. Do NOT use inflated praise words like 'masterpiece', 'flawless', or 'impeccable' unless scores exceed 90.\n\n"
                 )
 
-            target_dtype = self.torch_dtype
-            if self.model is not None and hasattr(self.model, "parameters"):
-                try:
-                    target_dtype = next(self.model.parameters()).dtype
-                except Exception:
-                    pass
-
-            transform = build_transform(input_size=448)
-            pixel_values = transform(pil_img).unsqueeze(0).to(dtype=target_dtype).to(self.device)
+            pixel_values = self._prepare_pixel_values(pil_img)
 
             from services.ai_parser import (
                 UNIPERCEPT_VQA_IAA_PROMPT,
@@ -480,42 +466,10 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                     "quality_score": None
                 }
 
-            from utils.image import is_raw_image, decode_raw_to_pil
-            if is_raw_image(image_path):
-                pil_img = decode_raw_to_pil(image_path)
-            else:
-                from PIL import ImageOps
-                with Image.open(image_path) as raw_img:
-                    t_img = ImageOps.exif_transpose(raw_img)
-                    pil_img = t_img.convert("RGB") if t_img.mode != "RGB" else t_img.copy()
-
-            exif_desc = ""
-            if metadata:
-                parts = []
-                if metadata.get("camera_model"):
-                    parts.append(f"Camera: {metadata['camera_model']}")
-                if metadata.get("lens_model"):
-                    parts.append(f"Lens: {metadata['lens_model']}")
-                if metadata.get("f_number"):
-                    parts.append(f"F/{metadata['f_number']}")
-                if metadata.get("shutter_speed"):
-                    parts.append(f"Shutter: {metadata['shutter_speed']}")
-                if metadata.get("iso"):
-                    parts.append(f"ISO {metadata['iso']}")
-                if parts:
-                    exif_desc = f"[EXIF: {', '.join(parts)}]\n"
-
+            pil_img = self._load_pil_image(image_path)
+            exif_desc = self._format_exif_desc(metadata)
             prompt_text = f"{exif_desc}{custom_prompt}"
-
-            target_dtype = self.torch_dtype
-            if self.model is not None and hasattr(self.model, "parameters"):
-                try:
-                    target_dtype = next(self.model.parameters()).dtype
-                except Exception:
-                    pass
-
-            transform = build_transform(input_size=448)
-            pixel_values = transform(pil_img).unsqueeze(0).to(dtype=target_dtype).to(self.device)
+            pixel_values = self._prepare_pixel_values(pil_img)
 
             generation_config = dict(
                 max_new_tokens=1024,

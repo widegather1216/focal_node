@@ -14,6 +14,20 @@ interface CritiqueCardProps {
   onDelete: (id: string) => void;
 }
 
+const cardBtnStyle: React.CSSProperties = {
+  background: 'rgba(255, 255, 255, 0.06)',
+  border: '1px solid rgba(255, 255, 255, 0.1)',
+  color: '#f4f4f5',
+  padding: '5px 11px',
+  borderRadius: '6px',
+  fontSize: '12px',
+  fontWeight: 500,
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  gap: '5px'
+};
+
 export const CritiqueCard: React.FC<CritiqueCardProps> = ({
   item,
   index,
@@ -186,40 +200,10 @@ export const CritiqueCard: React.FC<CritiqueCardProps> = ({
           borderTop: '1px solid rgba(255, 255, 255, 0.06)'
         }}>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button
-              onClick={() => onSelectPhoto(item.photo_id)}
-              style={{
-                background: 'rgba(255, 255, 255, 0.06)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                color: '#f4f4f5',
-                padding: '5px 11px',
-                borderRadius: '6px',
-                fontSize: '12px',
-                fontWeight: 500,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px'
-              }}
-            >
+            <button onClick={() => onSelectPhoto(item.photo_id)} style={cardBtnStyle}>
               <ExternalLink size={12} /> 상세 패널
             </button>
-            <button
-              onClick={() => onOpenFullscreen(item.photo_id)}
-              style={{
-                background: 'rgba(255, 255, 255, 0.06)',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                color: '#f4f4f5',
-                padding: '5px 11px',
-                borderRadius: '6px',
-                fontSize: '12px',
-                fontWeight: 500,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px'
-              }}
-            >
+            <button onClick={() => onOpenFullscreen(item.photo_id)} style={cardBtnStyle}>
               <Maximize2 size={12} /> 원본 보기
             </button>
           </div>

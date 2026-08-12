@@ -133,12 +133,7 @@ def format_unipercept_translate_step2_user_prompt(
         "3. 🧱 구조 및 질감 비평 (ISTA 문맥 다듬기)\n"
     )
 
-def format_unipercept_translate_user_prompt(
-    raw_en_critique: str,
-    scores_dict: dict | None = None,
-    quality_score: int | None = None
-) -> str:
-    return format_unipercept_translate_step1_user_prompt(raw_en_critique, scores_dict, quality_score)
+format_unipercept_translate_user_prompt = format_unipercept_translate_step1_user_prompt
 
 def format_exif_text(metadata: dict | None) -> str:
     """Formats EXIF metadata dictionary into human-readable text for VLM context."""
@@ -190,16 +185,12 @@ def parse_gemma_json_output(output: str) -> dict:
         json_candidate = clean_output[start_idx:end_idx+1]
         try:
             data = json.loads(json_candidate)
-            if "caption" in data and "tags" in data:
+            if isinstance(data, dict):
                 return {
-                    "caption": str(data["caption"]),
+                    "caption": str(data.get("caption", "") or ""),
                     "tags": [str(t) for t in (data.get("tags") or [])],
                     "aesthetic_tags": [str(t) for t in (data.get("aesthetic_tags") or [])]
                 }
-            elif "caption" in data:
-                return {"caption": str(data["caption"]), "tags": [], "aesthetic_tags": [str(t) for t in (data.get("aesthetic_tags") or [])]}
-            elif "tags" in data:
-                return {"caption": "", "tags": [str(t) for t in (data.get("tags") or [])], "aesthetic_tags": [str(t) for t in (data.get("aesthetic_tags") or [])]}
         except Exception as parse_err:
             print(f"[AI Parser] JSON parsing failed: {parse_err}. Raw: {output}", flush=True)
             
@@ -208,3 +199,4 @@ def parse_gemma_json_output(output: str) -> dict:
         return {"caption": clean_output, "tags": [], "aesthetic_tags": []}
         
     return default_result
+

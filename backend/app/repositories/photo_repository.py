@@ -67,22 +67,20 @@ class PhotoRepository:
                 q = q.filter(models.ImageMetadata.camera_model.ilike(f"%{f.camera_model}%"))
             if getattr(f, 'lens_model', None):
                 q = q.filter(models.ImageMetadata.lens_model.ilike(f"%{f.lens_model}%"))
-            if getattr(f, 'iso_min', None) is not None:
-                q = q.filter(models.ImageMetadata.iso >= f.iso_min)
-            if getattr(f, 'iso_max', None) is not None:
-                q = q.filter(models.ImageMetadata.iso <= f.iso_max)
-            if getattr(f, 'f_number_min', None) is not None:
-                q = q.filter(models.ImageMetadata.f_number >= f.f_number_min)
-            if getattr(f, 'f_number_max', None) is not None:
-                q = q.filter(models.ImageMetadata.f_number <= f.f_number_max)
-            if getattr(f, 'focal_length_min', None) is not None:
-                q = q.filter(models.ImageMetadata.focal_length >= f.focal_length_min)
-            if getattr(f, 'focal_length_max', None) is not None:
-                q = q.filter(models.ImageMetadata.focal_length <= f.focal_length_max)
-            if getattr(f, 'date_from', None) is not None:
-                q = q.filter(models.ImageMetadata.capture_date >= f.date_from)
-            if getattr(f, 'date_to', None) is not None:
-                q = q.filter(models.ImageMetadata.capture_date <= f.date_to)
+                
+            range_filters = [
+                (getattr(f, 'iso_min', None), models.ImageMetadata.iso >= getattr(f, 'iso_min', None)),
+                (getattr(f, 'iso_max', None), models.ImageMetadata.iso <= getattr(f, 'iso_max', None)),
+                (getattr(f, 'f_number_min', None), models.ImageMetadata.f_number >= getattr(f, 'f_number_min', None)),
+                (getattr(f, 'f_number_max', None), models.ImageMetadata.f_number <= getattr(f, 'f_number_max', None)),
+                (getattr(f, 'focal_length_min', None), models.ImageMetadata.focal_length >= getattr(f, 'focal_length_min', None)),
+                (getattr(f, 'focal_length_max', None), models.ImageMetadata.focal_length <= getattr(f, 'focal_length_max', None)),
+                (getattr(f, 'date_from', None), models.ImageMetadata.capture_date >= getattr(f, 'date_from', None)),
+                (getattr(f, 'date_to', None), models.ImageMetadata.capture_date <= getattr(f, 'date_to', None)),
+            ]
+            for val, cond in range_filters:
+                if val is not None:
+                    q = q.filter(cond)
                 
         # Order and paginate
         if photo_ids_from_chroma is not None:
@@ -105,75 +103,33 @@ class PhotoRepository:
         self.db.refresh(db_image)
         return db_image
 
+    def _aggregate_field_stats(self, column, limit: int = 10, asc: bool = False, format_fn=None, filter_empty_str: bool = False) -> list[dict]:
+        q = self.db.query(column, func.count(models.ImageMetadata.image_id)).filter(column.isnot(None))
+        if filter_empty_str:
+            q = q.filter(column != "")
+        order_col = column.asc() if asc else func.count(models.ImageMetadata.image_id).desc()
+        rows = q.group_by(column).order_by(order_col).limit(limit).all()
+        
+        result = []
+        for val, count in rows:
+            name = format_fn(val) if format_fn else str(val)
+            result.append({"name": name, "count": count})
+        return result
+
     def get_gear_analytics(self) -> dict:
         """
         Aggregates photo metadata into camera, lens, focal length, and aperture stats.
         """
         total_photos = self.db.query(func.count(models.Image.id)).scalar() or 0
-
-        # Cameras
-        camera_q = self.db.query(
-            models.ImageMetadata.camera_model, func.count(models.ImageMetadata.image_id)
-        ).filter(
-            models.ImageMetadata.camera_model.isnot(None),
-            models.ImageMetadata.camera_model != ""
-        ).group_by(
-            models.ImageMetadata.camera_model
-        ).order_by(func.count(models.ImageMetadata.image_id).desc()).limit(10).all()
-
-        cameras = [{"name": row[0], "count": row[1]} for row in camera_q]
-
-        # Lenses
-        lens_q = self.db.query(
-            models.ImageMetadata.lens_model, func.count(models.ImageMetadata.image_id)
-        ).filter(
-            models.ImageMetadata.lens_model.isnot(None),
-            models.ImageMetadata.lens_model != ""
-        ).group_by(
-            models.ImageMetadata.lens_model
-        ).order_by(func.count(models.ImageMetadata.image_id).desc()).limit(10).all()
-
-        lenses = [{"name": row[0], "count": row[1]} for row in lens_q]
-
-        # Focal lengths
-        focal_q = self.db.query(
-            models.ImageMetadata.focal_length, func.count(models.ImageMetadata.image_id)
-        ).filter(
-            models.ImageMetadata.focal_length.isnot(None)
-        ).group_by(
-            models.ImageMetadata.focal_length
-        ).order_by(models.ImageMetadata.focal_length.asc()).limit(15).all()
-
-        focal_lengths = [{"name": f"{int(row[0]) if row[0].is_integer() else row[0]}mm", "count": row[1]} for row in focal_q]
-
-        # 35mm Equivalent Focal lengths
-        focal35_q = self.db.query(
-            models.ImageMetadata.focal_length_35mm, func.count(models.ImageMetadata.image_id)
-        ).filter(
-            models.ImageMetadata.focal_length_35mm.isnot(None)
-        ).group_by(
-            models.ImageMetadata.focal_length_35mm
-        ).order_by(models.ImageMetadata.focal_length_35mm.asc()).limit(15).all()
-
-        focal_lengths_35mm = [{"name": f"{int(row[0]) if row[0].is_integer() else row[0]}mm", "count": row[1]} for row in focal35_q]
-
-        # Apertures
-        aperture_q = self.db.query(
-            models.ImageMetadata.f_number, func.count(models.ImageMetadata.image_id)
-        ).filter(
-            models.ImageMetadata.f_number.isnot(None)
-        ).group_by(
-            models.ImageMetadata.f_number
-        ).order_by(models.ImageMetadata.f_number.asc()).limit(15).all()
-
-        apertures = [{"name": f"f/{round(row[0], 2) if isinstance(row[0], (int, float)) else row[0]}", "count": row[1]} for row in aperture_q]
+        fmt_mm = lambda v: f"{int(v) if isinstance(v, (int, float)) and float(v).is_integer() else v}mm"
+        fmt_f = lambda v: f"f/{round(v, 2) if isinstance(v, (int, float)) else v}"
 
         return {
             "total_photos": total_photos,
-            "cameras": cameras,
-            "lenses": lenses,
-            "focal_lengths": focal_lengths,
-            "focal_lengths_35mm": focal_lengths_35mm,
-            "apertures": apertures,
+            "cameras": self._aggregate_field_stats(models.ImageMetadata.camera_model, limit=10, filter_empty_str=True),
+            "lenses": self._aggregate_field_stats(models.ImageMetadata.lens_model, limit=10, filter_empty_str=True),
+            "focal_lengths": self._aggregate_field_stats(models.ImageMetadata.focal_length, limit=15, asc=True, format_fn=fmt_mm),
+            "focal_lengths_35mm": self._aggregate_field_stats(models.ImageMetadata.focal_length_35mm, limit=15, asc=True, format_fn=fmt_mm),
+            "apertures": self._aggregate_field_stats(models.ImageMetadata.f_number, limit=15, asc=True, format_fn=fmt_f),
         }
 

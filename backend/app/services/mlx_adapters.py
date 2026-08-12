@@ -71,14 +71,8 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
         import torch
         self._load_model()
         
-        from utils.image import is_raw_image, decode_raw_to_pil
-        if is_raw_image(image_path):
-            image = decode_raw_to_pil(image_path)
-        else:
-            from PIL import ImageOps
-            with Image.open(image_path) as image_raw:
-                image_t = ImageOps.exif_transpose(image_raw)
-                image = image_t.convert("RGB") if image_t.mode != "RGB" else image_t.copy()
+        from utils.image import load_pil_image
+        image = load_pil_image(image_path)
             
         inputs = self.processor(images=image, return_tensors="pt").to(self.device)
         with GPU_LOCK:

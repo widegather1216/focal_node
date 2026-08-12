@@ -77,10 +77,7 @@ export function FullscreenViewer() {
                 }}
               >
                 {/* File Title */}
-                <div style={{
-                  background: 'rgba(24, 24, 27, 0.8)',
-                  backdropFilter: 'blur(12px)',
-                  border: '1px solid rgba(63, 63, 70, 0.5)',
+                <div className="glass-panel" style={{
                   padding: '8px 16px',
                   borderRadius: '10px',
                   color: '#fff',
@@ -98,12 +95,9 @@ export function FullscreenViewer() {
                 {/* Toolbar Buttons */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', pointerEvents: 'auto' }}>
                   {/* Zoom Controls */}
-                  <div style={{
+                  <div className="glass-panel" style={{
                     display: 'flex',
                     alignItems: 'center',
-                    background: 'rgba(24, 24, 27, 0.8)',
-                    backdropFilter: 'blur(12px)',
-                    border: '1px solid rgba(63, 63, 70, 0.5)',
                     borderRadius: '10px',
                     padding: '4px'
                   }}>
@@ -134,12 +128,9 @@ export function FullscreenViewer() {
                   </div>
 
                   {/* Fit Mode Switcher */}
-                  <div style={{
+                  <div className="glass-panel" style={{
                     display: 'flex',
                     alignItems: 'center',
-                    background: 'rgba(24, 24, 27, 0.8)',
-                    backdropFilter: 'blur(12px)',
-                    border: '1px solid rgba(63, 63, 70, 0.5)',
                     borderRadius: '10px',
                     padding: '4px'
                   }}>
@@ -172,19 +163,11 @@ export function FullscreenViewer() {
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={toggleZenMode}
+                    className="glass-button"
                     style={{
-                      background: 'rgba(24, 24, 27, 0.8)',
-                      backdropFilter: 'blur(12px)',
-                      border: '1px solid rgba(63, 63, 70, 0.5)',
-                      color: '#a1a1aa',
                       padding: '8px 12px',
-                      borderRadius: '10px',
                       fontSize: '13px',
-                      fontWeight: 500,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px'
+                      fontWeight: 500
                     }}
                     title="몰입 모드 (F)"
                   >
@@ -196,19 +179,13 @@ export function FullscreenViewer() {
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={() => setShowMetadata(prev => !prev)}
+                    className="glass-button"
                     style={{
-                      background: showMetadata ? 'rgba(56, 189, 248, 0.2)' : 'rgba(24, 24, 27, 0.8)',
-                      backdropFilter: 'blur(12px)',
-                      border: `1px solid ${showMetadata ? '#38bdf8' : 'rgba(63, 63, 70, 0.5)'}`,
-                      color: showMetadata ? '#38bdf8' : '#a1a1aa',
+                      borderColor: showMetadata ? '#38bdf8' : undefined,
+                      color: showMetadata ? '#38bdf8' : undefined,
                       padding: '8px 12px',
-                      borderRadius: '10px',
                       fontSize: '13px',
-                      fontWeight: 500,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '6px'
+                      fontWeight: 500
                     }}
                     title="메타데이터 오버레이 토글 (I)"
                   >

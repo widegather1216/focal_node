@@ -144,14 +144,15 @@ export function DetailPanel() {
                   <div style={{ marginBottom: '20px' }}>
                     <h4 style={{ margin: '0 0 8px 0', fontSize: '15px', wordBreak: 'break-all' }}>{photo.file_name}</h4>
                     <div style={{ fontSize: '12px', color: '#71717a', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span>해상도:</span>
-                        <span style={{ color: '#a1a1aa' }}>{photo.metadata.width} x {photo.metadata.height}</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <span>색상 공간:</span>
-                        <span style={{ color: '#a1a1aa' }}>{photo.metadata.color_space}</span>
-                      </div>
+                      {[
+                        { label: '해상도:', value: `${photo.metadata.width} x ${photo.metadata.height}` },
+                        { label: '색상 공간:', value: photo.metadata.color_space },
+                      ].map((item, idx) => (
+                        <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span>{item.label}</span>
+                          <span style={{ color: '#a1a1aa' }}>{item.value}</span>
+                        </div>
+                      ))}
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <span>파일 위치:</span>
                         <button

@@ -17,20 +17,8 @@ MAX_CONCURRENT_DECODES = 3
 decode_semaphore = asyncio.Semaphore(MAX_CONCURRENT_DECODES)
 
 def _parse_ai_tags(ai_model) -> tuple[list[str], list[str]]:
-    tags_list = []
-    if ai_model and hasattr(ai_model, "tags") and ai_model.tags:
-        try:
-            tags_list = json.loads(ai_model.tags)
-        except json.JSONDecodeError:
-            pass
-            
-    aesthetic_tags_list = []
-    if ai_model and hasattr(ai_model, "aesthetic_tags") and ai_model.aesthetic_tags:
-        try:
-            aesthetic_tags_list = json.loads(ai_model.aesthetic_tags)
-        except json.JSONDecodeError:
-            pass
-            
+    tags_list = models._parse_json_list(ai_model.tags if ai_model and hasattr(ai_model, "tags") else None)
+    aesthetic_tags_list = models._parse_json_list(ai_model.aesthetic_tags if ai_model and hasattr(ai_model, "aesthetic_tags") else None)
     return tags_list, aesthetic_tags_list
 
 router = APIRouter(prefix="/api/photos", tags=["photos"])

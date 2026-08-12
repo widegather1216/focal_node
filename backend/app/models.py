@@ -7,6 +7,15 @@ from database import Base
 def utcnow():
     return datetime.datetime.now(datetime.timezone.utc)
 
+def _parse_json_list(val: str | None) -> list:
+    if not val:
+        return []
+    try:
+        res = json.loads(val)
+        return res if isinstance(res, list) else []
+    except (json.JSONDecodeError, TypeError):
+        return []
+
 class Image(Base):
     __tablename__ = "images"
 
@@ -67,24 +76,10 @@ class Image(Base):
             "capture_date": meta.capture_date.isoformat() if meta and meta.capture_date else None,
         }
 
-        tags_list = []
-        if ai and ai.tags:
-            try:
-                tags_list = json.loads(ai.tags)
-            except json.JSONDecodeError:
-                pass
-                
-        aesthetic_tags_list = []
-        if ai and ai.aesthetic_tags:
-            try:
-                aesthetic_tags_list = json.loads(ai.aesthetic_tags)
-            except json.JSONDecodeError:
-                pass
-                
         ai_data = {
             "caption": ai.caption if ai else None,
-            "tags": tags_list,
-            "aesthetic_tags": aesthetic_tags_list,
+            "tags": _parse_json_list(ai.tags if ai else None),
+            "aesthetic_tags": _parse_json_list(ai.aesthetic_tags if ai else None),
             "is_user_edited": ai.is_user_edited if ai else False,
             "critique": ai.critique if ai else None,
             "critique_updated_at": ai.critique_updated_at.isoformat() if ai and ai.critique_updated_at else None

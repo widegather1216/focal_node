@@ -8,8 +8,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from PIL import Image
 from models import Image as DBImage, ImageMetadata as DBImageMetadata, AIAnalysis as DBAIAnalysis
-from utils.image import is_raw_image, decode_raw_to_pil
-from chroma import get_chroma_collection
+from utils.image import is_raw_image, decode_raw_to_pil, load_pil_image
 
 from config import THUMBNAILS_DIR
 
@@ -31,15 +30,9 @@ def generate_and_cache_thumbnail(file_path: str, image_id: str) -> bytes:
 
     cache_path = get_thumbnail_path(image_id)
     
-    # 1. Load image (decode RAW dynamically if needed)
+    # 1. Load image (decode RAW or standard dynamically)
     try:
-        if is_raw_image(file_path):
-            img = decode_raw_to_pil(file_path)
-        else:
-            from PIL import ImageOps
-            with Image.open(file_path) as raw_img:
-                img_t = ImageOps.exif_transpose(raw_img)
-                img = img_t.convert("RGB") if img_t.mode != "RGB" else img_t.copy()
+        img = load_pil_image(file_path)
     except Exception as e:
         print(f"[Photo Service] Corrupt image detected: {file_path}. Error: {e}", flush=True)
         raise HTTPException(status_code=422, detail="Unprocessable image file")

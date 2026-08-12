@@ -126,3 +126,31 @@ button {
     background-color: #0f0f0f69;
   }
 }
+
+/* Glassmorphism Utility Classes for UI slimming */
+.glass-panel {
+  background: rgba(24, 24, 27, 0.8) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(63, 63, 70, 0.5) !important;
+}
+
+.glass-button {
+  background: rgba(24, 24, 27, 0.8) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(63, 63, 70, 0.5) !important;
+  color: #a1a1aa;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+
+.glass-button:hover {
+  border-color: #38bdf8 !important;
+  color: #fff !important;
+}
+
