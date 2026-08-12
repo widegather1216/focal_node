@@ -41,13 +41,18 @@ class BaseKeepAliveModel:
     def _keep_alive_loop(self):
         while True:
             time.sleep(10)
+            should_unload = False
             with self.lock:
                 if self.active_requests > 0:
                     continue
                 elapsed = time.time() - self.last_used_time
                 if elapsed >= self.keep_alive_timeout:
-                    with GPU_LOCK:
-                        if self.model is not None:
+                    should_unload = True
+
+            if should_unload:
+                with GPU_LOCK:
+                    with self.lock:
+                        if self.active_requests == 0 and self.model is not None:
                             print(f"[{self.model_name}] Keep-alive timeout reached ({self.keep_alive_timeout}s). Unloading model...", flush=True)
                             self._unload_model_locked()
                     break
@@ -81,8 +86,8 @@ class BaseKeepAliveModel:
 
     def unload_model(self):
         """Explicitly unload model from memory and clear GPU cache immediately."""
-        with self.lock:
-            with GPU_LOCK:
+        with GPU_LOCK:
+            with self.lock:
                 if self.model is not None:
                     print(f"[{self.model_name}] Explicitly unloading model to free memory...", flush=True)
                     self._unload_model_locked()

@@ -141,25 +141,7 @@ class UniPerceptAdapter(BaseKeepAliveModel):
 
         self.touch_used()
 
-    def _unload_model_locked(self):
-        self.model = None
-        self.tokenizer = None
-        self.processor = None
-        gc.collect()
-        if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
-            try:
-                torch.mps.empty_cache()
-            except Exception:
-                pass
 
-    def unload_model(self):
-        """Explicitly unload UniPercept model from memory and clear GPU cache immediately."""
-        with self.lock:
-            with GPU_LOCK:
-                if self.model is not None:
-                    print("[UniPerceptAdapter] Explicitly unloading UniPercept model to free memory for next pipeline...", flush=True)
-                    self._unload_model_locked()
-                    print("[UniPerceptAdapter] UniPercept Model explicitly unloaded from memory.", flush=True)
 
     def compute_official_vr_score(self, pixel_values: torch.Tensor, desc: str) -> float:
         """

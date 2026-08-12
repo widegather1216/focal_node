@@ -16,6 +16,7 @@ export function useModelDownloadStatus() {
     if (!apiPort) return;
 
     let isMounted = true;
+    let timerId: any = null;
 
     const checkStatus = async () => {
       try {
@@ -36,12 +37,15 @@ export function useModelDownloadStatus() {
           if (typeof downloadingModel.downloaded_bytes === 'number' && typeof downloadingModel.total_bytes === 'number') {
             setDownloadBytes(downloadingModel.downloaded_bytes, downloadingModel.total_bytes);
           }
+          // Fast poll when downloading
+          scheduleNext(2000);
         } else {
           const errorModel = statusList.find((item) => item.status === 'error');
           if (errorModel) {
             setIsDownloadingModel(true);
             setDownloadModelName(errorModel.label);
             setDownloadError(errorModel.error_message || '모델 다운로드 중 오류가 발생했습니다.');
+            scheduleNext(5000);
           } else {
             const isAllDone = data.overall?.is_all_done || (statusList.length > 0 && statusList.every(item => item.status === 'completed' || item.status === 'cached'));
             if (isAllDone) {
@@ -53,20 +57,26 @@ export function useModelDownloadStatus() {
                 }
               }, 800);
             }
+            // Slow poll (15s) when all models are cached/idle
+            scheduleNext(15000);
           }
         }
       } catch (err) {
-        // Silently ignore during initial boot or transient network glitches
+        scheduleNext(15000);
       }
     };
 
-    // Immediate check + interval polling every 2 seconds
+    const scheduleNext = (delay: number) => {
+      if (!isMounted) return;
+      if (timerId) clearTimeout(timerId);
+      timerId = setTimeout(checkStatus, delay);
+    };
+
     checkStatus();
-    const interval = setInterval(checkStatus, 2000);
 
     return () => {
       isMounted = false;
-      clearInterval(interval);
+      if (timerId) clearTimeout(timerId);
     };
   }, [apiPort, setIsDownloadingModel, setDownloadModelName, setDownloadProgress, setDownloadBytes, setDownloadError]);
 }

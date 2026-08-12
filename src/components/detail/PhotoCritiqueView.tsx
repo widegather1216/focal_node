@@ -28,12 +28,16 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
     }
 
     let isMounted = true;
+    let intervalId: any = null;
 
     const pollStatus = async () => {
       try {
         const res = await api.getCritiqueStatus(photoId);
         if (isMounted && res) {
           setStatus(res);
+          if (res.status === 'completed' || res.status === 'error' || res.progress === 100) {
+            if (intervalId) clearInterval(intervalId);
+          }
         }
       } catch (e) {
         // Silently ignore transient errors
@@ -41,11 +45,11 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
     };
 
     pollStatus();
-    const interval = setInterval(pollStatus, 1200);
+    intervalId = setInterval(pollStatus, 1200);
 
     return () => {
       isMounted = false;
-      clearInterval(interval);
+      if (intervalId) clearInterval(intervalId);
     };
   }, [loadingCritique, photoId]);
 

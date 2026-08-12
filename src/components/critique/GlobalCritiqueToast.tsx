@@ -17,12 +17,21 @@ export const GlobalCritiqueToast: React.FC = () => {
     }
 
     let isMounted = true;
+    let intervalId: any = null;
 
     const pollStatus = async () => {
       try {
         const res = await api.getCritiqueStatus(activeCritiqueJob.photoId);
         if (isMounted && res) {
           setStatus(res);
+          if (res.status === 'completed' || res.status === 'error' || res.progress === 100) {
+            if (intervalId) clearInterval(intervalId);
+            setTimeout(() => {
+              if (isMounted) {
+                setActiveCritiqueJob(null);
+              }
+            }, 4000);
+          }
         }
       } catch (e) {
         // Silently ignore transient errors
@@ -30,13 +39,13 @@ export const GlobalCritiqueToast: React.FC = () => {
     };
 
     pollStatus();
-    const interval = setInterval(pollStatus, 1200);
+    intervalId = setInterval(pollStatus, 1200);
 
     return () => {
       isMounted = false;
-      clearInterval(interval);
+      if (intervalId) clearInterval(intervalId);
     };
-  }, [activeCritiqueJob?.photoId]);
+  }, [activeCritiqueJob?.photoId, setActiveCritiqueJob]);
 
   // Show floating toast only when job exists AND DetailPanel for that photo is closed
   const isDetailOpen = selectedPhotoId === activeCritiqueJob?.photoId;

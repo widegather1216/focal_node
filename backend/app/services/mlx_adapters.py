@@ -197,22 +197,7 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
             
         self.touch_used()
 
-    def unload_model(self):
-        """Explicitly unload Gemma model from memory and clear Metal cache immediately."""
-        import gc
-        with self.lock:
-            with GPU_LOCK:
-                if self.model is not None:
-                    print("[GemmaAdapter] Explicitly unloading Gemma model to free memory...", flush=True)
-                    self.model = None
-                    self.processor = None
-                    gc.collect()
-                    try:
-                        import mlx.core as mx
-                        mx.clear_cache()
-                    except Exception as e:
-                        print(f"[GemmaAdapter] Failed to clear metal cache: {e}", flush=True)
-                    print("[GemmaAdapter] Gemma Model explicitly unloaded from memory.", flush=True)
+
 
     def generate_caption_and_tags(self, image_path: str, metadata: dict = None, siglip_hints: list[str] = None) -> dict:
         with self.lock:
