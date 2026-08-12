@@ -77,6 +77,8 @@ def test_safety_net_retry_logic(monkeypatch):
     adapter = UniPerceptAdapter()
     
     test_img = os.path.abspath("scratch/test_images/test_scenic.jpg")
+    if not os.path.exists(test_img):
+        test_img = os.path.abspath("../scratch/test_images/test_scenic.jpg")
     
     call_count = 0
     def mock_chat(*args, **kwargs):
@@ -133,6 +135,8 @@ def test_full_ensemble_6way_pipeline(monkeypatch):
     import os
     adapter = UniPerceptAdapter()
     test_img = os.path.abspath("scratch/test_images/test_scenic.jpg")
+    if not os.path.exists(test_img):
+        test_img = os.path.abspath("../scratch/test_images/test_scenic.jpg")
     
     vr_calls = []
     def mock_compute_vr(pixel_values, desc):

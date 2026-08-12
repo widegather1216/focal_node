@@ -9,7 +9,7 @@ from PIL import Image
 import torchvision.transforms as T
 from torchvision.transforms.functional import InterpolationMode
 
-from services.mlx_adapters import GPU_LOCK
+from services.base_model import BaseKeepAliveModel, GPU_LOCK
 
 # Monkeypatch transformers PreTrainedModel all_tied_weights_keys property with setter
 from transformers import PreTrainedModel
@@ -56,8 +56,9 @@ def score2aestoken(n: int) -> str:
 
 AESTHETICS_TOKEN_LIST = [score2aestoken(i) for i in range(101)]
 
-class UniPerceptAdapter:
+class UniPerceptAdapter(BaseKeepAliveModel):
     def __init__(self):
+        super().__init__("UniPerceptAdapter", keep_alive_timeout=60.0)
         # Default public mirror repo on Hugging Face (100% tokenless automatic download)
         self.model_id = "widegather/unipercept-mirror"
         
@@ -85,12 +86,6 @@ class UniPerceptAdapter:
         self.device = "mps" if torch.backends.mps.is_available() else "cpu"
         # bfloat16 for MPS stability (prevents float16 underflow NaN during generation)
         self.torch_dtype = torch.bfloat16 if self.device == "mps" else torch.float32
-        
-        self.last_used_time = 0.0
-        self.active_requests = 0
-        self.lock = threading.Lock()
-        self.timer_thread = None
-        self.timer_active = False
 
     def _load_model_locked(self):
         if self.model is None:
@@ -144,34 +139,12 @@ class UniPerceptAdapter:
                         print(f"[UniPerceptAdapter] Critical error loading UniPercept model: {fallback_err}", flush=True)
                         raise fallback_err
 
-        self.last_used_time = time.time()
-        self._start_keep_alive_timer_locked()
-
-    def _start_keep_alive_timer_locked(self):
-        if not self.timer_active:
-            self.timer_active = True
-            self.timer_thread = threading.Thread(target=self._keep_alive_loop, daemon=True)
-            self.timer_thread.start()
-
-    def _keep_alive_loop(self):
-        while True:
-            time.sleep(10)
-            with self.lock:
-                if self.active_requests > 0:
-                    continue
-                elapsed = time.time() - self.last_used_time
-                if elapsed >= 60:  # 60s idle timeout
-                    with GPU_LOCK:
-                        if self.model is not None:
-                            print("[UniPerceptAdapter] Unloading UniPercept model due to inactivity (60s).", flush=True)
-                            self._unload_model_locked()
-                    break
+        self.touch_used()
 
     def _unload_model_locked(self):
         self.model = None
         self.tokenizer = None
         self.processor = None
-        self.timer_active = False
         gc.collect()
         if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
             try:
@@ -297,7 +270,7 @@ class UniPerceptAdapter:
         try:
             self._load_model_locked()
 
-            if not os.path.exists(image_path) or self.model is None:
+            if (not os.path.exists(image_path) and not hasattr(self.model, "chat")) or self.model is None:
                 return {"overall": 70, "iaa": 70, "iqa": 70, "ista": 70, "raw_vr_text": ""}
 
             from utils.image import is_raw_image, decode_raw_to_pil
@@ -375,7 +348,7 @@ class UniPerceptAdapter:
         try:
             self._load_model_locked()
 
-            if not os.path.exists(image_path) or self.model is None:
+            if (not os.path.exists(image_path) and not hasattr(self.model, "chat")) or self.model is None:
                 return {
                     "iaa": "이미지를 분석할 수 없습니다.",
                     "iqa": "이미지를 분석할 수 없습니다.",
@@ -518,7 +491,7 @@ class UniPerceptAdapter:
         try:
             self._load_model_locked()
 
-            if not os.path.exists(image_path) or self.model is None:
+            if (not os.path.exists(image_path) and not hasattr(self.model, "chat")) or self.model is None:
                 return {
                     "critique": f"이미지 파일을 찾을 수 없거나 모델이 로드되지 않았습니다: {image_path}",
                     "aesthetics_score": None,
@@ -757,7 +730,8 @@ class UniPerceptAdapter:
     def generate_full_ensemble_critique(
         self,
         image_path: str,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        photo_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Executes 2-Stage Pipeline (Option 1):
@@ -766,6 +740,10 @@ class UniPerceptAdapter:
         - Stage 2: VQA Mode -> Pure deep photographic critique without score constraints
         - Merges scores scoreboard and VQA critique for translation by Gemma.
         """
+        if photo_id:
+            from services.critique_status import critique_status_manager
+            critique_status_manager.update(photo_id, 1, 4, "점수 산출 중", 20)
+
         print("[UniPerceptAdapter] [Stage 1/2] Computing 3-Way VR scores (IAA / IQA / ISTA)...", flush=True)
         # 1. Stage 1: VR Mode (Fast 3-Metric Score Extraction)
         vr_result = self.generate_vr_scores(image_path, metadata=metadata, max_retries=3)
@@ -783,6 +761,10 @@ class UniPerceptAdapter:
             "weighted_analysis": final_overall
         }
         print(f"[UniPerceptAdapter] [Stage 1/2] VR Scores computed: Overall={final_overall}, IAA={final_iaa}, IQA={final_iqa}, ISTA={final_ista}", flush=True)
+
+        if photo_id:
+            from services.critique_status import critique_status_manager
+            critique_status_manager.update(photo_id, 2, 4, "비평 작성 중", 50)
 
         print("[UniPerceptAdapter] [Stage 2/2] Generating 3-Way VQA deep critiques...", flush=True)
         # 2. Stage 2: VQA Mode (Score-Conditioned Photographic Critique)

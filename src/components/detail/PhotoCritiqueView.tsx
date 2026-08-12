@@ -1,7 +1,11 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Wand2, RefreshCw, Trash2 } from 'lucide-react';
+import { api } from '../../services/api';
+import { CritiqueStatus } from '../../types/critique';
+import { CritiqueProgressWidget } from '../critique/CritiqueProgressWidget';
 
 interface PhotoCritiqueViewProps {
+  photoId?: string;
   critique: string | null;
   loadingCritique: boolean;
   onRequestCritique: () => void;
@@ -9,11 +13,42 @@ interface PhotoCritiqueViewProps {
 }
 
 export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
+  photoId,
   critique,
   loadingCritique,
   onRequestCritique,
   onDeleteCritique
 }) => {
+  const [status, setStatus] = useState<CritiqueStatus | null>(null);
+
+  useEffect(() => {
+    if (!loadingCritique || !photoId) {
+      setStatus(null);
+      return;
+    }
+
+    let isMounted = true;
+
+    const pollStatus = async () => {
+      try {
+        const res = await api.getCritiqueStatus(photoId);
+        if (isMounted && res) {
+          setStatus(res);
+        }
+      } catch (e) {
+        // Silently ignore transient errors
+      }
+    };
+
+    pollStatus();
+    const interval = setInterval(pollStatus, 1200);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [loadingCritique, photoId]);
+
   return (
     <div style={{ marginTop: '24px', background: '#1a1a1a', padding: '16px', borderRadius: '8px', border: '1px solid #333' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
@@ -48,10 +83,7 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
       </div>
 
       {loadingCritique && (
-        <div style={{ color: '#aaa', fontSize: '13px', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <RefreshCw size={14} className="spin" />
-          사진 구도, 조명, 색감을 AI 전문가 관점에서 분석 중입니다...
-        </div>
+        <CritiqueProgressWidget status={status} photoId={photoId || ''} />
       )}
 
       {!loadingCritique && critique && (

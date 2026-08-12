@@ -17,3 +17,13 @@ export interface CritiqueSummaryResponse {
   total_critiques_analyzed: number;
   created_at: string;
 }
+
+export interface CritiqueStatus {
+  photo_id: string;
+  step: number;
+  total_steps: number;
+  message: string;
+  progress: number;
+  status: 'idle' | 'processing' | 'completed' | 'error';
+}
+

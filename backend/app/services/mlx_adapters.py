@@ -12,9 +12,7 @@ from PIL import Image
 # or on systems where mlx/mlx_lm might fail if they are imported at startup.
 
 from core.ports import ImageEmbeddingPort, TextEmbeddingPort, ImageCaptioningPort
-
-# Global lock to prevent MLX and PyTorch MPS from crashing due to concurrent GPU access
-GPU_LOCK = threading.RLock()
+from services.base_model import BaseKeepAliveModel, GPU_LOCK
 
 class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
     def __init__(self):
@@ -122,7 +120,9 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
         if not image_emb:
             return []
             
-        img_vec = np.array(image_emb, dtype=np.float32)
+        img_vec = np.array(image_emb)
+        img_vec = img_vec / np.linalg.norm(img_vec)
+        
         scores = np.dot(self.cached_taxonomy_embeddings, img_vec)
         sorted_indices = np.argsort(scores)[::-1]
         
@@ -139,16 +139,12 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
         return filtered_hints
 
 
-class GemmaAdapter(ImageCaptioningPort):
+class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
     def __init__(self):
+        super().__init__("GemmaAdapter", keep_alive_timeout=60.0)
         self.model_id = "mlx-community/gemma-4-12B-it-8bit"
         self.model = None
         self.processor = None
-        self.last_used_time = 0.0
-        self.active_requests = 0  # Track active inference calls to prevent mid-inference unload
-        self.lock = threading.Lock()
-        self.timer_thread = None
-        self.timer_active = False
 
     def _load_model_locked(self):
         # Assumes self.lock is already acquired
@@ -199,39 +195,7 @@ class GemmaAdapter(ImageCaptioningPort):
                 self.model, self.processor = load(self.model_id)
                 print("[GemmaAdapter] Model loaded successfully.", flush=True)
             
-        self.last_used_time = time.time()
-        self._start_keep_alive_timer_locked()
-
-    def _start_keep_alive_timer_locked(self):
-        if not self.timer_active:
-            self.timer_active = True
-            self.timer_thread = threading.Thread(target=self._keep_alive_loop, daemon=True)
-            self.timer_thread.start()
-
-
-    def _keep_alive_loop(self):
-        import gc
-        while True:
-            time.sleep(10)
-            with self.lock:
-                if self.active_requests > 0:
-                    continue
-                elapsed = time.time() - self.last_used_time
-                if elapsed >= 60:
-                    with GPU_LOCK:
-                        if self.model is not None:
-                            print("[GemmaAdapter] Keep-alive timeout reached (60s). Unloading model...", flush=True)
-                            self.model = None
-                            self.processor = None
-                            gc.collect()
-                            try:
-                                import mlx.core as mx
-                                mx.clear_cache()
-                            except Exception as e:
-                                print(f"[GemmaAdapter] Failed to clear metal cache: {e}", flush=True)
-                            self.timer_active = False
-                            print("[GemmaAdapter] Model unloaded.", flush=True)
-                            break
+        self.touch_used()
 
     def unload_model(self):
         """Explicitly unload Gemma model from memory and clear Metal cache immediately."""
@@ -248,13 +212,11 @@ class GemmaAdapter(ImageCaptioningPort):
                         mx.clear_cache()
                     except Exception as e:
                         print(f"[GemmaAdapter] Failed to clear metal cache: {e}", flush=True)
-                    self.timer_active = False
                     print("[GemmaAdapter] Gemma Model explicitly unloaded from memory.", flush=True)
 
     def generate_caption_and_tags(self, image_path: str, metadata: dict = None, siglip_hints: list[str] = None) -> dict:
         with self.lock:
             self._load_model_locked()
-            self.last_used_time = time.time()
             self.active_requests += 1
             
         try:
@@ -320,7 +282,11 @@ class GemmaAdapter(ImageCaptioningPort):
         from services.ai_parser import parse_gemma_json_output
         return parse_gemma_json_output(output)
 
-    def generate_deep_critique(self, image_path: str, metadata: dict = None) -> str:
+    def generate_deep_critique(self, image_path: str, metadata: dict = None, photo_id: str = None) -> str:
+        if photo_id:
+            from services.critique_status import critique_status_manager
+            critique_status_manager.update(photo_id, 2, 4, "비평 작성 중", 50)
+
         with self.lock:
             self._load_model_locked()
             self.last_used_time = time.time()
@@ -435,7 +401,7 @@ class GemmaAdapter(ImageCaptioningPort):
                 self.last_used_time = time.time()
                 self.active_requests -= 1
 
-    def translate_and_format_critique(self, raw_en_critique: str, scores_dict: dict = None, quality_score: int = None) -> str:
+    def translate_and_format_critique(self, raw_en_critique: str, scores_dict: dict = None, quality_score: int = None, photo_id: str = None) -> str:
         with self.lock:
             self._load_model_locked()
             self.last_used_time = time.time()
@@ -448,11 +414,14 @@ class GemmaAdapter(ImageCaptioningPort):
                 format_unipercept_translate_step1_user_prompt,
                 format_unipercept_translate_step2_user_prompt,
             )
+            from services.critique_status import critique_status_manager
 
             import mlx.core as mx
 
             # --- Pass 1: 1차 무왜곡 100% 직역 추론 (Direct Translation) ---
             print("[GemmaAdapter] [Pass 1/2] Generating direct Korean translation...", flush=True)
+            if photo_id:
+                critique_status_manager.update(photo_id, 3, 4, "비평 번역 중", 75)
             step1_prompt_text = format_unipercept_translate_step1_user_prompt(raw_en_critique, scores_dict, quality_score)
             messages_step1 = [
                 {
@@ -480,6 +449,8 @@ class GemmaAdapter(ImageCaptioningPort):
 
             # --- Pass 2: 2차 문맥 & 미학 스타일 다듬기 추론 (Style & Context Refinement) ---
             print("[GemmaAdapter] [Pass 2/2] Refining style and photographic context...", flush=True)
+            if photo_id:
+                critique_status_manager.update(photo_id, 4, 4, "비평 다듬는 중", 90)
             step2_prompt_text = format_unipercept_translate_step2_user_prompt(step1_output, scores_dict, quality_score)
             messages_step2 = [
                 {

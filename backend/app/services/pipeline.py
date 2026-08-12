@@ -25,7 +25,7 @@ class PipelineStep(ABC):
 
 class HashStep(PipelineStep):
     def execute(self, ctx: PipelineContext) -> bool:
-        from services.indexer.scanner import calculate_sha256
+        from services.indexing_service import calculate_sha256
         ctx.image_id = calculate_sha256(ctx.file_path)
         return True
 

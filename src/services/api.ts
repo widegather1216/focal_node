@@ -231,6 +231,13 @@ class ApiClient {
     return res.json();
   }
 
+  async getCritiqueStatus(photoId: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/chat/critique/status/${photoId}`);
+    if (!res.ok) throw new Error("Failed to fetch critique status");
+    return res.json();
+  }
+
+
   async reindexPhoto(id: string): Promise<any> {
     const res = await fetch(`${this.baseUrl}/api/photos/${id}/reindex`, {
       method: 'POST'

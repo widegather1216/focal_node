@@ -145,6 +145,7 @@ export function usePhotoDetail() {
     const currentId = selectedPhotoId;
     if (!currentId || generatingCritiquePhotoIds.has(currentId)) return;
     addGeneratingCritiquePhotoId(currentId);
+    useAppStore.getState().setActiveCritiqueJob({ photoId: currentId, fileName: photo?.file_name });
     try {
       const result = await api.getPhotoCritique(currentId);
       if (useAppStore.getState().selectedPhotoId === currentId) {
@@ -159,6 +160,11 @@ export function usePhotoDetail() {
       }
     } finally {
       removeGeneratingCritiquePhotoId(currentId);
+      setTimeout(() => {
+        if (useAppStore.getState().activeCritiqueJob?.photoId === currentId) {
+          useAppStore.getState().setActiveCritiqueJob(null);
+        }
+      }, 3500);
     }
   };
 

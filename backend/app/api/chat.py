@@ -21,6 +21,15 @@ async def get_photo_critique(payload: schemas.CritiqueRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate critique: {str(e)}")
 
+@router.get("/critique/status/{photo_id}", response_model=schemas.CritiqueStatusResponse)
+def get_photo_critique_status(photo_id: str):
+    """
+    Returns real-time progress status for an ongoing critique request.
+    """
+    from services.critique_status import critique_status_manager
+    return critique_status_manager.get(photo_id)
+
+
 @router.get("/critiques", response_model=List[schemas.CritiqueItemResponse])
 def get_all_critiques(db: Session = Depends(get_db)):
     """

@@ -129,4 +129,13 @@ class CritiqueSummaryResponse(BaseModel):
     total_critiques_analyzed: int
     created_at: str
 
+class CritiqueStatusResponse(BaseModel):
+    photo_id: str
+    step: int
+    total_steps: int
+    message: str
+    progress: int
+    status: str
+
+
 

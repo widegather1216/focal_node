@@ -192,6 +192,7 @@ export function DetailPanel() {
 
                   {/* AI Critique Component */}
                   <PhotoCritiqueView
+                    photoId={photo.id}
                     critique={critique}
                     loadingCritique={loadingCritique}
                     onRequestCritique={handleRequestCritique}

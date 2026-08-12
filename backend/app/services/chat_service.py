@@ -26,69 +26,83 @@ class ChatService:
             }
             file_path = img.file_path
 
+        from services.critique_status import critique_status_manager
+
         # Inference outside DB session lock
         print(f"[ChatService] Generating photo critique for {payload.photo_id} (Engine: {payload.engine})...", flush=True)
-        if payload.engine == "unipercept":
-            from services.unipercept_adapter import get_unipercept_adapter
-            res_dict = await asyncio.to_thread(
-                get_unipercept_adapter().generate_full_ensemble_critique,
-                file_path,
-                meta_data
-            )
-            raw_en = res_dict.get("critique", "")
-            scores_dict = res_dict.get("scores", {})
-            quality_score = res_dict.get("quality_score")
-            
-            get_unipercept_adapter().unload_model()
-            print("[ChatService] UniPercept ensemble completed. Starting Gemma 4 translation...", flush=True)
-            
-            try:
-                critique_text = await asyncio.to_thread(
-                    get_gemma_adapter().translate_and_format_critique,
-                    raw_en,
-                    scores_dict,
-                    quality_score
-                )
-                if scores_dict and "앙상블 비평 스코어보드" not in critique_text:
-                    sb_header = (
-                        f"[📊 6-Way 앙상블 비평 스코어보드]\n"
-                        f"- 최종 종합 평점: {scores_dict.get('overall')}점 / 100점\n"
-                        f"- 🎨 미학 & 구도 (IAA): {scores_dict.get('iaa')}점\n"
-                        f"- 🔍 화질 & 기술 (IQA): {scores_dict.get('iqa')}점\n"
-                        f"- 🧱 구조 & 질감 (ISTA): {scores_dict.get('ista')}점\n\n"
-                    )
-                    critique_text = f"{sb_header}{critique_text}"
-            except Exception as tr_err:
-                print(f"[ChatService] Gemma 4 translation fallback: {tr_err}", flush=True)
-                critique_text = raw_en
-        else:
-            print("[ChatService] Starting Gemma 4 VLM direct critique generation...", flush=True)
-            critique_text = await asyncio.to_thread(
-                get_gemma_adapter().generate_deep_critique, 
-                file_path, 
-                meta_data
-            )
-        
-        now_utc = models.utcnow()
-        with SessionLocal() as db:
-            ai = db.query(models.AIAnalysis).filter(models.AIAnalysis.image_id == payload.photo_id).first()
-            if not ai:
-                ai = models.AIAnalysis(
-                    image_id=payload.photo_id,
-                    critique=critique_text,
-                    critique_updated_at=now_utc
-                )
-                db.add(ai)
-            else:
-                ai.critique = critique_text
-                ai.critique_updated_at = now_utc
-            db.commit()
+        critique_status_manager.update(payload.photo_id, 1, 4, "점수 산출 중", 15)
 
-        return {
-            "critique": critique_text,
-            "critique_updated_at": now_utc.isoformat(),
-            "engine_used": payload.engine
-        }
+        try:
+            if payload.engine == "unipercept":
+                from services.unipercept_adapter import get_unipercept_adapter
+                res_dict = await asyncio.to_thread(
+                    get_unipercept_adapter().generate_full_ensemble_critique,
+                    file_path,
+                    meta_data,
+                    payload.photo_id
+                )
+                raw_en = res_dict.get("critique", "")
+                scores_dict = res_dict.get("scores", {})
+                quality_score = res_dict.get("quality_score")
+                
+                get_unipercept_adapter().unload_model()
+                print("[ChatService] UniPercept ensemble completed. Starting Gemma 4 translation...", flush=True)
+                
+                try:
+                    critique_text = await asyncio.to_thread(
+                        get_gemma_adapter().translate_and_format_critique,
+                        raw_en,
+                        scores_dict,
+                        quality_score,
+                        payload.photo_id
+                    )
+                    if scores_dict and "앙상블 비평 스코어보드" not in critique_text:
+                        sb_header = (
+                            f"[📊 6-Way 앙상블 비평 스코어보드]\n"
+                            f"- 최종 종합 평점: {scores_dict.get('overall')}점 / 100점\n"
+                            f"- 🎨 미학 & 구도 (IAA): {scores_dict.get('iaa')}점\n"
+                            f"- 🔍 화질 & 기술 (IQA): {scores_dict.get('iqa')}점\n"
+                            f"- 🧱 구조 & 질감 (ISTA): {scores_dict.get('ista')}점\n\n"
+                        )
+                        critique_text = f"{sb_header}{critique_text}"
+                except Exception as tr_err:
+                    print(f"[ChatService] Gemma 4 translation fallback: {tr_err}", flush=True)
+                    critique_text = raw_en
+            else:
+                print("[ChatService] Starting Gemma 4 VLM direct critique generation...", flush=True)
+                critique_status_manager.update(payload.photo_id, 2, 4, "비평 작성 중", 50)
+                critique_text = await asyncio.to_thread(
+                    get_gemma_adapter().generate_deep_critique, 
+                    file_path, 
+                    meta_data,
+                    payload.photo_id
+                )
+            
+            now_utc = models.utcnow()
+            with SessionLocal() as db:
+                ai = db.query(models.AIAnalysis).filter(models.AIAnalysis.image_id == payload.photo_id).first()
+                if not ai:
+                    ai = models.AIAnalysis(
+                        image_id=payload.photo_id,
+                        critique=critique_text,
+                        critique_updated_at=now_utc
+                    )
+                    db.add(ai)
+                else:
+                    ai.critique = critique_text
+                    ai.critique_updated_at = now_utc
+                db.commit()
+
+            critique_status_manager.update(payload.photo_id, 4, 4, "비평 완료", 100, status="completed")
+
+            return {
+                "critique": critique_text,
+                "critique_updated_at": now_utc.isoformat(),
+                "engine_used": payload.engine
+            }
+        except Exception as e:
+            critique_status_manager.update(payload.photo_id, 0, 4, f"오류 발생: {str(e)}", 0, status="error")
+            raise
 
     @staticmethod
     async def generate_critique_summary(payload: Optional[schemas.CritiqueSummaryRequest] = None) -> Dict[str, Any]:

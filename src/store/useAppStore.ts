@@ -72,6 +72,9 @@ interface AppState {
   addGeneratingCritiquePhotoId: (id: string) => void;
   removeGeneratingCritiquePhotoId: (id: string) => void;
 
+  activeCritiqueJob: { photoId: string; fileName?: string } | null;
+  setActiveCritiqueJob: (job: { photoId: string; fileName?: string } | null) => void;
+
   folders: IndexedFolder[];
   setFolders: (folders: IndexedFolder[]) => void;
   fetchFolders: () => Promise<void>;
@@ -151,6 +154,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     nextSet.delete(id);
     return { generatingCritiquePhotoIds: nextSet };
   }),
+
+  activeCritiqueJob: null,
+  setActiveCritiqueJob: (activeCritiqueJob) => set({ activeCritiqueJob }),
 
   folders: [],
   setFolders: (folders) => set({ folders }),

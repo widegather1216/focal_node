@@ -11,6 +11,7 @@ import { DetailPanel } from "./components/DetailPanel";
 import { ActionBar } from "./components/ActionBar";
 import { ModelDownloadModal } from "./components/ModelDownloadModal";
 import { FullscreenViewer } from "./components/FullscreenViewer";
+import { GlobalCritiqueToast } from "./components/critique/GlobalCritiqueToast";
 import { AppSplash } from "./components/common/AppSplash";
 import "./App.css";
 
@@ -46,6 +47,7 @@ function App() {
 
       <DetailPanel />
       <ActionBar />
+      <GlobalCritiqueToast />
       
       <ModelDownloadModal isOverlay={true} />
       <FullscreenViewer />

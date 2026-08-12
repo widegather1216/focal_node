@@ -1,6 +1,7 @@
 import React from 'react';
 import { Camera, Aperture, Clock, Sun, Focus } from 'lucide-react';
 import { PhotoDetail } from '../../hooks/usePhotoDetail';
+import { formatAperture, formatShutterSpeed, formatIso, formatFocalLength } from '../../utils/exif';
 
 export const PhotoExifView: React.FC<{ metadata: PhotoDetail['metadata'] }> = ({ metadata }) => {
   if (!metadata) return null;
@@ -28,30 +29,25 @@ export const PhotoExifView: React.FC<{ metadata: PhotoDetail['metadata'] }> = ({
       {metadata.f_number && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#333', padding: '6px 12px', borderRadius: '4px', fontSize: '12px' }}>
           <Aperture size={14} />
-          f/{typeof metadata.f_number === 'number' ? Math.round(metadata.f_number * 100) / 100 : metadata.f_number}
+          {formatAperture(metadata.f_number)}
         </div>
       )}
       {metadata.focal_length && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#333', padding: '6px 12px', borderRadius: '4px', fontSize: '12px' }}>
           <Focus size={14} />
-          {metadata.focal_length}mm
-          {metadata.focal_length_35mm && metadata.focal_length_35mm !== metadata.focal_length && (
-            <span style={{ color: '#aaa', fontSize: '11px', marginLeft: '2px' }}>
-              (35mm 환산 {metadata.focal_length_35mm}mm)
-            </span>
-          )}
+          {formatFocalLength(metadata.focal_length, metadata.focal_length_35mm)}
         </div>
       )}
       {metadata.shutter_speed && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#333', padding: '6px 12px', borderRadius: '4px', fontSize: '12px' }}>
           <Clock size={14} />
-          {metadata.shutter_speed}s
+          {formatShutterSpeed(metadata.shutter_speed)}
         </div>
       )}
       {metadata.iso && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#333', padding: '6px 12px', borderRadius: '4px', fontSize: '12px' }}>
           <Sun size={14} />
-          ISO {metadata.iso}
+          {formatIso(metadata.iso)}
         </div>
       )}
     </div>
