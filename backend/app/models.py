@@ -35,25 +35,25 @@ class Image(Base):
     ai_analysis_rel = relationship("AIAnalysis", back_populates="image", uselist=False, cascade="all, delete-orphan")
 
     def to_list_response_dict(self):
-        cap_date = None
-        cam_model = None
-        w = None
-        h = None
+        capture_date_str = None
+        camera_model_str = None
+        width_val = None
+        height_val = None
         if self.metadata_rel:
-            cap_date = self.metadata_rel.capture_date.isoformat() if self.metadata_rel.capture_date else None
-            cam_model = self.metadata_rel.camera_model
-            w = self.metadata_rel.width
-            h = self.metadata_rel.height
+            capture_date_str = self.metadata_rel.capture_date.isoformat() if self.metadata_rel.capture_date else None
+            camera_model_str = self.metadata_rel.camera_model
+            width_val = self.metadata_rel.width
+            height_val = self.metadata_rel.height
             
         return {
             "id": self.id,
             "file_name": self.file_name,
             "file_path": self.file_path,
             "is_favorite": self.is_favorite,
-            "capture_date": cap_date,
-            "camera_model": cam_model,
-            "width": w,
-            "height": h
+            "capture_date": capture_date_str,
+            "camera_model": camera_model_str,
+            "width": width_val,
+            "height": height_val
         }
 
     def to_detail_dict(self):

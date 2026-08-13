@@ -60,27 +60,45 @@ class PhotoRepository:
                 
         # Apply EXIF filters
         if filters:
-            f = filters
-            if getattr(f, 'is_favorite', None) is not None:
-                q = q.filter(models.Image.is_favorite == f.is_favorite)
-            if getattr(f, 'camera_model', None):
-                q = q.filter(models.ImageMetadata.camera_model.ilike(f"%{f.camera_model}%"))
-            if getattr(f, 'lens_model', None):
-                q = q.filter(models.ImageMetadata.lens_model.ilike(f"%{f.lens_model}%"))
+            exif_filters = filters
+            if getattr(exif_filters, 'is_favorite', None) is not None:
+                q = q.filter(models.Image.is_favorite == exif_filters.is_favorite)
+            if getattr(exif_filters, 'camera_model', None):
+                q = q.filter(models.ImageMetadata.camera_model.ilike(f"%{exif_filters.camera_model}%"))
+            if getattr(exif_filters, 'lens_model', None):
+                q = q.filter(models.ImageMetadata.lens_model.ilike(f"%{exif_filters.lens_model}%"))
                 
-            range_filters = [
-                (getattr(f, 'iso_min', None), models.ImageMetadata.iso >= getattr(f, 'iso_min', None)),
-                (getattr(f, 'iso_max', None), models.ImageMetadata.iso <= getattr(f, 'iso_max', None)),
-                (getattr(f, 'f_number_min', None), models.ImageMetadata.f_number >= getattr(f, 'f_number_min', None)),
-                (getattr(f, 'f_number_max', None), models.ImageMetadata.f_number <= getattr(f, 'f_number_max', None)),
-                (getattr(f, 'focal_length_min', None), models.ImageMetadata.focal_length >= getattr(f, 'focal_length_min', None)),
-                (getattr(f, 'focal_length_max', None), models.ImageMetadata.focal_length <= getattr(f, 'focal_length_max', None)),
-                (getattr(f, 'date_from', None), models.ImageMetadata.capture_date >= getattr(f, 'date_from', None)),
-                (getattr(f, 'date_to', None), models.ImageMetadata.capture_date <= getattr(f, 'date_to', None)),
-            ]
-            for val, cond in range_filters:
-                if val is not None:
-                    q = q.filter(cond)
+            iso_min = getattr(exif_filters, 'iso_min', None)
+            if iso_min is not None:
+                q = q.filter(models.ImageMetadata.iso >= iso_min)
+
+            iso_max = getattr(exif_filters, 'iso_max', None)
+            if iso_max is not None:
+                q = q.filter(models.ImageMetadata.iso <= iso_max)
+
+            f_number_min = getattr(exif_filters, 'f_number_min', None)
+            if f_number_min is not None:
+                q = q.filter(models.ImageMetadata.f_number >= f_number_min)
+
+            f_number_max = getattr(exif_filters, 'f_number_max', None)
+            if f_number_max is not None:
+                q = q.filter(models.ImageMetadata.f_number <= f_number_max)
+
+            focal_length_min = getattr(exif_filters, 'focal_length_min', None)
+            if focal_length_min is not None:
+                q = q.filter(models.ImageMetadata.focal_length >= focal_length_min)
+
+            focal_length_max = getattr(exif_filters, 'focal_length_max', None)
+            if focal_length_max is not None:
+                q = q.filter(models.ImageMetadata.focal_length <= focal_length_max)
+
+            date_from = getattr(exif_filters, 'date_from', None)
+            if date_from is not None:
+                q = q.filter(models.ImageMetadata.capture_date >= date_from)
+
+            date_to = getattr(exif_filters, 'date_to', None)
+            if date_to is not None:
+                q = q.filter(models.ImageMetadata.capture_date <= date_to)
                 
         # Order and paginate
         if photo_ids_from_chroma is not None:
@@ -99,9 +117,31 @@ class PhotoRepository:
         if not db_image:
             return None
         db_image.is_favorite = not db_image.is_favorite
-        self.db.commit()
-        self.db.refresh(db_image)
-        return db_image
+    def list_critiques(self) -> List[tuple]:
+        """
+        Returns list of (AIAnalysis, Image, ImageMetadata) tuples with non-empty critiques.
+        """
+        query = (
+            self.db.query(models.AIAnalysis, models.Image, models.ImageMetadata)
+            .join(models.Image, models.AIAnalysis.image_id == models.Image.id)
+            .outerjoin(models.ImageMetadata, models.Image.id == models.ImageMetadata.image_id)
+            .filter(models.AIAnalysis.critique.isnot(None))
+            .filter(models.AIAnalysis.critique != "")
+            .order_by(models.AIAnalysis.critique_updated_at.desc().nullslast())
+        )
+        return query.all()
+
+    def delete_critique(self, photo_id: str) -> bool:
+        """
+        Clears stored critique for a photo.
+        """
+        ai = self.db.query(models.AIAnalysis).filter(models.AIAnalysis.image_id == photo_id).first()
+        if ai:
+            ai.critique = None
+            ai.critique_updated_at = None
+            self.db.commit()
+            return True
+        return False
 
     def _aggregate_field_stats(self, column, limit: int = 10, asc: bool = False, format_fn=None, filter_empty_str: bool = False) -> list[dict]:
         q = self.db.query(column, func.count(models.ImageMetadata.image_id)).filter(column.isnot(None))

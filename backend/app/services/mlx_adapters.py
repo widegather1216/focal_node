@@ -242,8 +242,8 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                     try:
                         import mlx.core as mx
                         mx.clear_cache()
-                    except Exception:
-                        pass
+                    except Exception as clear_err:
+                        print(f"[GemmaAdapter] Cache clear note: {clear_err}", flush=True)
                     gc.collect()
                     return {"caption": "", "tags": [], "aesthetic_tags": []}
                 except Exception as e:

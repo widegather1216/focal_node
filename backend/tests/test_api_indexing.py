@@ -1,11 +1,9 @@
 import pytest
-from services.indexing_service import indexing_status, pause_event, cancel_requested
+from services.indexing_state import indexing_state_manager
 
 def test_indexing_control_endpoints(client):
     # Reset status
-    indexing_status["status"] = "idle"
-    indexing_status["processed_files"] = 0
-    indexing_status["total_files"] = 0
+    indexing_state_manager.reset_status()
 
     # 1. Initial status check
     res = client.get("/api/index/status")
@@ -25,19 +23,19 @@ def test_indexing_control_endpoints(client):
     assert res.status_code == 400
 
     # 5. Simulate processing status and test pause/resume/cancel
-    indexing_status["status"] = "processing"
+    indexing_state_manager.status = "processing"
 
     res = client.post("/api/index/pause")
     assert res.status_code == 200
-    assert indexing_status["status"] == "paused"
+    assert indexing_state_manager.status == "paused"
 
     res = client.post("/api/index/resume")
     assert res.status_code == 200
-    assert indexing_status["status"] == "processing"
+    assert indexing_state_manager.status == "processing"
 
     res = client.post("/api/index/cancel")
     assert res.status_code == 200
-    assert indexing_status["status"] == "cancelled"
+    assert indexing_state_manager.status == "cancelled"
 
     # Reset back to idle
-    indexing_status["status"] = "idle"
+    indexing_state_manager.reset_status()

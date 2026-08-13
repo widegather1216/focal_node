@@ -30,8 +30,8 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
             cursor = dbapi_connection.cursor()
             cursor.execute("PRAGMA foreign_keys=ON;")
             cursor.close()
-        except Exception:
-            pass
+        except Exception as fallback_err:
+            print(f"[Database] Warning: SQLite PRAGMA configuration failed: {fallback_err}", flush=True)
 
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -44,6 +44,8 @@ def run_migrations(bind_engine=None):
     """
     target_engine = bind_engine or engine
     from sqlalchemy import text
+    from sqlalchemy.exc import OperationalError
+
     Base.metadata.create_all(bind=target_engine)
     
     migrations = [
@@ -59,8 +61,13 @@ def run_migrations(bind_engine=None):
         try:
             with target_engine.begin() as conn:
                 conn.execute(text(col_sql))
-        except Exception:
-            pass
+        except OperationalError as op_err:
+            # Expected error when column already exists in SQLite
+            if "duplicate column name" not in str(op_err).lower():
+                print(f"[Database] Migration note for '{col_sql}': {op_err}", flush=True)
+        except Exception as err:
+            print(f"[Database] Migration error executing '{col_sql}': {err}", flush=True)
+
 
 
 def get_db():

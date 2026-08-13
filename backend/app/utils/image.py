@@ -218,6 +218,154 @@ def extract_metadata(file_path: str) -> dict:
     except Exception:
         pass
 
+def _determine_crop_factor(
+    fl: float | None,
+    fl35: float | None,
+    camera: str,
+    lens: str,
+    is_smartphone: bool
+) -> float | None:
+    if fl and fl35 and fl > 0:
+        return round(fl35 / fl, 2)
+    if not (camera or lens):
+        return None
+
+    if is_smartphone:
+        if fl:
+            if fl < 3.0:
+                return 5.85  # Smartphone Ultrawide (~13mm equiv)
+            elif fl <= 9.0:
+                return 3.5   # Smartphone Main (~24-28mm equiv)
+            else:
+                return 7.0   # Smartphone Telephoto (~70-120mm equiv)
+        return 3.5
+
+    if any(k in camera for k in ["ILCE-6", "NEX-", "X-T", "X-H", "X-PRO", "X-S", "X-E", "X100", "Z 50", "Z FC", "Z 30", "D7000", "D5000", "D3000"]) or \
+       (any(k in lens for k in ["E ", "XF ", "XC ", "DX "]) and not any(k in lens for k in ["FE ", "FX "])):
+        return 1.5
+    if any(k in camera for k in ["EOS R7", "EOS R10", "EOS R50", "EOS R100", "EOS 7D", "EOS 80D", "EOS 90D", "EOS M"]) or \
+       any(k in lens for k in ["EF-S", "RF-S"]):
+        return 1.6
+    if any(k in camera for k in ["DMC-", "DC-", "GH", "GX", "GF", "G9", "E-M", "OM-1", "OM-5", "PEN"]) or \
+       any(k in lens for k in ["M.ZUIKO", "LUMIX G"]):
+        return 2.0
+    if any(k in camera for k in ["ILCE-7", "ILCE-9", "ILCE-1", "EOS R", "EOS 5D", "EOS 6D", "EOS 1D", "Z 5", "Z 6", "Z 7", "Z 8", "Z 9", "D850", "D750"]) or \
+       any(k in lens for k in ["FE ", "RF ", "EF ", "FX "]):
+        return 1.0
+    return None
+
+def _determine_sensor_format(
+    crop_factor: float,
+    fl: float | None,
+    is_smartphone: bool
+) -> str:
+    if is_smartphone:
+        if fl and fl < 3.0:
+            return f"Smartphone Ultrawide (~{crop_factor}x)"
+        elif fl and fl > 9.0:
+            return f"Smartphone Telephoto (~{crop_factor}x)"
+        return f"Smartphone Main (~{crop_factor}x)"
+
+    if crop_factor >= 1.9:
+        return "Micro Four Thirds (2.0x)"
+    if 1.55 <= crop_factor <= 1.7:
+        return "APS-C Canon (1.6x)"
+    if 1.35 <= crop_factor < 1.55:
+        return "APS-C (1.5x)"
+    if 0.9 <= crop_factor <= 1.1:
+        return "Full Frame"
+    return f"Crop {crop_factor}x"
+
+def extract_metadata(file_path: str) -> dict:
+    """
+    Extracts EXIF and basic image dimensions from standard or RAW images,
+    including 35mm focal length equivalent and sensor crop factor detection.
+    """
+    metadata = {
+        "width": None,
+        "height": None,
+        "color_space": "sRGB",
+        "camera_model": None,
+        "lens_model": None,
+        "f_number": None,
+        "focal_length": None,
+        "focal_length_35mm": None,
+        "crop_factor": None,
+        "sensor_format": None,
+        "shutter_speed": None,
+        "iso": None,
+        "capture_date": None,
+        "mime_type": get_mime_type(file_path)
+    }
+
+    # 1. Fetch width & height (using rawpy sizes for speed, avoid full loading)
+    if is_raw_image(file_path):
+        try:
+            with rawpy.imread(file_path) as raw:
+                metadata["width"] = raw.sizes.width
+                metadata["height"] = raw.sizes.height
+        except Exception as e:
+            print(f"[extract_metadata] Warning: Failed to read RAW dimensions for {file_path}: {e}")
+    else:
+        try:
+            with Image.open(file_path) as img:
+                metadata["width"] = img.size[0]
+                metadata["height"] = img.size[1]
+                icc = img.info.get("icc_profile")
+                if icc:
+                    metadata["color_space"] = "Adobe RGB" if b"Adobe" in icc else "sRGB"
+        except Exception as e:
+            print(f"[extract_metadata] Warning: Failed to read image dimensions for {file_path}: {e}")
+
+    # 2. Extract EXIF details using exifread
+    try:
+        with open(file_path, "rb") as f:
+            tags = exifread.process_file(f, details=False)
+
+            model = _get_tag_val(tags, "Image Model")
+            if model:
+                metadata["camera_model"] = str(model).strip()
+
+            lens = _get_tag_val(tags, ["EXIF LensModel", "Image LensModel", "EXIF LensModelName"])
+            if lens:
+                metadata["lens_model"] = str(lens).strip()
+
+            f_val = _get_tag_val(tags, "EXIF FNumber")
+            if f_val is not None:
+                parsed_f = _parse_ratio(f_val)
+                if parsed_f is not None:
+                    metadata["f_number"] = round(parsed_f, 2)
+
+            fl_val = _get_tag_val(tags, "EXIF FocalLength")
+            if fl_val is not None:
+                metadata["focal_length"] = _parse_ratio(fl_val)
+
+            fl35_val = _get_tag_val(tags, ["EXIF FocalLengthIn35mmFilm", "EXIF FocalLengthIn35mmFormat"])
+            if fl35_val is not None:
+                try:
+                    parsed_35 = float(fl35_val)
+                    if parsed_35 > 0:
+                        metadata["focal_length_35mm"] = parsed_35
+                except ValueError:
+                    pass
+
+            shutter_val = _get_tag_val(tags, "EXIF ExposureTime")
+            if shutter_val is not None:
+                metadata["shutter_speed"] = _parse_shutter_speed(shutter_val)
+
+            iso_val = _get_tag_val(tags, ["EXIF ISOSpeedRatings", "EXIF ISOSpeed"])
+            if iso_val is not None:
+                try:
+                    metadata["iso"] = int(iso_val)
+                except ValueError:
+                    pass
+
+            date_val = _get_tag_val(tags, ["EXIF DateTimeOriginal", "Image DateTime"])
+            if date_val is not None:
+                metadata["capture_date"] = _parse_date(str(date_val))
+    except Exception as e:
+        print(f"[extract_metadata] Warning: EXIF reading failed for {file_path}: {e}")
+
     # 3. Derive 35mm focal length equivalent & Crop Factor
     fl = metadata["focal_length"]
     fl35 = metadata["focal_length_35mm"]
@@ -226,62 +374,20 @@ def extract_metadata(file_path: str) -> dict:
     is_smartphone = any(k in camera for k in ["IPHONE", "GALAXY", "SM-", "PIXEL", "XIAOMI", "REDMI", "POCO", "ONEPLUS", "HUAWEI", "OPPO", "VIVO"]) or \
                     any(k in lens for k in ["IPHONE", "GALAXY", "SM-", "PIXEL"])
 
-    crop_factor = None
-    if fl and fl35 and fl > 0:
-        crop_factor = round(fl35 / fl, 2)
-    elif camera or lens:
-        if is_smartphone:
-            if fl:
-                if fl < 3.0:
-                    crop_factor = 5.85  # Smartphone Ultrawide (~13mm equiv)
-                elif fl <= 9.0:
-                    crop_factor = 3.5   # Smartphone Main (~24-28mm equiv)
-                else:
-                    crop_factor = 7.0   # Smartphone Telephoto (~70-120mm equiv)
-            else:
-                crop_factor = 3.5
-        elif any(k in camera for k in ["ILCE-6", "NEX-", "X-T", "X-H", "X-PRO", "X-S", "X-E", "X100", "Z 50", "Z FC", "Z 30", "D7000", "D5000", "D3000"]) or \
-           (any(k in lens for k in ["E ", "XF ", "XC ", "DX "]) and not any(k in lens for k in ["FE ", "FX "])):
-            crop_factor = 1.5
-        elif any(k in camera for k in ["EOS R7", "EOS R10", "EOS R50", "EOS R100", "EOS 7D", "EOS 80D", "EOS 90D", "EOS M"]) or \
-             any(k in lens for k in ["EF-S", "RF-S"]):
-            crop_factor = 1.6
-        elif any(k in camera for k in ["DMC-", "DC-", "GH", "GX", "GF", "G9", "E-M", "OM-1", "OM-5", "PEN"]) or \
-             any(k in lens for k in ["M.ZUIKO", "LUMIX G"]):
-            crop_factor = 2.0
-        elif any(k in camera for k in ["ILCE-7", "ILCE-9", "ILCE-1", "EOS R", "EOS 5D", "EOS 6D", "EOS 1D", "Z 5", "Z 6", "Z 7", "Z 8", "Z 9", "D850", "D750"]) or \
-             any(k in lens for k in ["FE ", "RF ", "EF ", "FX "]):
-            crop_factor = 1.0
+    crop_factor = _determine_crop_factor(fl, fl35, camera, lens, is_smartphone)
 
     if crop_factor:
         metadata["crop_factor"] = crop_factor
         if fl and not metadata["focal_length_35mm"]:
             metadata["focal_length_35mm"] = round(fl * crop_factor, 1)
-
-        if is_smartphone:
-            if fl and fl < 3.0:
-                metadata["sensor_format"] = f"Smartphone Ultrawide (~{crop_factor}x)"
-            elif fl and fl > 9.0:
-                metadata["sensor_format"] = f"Smartphone Telephoto (~{crop_factor}x)"
-            else:
-                metadata["sensor_format"] = f"Smartphone Main (~{crop_factor}x)"
-        elif crop_factor >= 1.9:
-            metadata["sensor_format"] = "Micro Four Thirds (2.0x)"
-        elif 1.55 <= crop_factor <= 1.7:
-            metadata["sensor_format"] = "APS-C Canon (1.6x)"
-        elif 1.35 <= crop_factor < 1.55:
-            metadata["sensor_format"] = "APS-C (1.5x)"
-        elif 0.9 <= crop_factor <= 1.1:
-            metadata["sensor_format"] = "Full Frame"
-        else:
-            metadata["sensor_format"] = f"Crop {crop_factor}x"
+        metadata["sensor_format"] = _determine_sensor_format(crop_factor, fl, is_smartphone)
 
     # Fallback to file system mtime if capture date was not in EXIF
     if metadata["capture_date"] is None:
         try:
             mtime = os.path.getmtime(file_path)
             metadata["capture_date"] = datetime.datetime.fromtimestamp(mtime)
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[extract_metadata] Warning: Could not read mtime for {file_path}: {e}")
 
     return metadata
