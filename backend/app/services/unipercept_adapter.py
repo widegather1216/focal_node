@@ -10,8 +10,6 @@ import torchvision.transforms as T
 from torchvision.transforms.functional import InterpolationMode
 
 from services.base_model import BaseKeepAliveModel, GPU_LOCK
-
-from services.base_model import BaseKeepAliveModel, GPU_LOCK
 from services.unipercept_utils import build_transform, score2aestoken, AESTHETICS_TOKEN_LIST
 
 class UniPerceptAdapter(BaseKeepAliveModel):
@@ -19,6 +17,8 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         super().__init__("UniPerceptAdapter", keep_alive_timeout=60.0)
         # Default public mirror repo on Hugging Face (100% tokenless automatic download)
         self.model_id = "widegather/unipercept-mirror"
+        self._cached_preferential_ids = None
+        self._cached_weight_tensor = None
         
         # Check if local model directory exists
         custom_path = os.environ.get("UNIPERCEPT_MODEL_PATH")
@@ -183,12 +183,12 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                     output_hidden_states=True,
                     return_dict=True,
                 )
-                logits = outputs.logits
-
-        preferential_ids_ = [self.tokenizer.convert_tokens_to_ids(word) for word in AESTHETICS_TOKEN_LIST]
-        output_logits = logits[:, -1, preferential_ids_].detach()
-        weight_tensor = torch.tensor([x for x in range(101)]).to(device=self.device, dtype=output_logits.dtype)
-        score = torch.softmax(output_logits, -1) @ weight_tensor
+        if self._cached_preferential_ids is None:
+            self._cached_preferential_ids = [self.tokenizer.convert_tokens_to_ids(word) for word in AESTHETICS_TOKEN_LIST]
+        output_logits = logits[:, -1, self._cached_preferential_ids].detach()
+        if self._cached_weight_tensor is None or self._cached_weight_tensor.device != self.device or self._cached_weight_tensor.dtype != output_logits.dtype:
+            self._cached_weight_tensor = torch.tensor([x for x in range(101)]).to(device=self.device, dtype=output_logits.dtype)
+        score = torch.softmax(output_logits, -1) @ self._cached_weight_tensor
         return float(score.item())
 
     @staticmethod
@@ -357,18 +357,18 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                 print(f"[UniPerceptAdapter] -> Generating VQA critique domain: {domain_key.upper()}...", flush=True)
                 with GPU_LOCK:
                     try:
-                        if hasattr(self.model, "chat"):
-                            txt = self.model.chat(
-                                self.tokenizer,
-                                pixel_values,
-                                prompt_text,
-                                generation_config=generation_config
-                            )
-                        else:
-                            inputs = self.processor(images=pil_img, text=prompt_text, return_tensors="pt").to(self.device, dtype=self.torch_dtype)
-                            with torch.no_grad():
+                        with torch.no_grad():
+                            if hasattr(self.model, "chat"):
+                                txt = self.model.chat(
+                                    self.tokenizer,
+                                    pixel_values,
+                                    prompt_text,
+                                    generation_config=generation_config
+                                )
+                            else:
+                                inputs = self.processor(images=pil_img, text=prompt_text, return_tensors="pt").to(self.device, dtype=self.torch_dtype)
                                 outputs = self.model.generate(**inputs, max_new_tokens=1024)
-                            txt = self.processor.decode(outputs[0], skip_special_tokens=True)
+                                txt = self.processor.decode(outputs[0], skip_special_tokens=True)
                         critiques[domain_key] = txt.strip()
                         print(f"[UniPerceptAdapter] -> Domain {domain_key.upper()} critique finished ({len(txt)} chars).", flush=True)
                     except Exception as eval_err:
@@ -443,19 +443,19 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             for attempt in range(1, max_retries + 1):
                 with GPU_LOCK:
                     try:
-                        if hasattr(self.model, "chat"):
-                            gen_cfg = dict(generation_config, do_sample=True, temperature=0.7, top_p=0.9) if attempt > 1 else generation_config
-                            critique_text = self.model.chat(
-                                self.tokenizer,
-                                pixel_values,
-                                prompt_text,
-                                generation_config=gen_cfg
-                            )
-                        else:
-                            inputs = self.processor(images=pil_img, text=prompt_text, return_tensors="pt").to(self.device, dtype=self.torch_dtype)
-                            with torch.no_grad():
+                        with torch.no_grad():
+                            if hasattr(self.model, "chat"):
+                                gen_cfg = dict(generation_config, do_sample=True, temperature=0.7, top_p=0.9) if attempt > 1 else generation_config
+                                critique_text = self.model.chat(
+                                    self.tokenizer,
+                                    pixel_values,
+                                    prompt_text,
+                                    generation_config=gen_cfg
+                                )
+                            else:
+                                inputs = self.processor(images=pil_img, text=prompt_text, return_tensors="pt").to(self.device, dtype=self.torch_dtype)
                                 outputs = self.model.generate(**inputs, max_new_tokens=1024)
-                            critique_text = self.processor.decode(outputs[0], skip_special_tokens=True)
+                                critique_text = self.processor.decode(outputs[0], skip_special_tokens=True)
                     except Exception as eval_err:
                         print(f"[UniPerceptAdapter] Inference error: {eval_err}", flush=True)
                         critique_text = f"UniPercept 분석 중 오류가 발생했습니다: {str(eval_err)}"

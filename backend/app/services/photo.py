@@ -39,17 +39,25 @@ def generate_and_cache_thumbnail(file_path: str, image_id: str) -> bytes:
             
     # 2. Calculate aspect ratio dimensions (width 360px)
     width, height = img.size
+    if width <= 0 or height <= 0:
+        raise HTTPException(status_code=422, detail="Invalid image dimensions")
     new_width = 360
-    new_height = int((new_width / width) * height)
+    new_height = max(1, int((new_width / width) * height))
     
     # 3. Resize using high-quality filter
     resample_filter = getattr(Image, "Resampling", Image).LANCZOS
     img_thumb = img.resize((new_width, new_height), resample=resample_filter)
     
-    # 4. Save to Cache folder atomically to prevent concurrent write corruption
+    # 4. Save to JPEG buffer once in-memory
+    buf = io.BytesIO()
+    img_thumb.save(buf, format="JPEG", quality=85)
+    jpeg_bytes = buf.getvalue()
+
+    # 5. Save to Cache folder atomically to prevent concurrent write corruption
     temp_path = f"{cache_path}.{uuid.uuid4().hex}.tmp"
     try:
-        img_thumb.save(temp_path, format="JPEG", quality=85)
+        with open(temp_path, "wb") as f:
+            f.write(jpeg_bytes)
         
         # I/O Lock defense: Retry replacement up to 3 times
         for attempt in range(3):
@@ -68,10 +76,7 @@ def generate_and_cache_thumbnail(file_path: str, image_id: str) -> bytes:
             except Exception:
                 pass
     
-    # 5. Return bytes
-    buf = io.BytesIO()
-    img_thumb.save(buf, format="JPEG", quality=85)
-    return buf.getvalue()
+    return jpeg_bytes
 
 def get_thumbnail_bytes(db_image: DBImage) -> bytes:
     """
@@ -154,7 +159,7 @@ def _prepare_chroma_metadata(metadata_data: dict) -> dict:
         "lens_model": metadata_data.get("lens_model") or ""
     }
 
-def _save_photos_atomic_internal(db: Session, items_data: list[dict]) -> list[DBImage]:
+def _save_photos_atomic_internal(db: Session, items_data: list[dict], refresh_models: bool = False) -> list[DBImage]:
     """
     Unified function for atomic saves to SQLite and ChromaDB with compensating transactions.
     """
@@ -200,8 +205,9 @@ def _save_photos_atomic_internal(db: Session, items_data: list[dict]) -> list[DB
             
     try:
         db.commit()
-        for img in db_images:
-            db.refresh(img)
+        if refresh_models:
+            for img in db_images:
+                db.refresh(img)
         return db_images
     except Exception as e:
         db.rollback()
@@ -230,13 +236,13 @@ def register_photo_atomic(
         "ai_data": ai_data,
         "embedding": embedding
     }
-    return _save_photos_atomic_internal(db, [item])[0]
+    return _save_photos_atomic_internal(db, [item], refresh_models=True)[0]
 
 def register_photos_batch_atomic(db: Session, batch_data: list[dict]) -> None:
     """
     Saves multiple photos atomically in SQLite and ChromaDB vector store.
     """
-    _save_photos_atomic_internal(db, batch_data)
+    _save_photos_atomic_internal(db, batch_data, refresh_models=False)
 
 def update_photo_metadata(db: Session, image_id: str, caption: str, tags: list[str]) -> DBAIAnalysis:
     """

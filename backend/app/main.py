@@ -125,6 +125,7 @@ def trigger_model_download():
     total_dl = sum(item.get("downloaded_bytes", 0) for item in statuses.values())
     total_sz = sum(item.get("total_bytes", 0) for item in statuses.values())
     overall_progress = min(100, int((total_dl / total_sz) * 100)) if total_sz > 0 else 0
+    is_all_done = len(statuses) > 0 and all(item.get("status") in ("completed", "cached") for item in statuses.values())
     return {
         "started": started,
         "statuses": statuses,
@@ -132,7 +133,7 @@ def trigger_model_download():
             "progress": overall_progress,
             "downloaded_bytes": total_dl,
             "total_bytes": total_sz,
-            "is_all_done": False
+            "is_all_done": is_all_done
         }
     }
 

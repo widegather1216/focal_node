@@ -56,8 +56,10 @@ def calculate_sha256(file_path: str) -> str:
 def scan_directory(folder_paths: List[str]) -> List[str]:
     """
     Recursively scans targeted folders and extracts supported image file paths.
+    Avoids duplicates from overlapping folders or symlinks.
     """
     files_to_index = []
+    seen = set()
     for folder in folder_paths:
         if not os.path.exists(folder):
             print(f"[Indexer] Target folder does not exist: {folder}", flush=True)
@@ -68,7 +70,10 @@ def scan_directory(folder_paths: List[str]) -> List[str]:
                     continue
                 ext = os.path.splitext(file)[1].lower()
                 if ext in SUPPORTED_EXTENSIONS:
-                    files_to_index.append(os.path.join(root, file))
+                    full_path = os.path.join(root, file)
+                    if full_path not in seen:
+                        seen.add(full_path)
+                        files_to_index.append(full_path)
     return files_to_index
 
 
@@ -101,8 +106,18 @@ def cleanup_zombie_records(db: Session = None):
         indexed_folders = db.query(IndexedFolder.path).all()
         folder_paths = [f.path for f in indexed_folders]
         
+        # Precompute normalized prefixes once to avoid redundant filesystem calls in loop
+        normalized_folder_prefixes = []
+        for f_path in folder_paths:
+            try:
+                real_f = os.path.realpath(f_path).lower()
+            except Exception:
+                real_f = os.path.normpath(f_path).lower()
+            f_prefix = real_f if real_f.endswith(os.sep) else real_f + os.sep
+            normalized_folder_prefixes.append((real_f, f_prefix))
+
         def belongs_to_any_folder(file_path: str, parent_dir: str) -> bool:
-            if not folder_paths:
+            if not normalized_folder_prefixes:
                 return False
             try:
                 real_parent = os.path.realpath(parent_dir).lower()
@@ -111,12 +126,7 @@ def cleanup_zombie_records(db: Session = None):
                 real_parent = os.path.normpath(parent_dir).lower()
                 real_file = os.path.normpath(file_path).lower()
 
-            for f_path in folder_paths:
-                try:
-                    real_f = os.path.realpath(f_path).lower()
-                except Exception:
-                    real_f = os.path.normpath(f_path).lower()
-                f_prefix = real_f if real_f.endswith(os.sep) else real_f + os.sep
+            for real_f, f_prefix in normalized_folder_prefixes:
                 if real_parent == real_f or real_parent.startswith(f_prefix) or real_file.startswith(f_prefix):
                     return True
             return False
@@ -278,7 +288,7 @@ def index_single_file_sync(file_path: str) -> Union[dict, str]:
     try:
         from services.pipeline import IndexingPipeline
         pipeline = IndexingPipeline()
-        res = pipeline.run(file_path)
+        res = pipeline.run(file_path, image_id=image_id)
         if isinstance(res, str):
             return res
             

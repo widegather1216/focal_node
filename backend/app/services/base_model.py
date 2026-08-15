@@ -40,22 +40,28 @@ class BaseKeepAliveModel:
 
     def _keep_alive_loop(self):
         while True:
-            time.sleep(10)
-            should_unload = False
+            time.sleep(5)
             with self.lock:
                 if self.active_requests > 0:
                     continue
+                if self.model is None:
+                    self.timer_active = False
+                    break
                 elapsed = time.time() - self.last_used_time
-                if elapsed >= self.keep_alive_timeout:
-                    should_unload = True
+                if elapsed < self.keep_alive_timeout:
+                    continue
 
-            if should_unload:
-                with GPU_LOCK:
-                    with self.lock:
-                        if self.active_requests == 0 and self.model is not None:
+            with GPU_LOCK:
+                with self.lock:
+                    if self.active_requests == 0 and self.model is not None:
+                        elapsed = time.time() - self.last_used_time
+                        if elapsed >= self.keep_alive_timeout:
                             print(f"[{self.model_name}] Keep-alive timeout reached ({self.keep_alive_timeout}s). Unloading model...", flush=True)
                             self._unload_model_locked()
-                    break
+                            break
+                    elif self.model is None:
+                        self.timer_active = False
+                        break
 
     def _unload_model_locked(self):
         """Internal locked method to clear references and trigger memory garbage collection."""

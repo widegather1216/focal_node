@@ -118,7 +118,15 @@ class ChatService:
                 .filter(models.AIAnalysis.critique != "")
             )
             if payload and payload.photo_ids:
-                query = query.filter(models.Image.id.in_(payload.photo_ids))
+                if len(payload.photo_ids) > 900:
+                    from sqlalchemy import or_
+                    conditions = [
+                        models.Image.id.in_(payload.photo_ids[i:i+900])
+                        for i in range(0, len(payload.photo_ids), 900)
+                    ]
+                    query = query.filter(or_(*conditions))
+                else:
+                    query = query.filter(models.Image.id.in_(payload.photo_ids))
                 
             results = query.all()
             if not results:

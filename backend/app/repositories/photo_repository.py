@@ -10,6 +10,18 @@ class PhotoRepository:
     def get_by_id(self, photo_id: str) -> Optional[models.Image]:
         return self.db.query(models.Image).options(joinedload(models.Image.metadata_rel)).filter(models.Image.id == photo_id).first()
 
+    def get_by_ids(self, photo_ids: List[str]) -> List[models.Image]:
+        if not photo_ids:
+            return []
+        if len(photo_ids) > 900:
+            results = []
+            for i in range(0, len(photo_ids), 900):
+                chunk = photo_ids[i:i+900]
+                rows = self.db.query(models.Image).options(joinedload(models.Image.metadata_rel)).filter(models.Image.id.in_(chunk)).all()
+                results.extend(rows)
+            return results
+        return self.db.query(models.Image).options(joinedload(models.Image.metadata_rel)).filter(models.Image.id.in_(photo_ids)).all()
+
     def get_by_path(self, file_path: str) -> Optional[models.Image]:
         return self.db.query(models.Image).options(joinedload(models.Image.metadata_rel)).filter(models.Image.file_path == file_path).first()
 
@@ -117,6 +129,10 @@ class PhotoRepository:
         if not db_image:
             return None
         db_image.is_favorite = not db_image.is_favorite
+        self.db.commit()
+        self.db.refresh(db_image)
+        return db_image
+
     def list_critiques(self) -> List[tuple]:
         """
         Returns list of (AIAnalysis, Image, ImageMetadata) tuples with non-empty critiques.

@@ -39,9 +39,11 @@ def get_chroma_collection():
     """
     global _collection
     if _collection is None:
-        client = _init_chroma_client()
-        _collection = client.get_or_create_collection(
-            name="photo_embeddings",
-            metadata={"hnsw:space": "cosine"}
-        )
+        with _init_lock:
+            if _collection is None:
+                client = _init_chroma_client()
+                _collection = client.get_or_create_collection(
+                    name="photo_embeddings",
+                    metadata={"hnsw:space": "cosine"}
+                )
     return _collection

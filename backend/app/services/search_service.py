@@ -29,7 +29,7 @@ class SearchService:
             query_embedding = await asyncio.to_thread(siglip.get_text_embedding, query_str)
             
             # 3. Search ChromaDB (I/O bound)
-            search_limit = request.offset + max(request.limit * 10, 500) if request.filters else request.limit + request.offset
+            search_limit = request.offset + max(request.limit * 10, 500) if request.filters else max(1, request.limit + request.offset)
             chroma_ids = await asyncio.to_thread(
                 self.vector_repo.query_similar_by_embedding,
                 query_embedding,
@@ -67,7 +67,7 @@ class SearchService:
         if target_embedding is None:
             raise ValueError(f"Photo embedding for {request.photo_id} not found")
         
-        search_limit = request.offset + max(request.limit * 10, 500) if request.filters else request.limit + request.offset + 1
+        search_limit = request.offset + max(request.limit * 10, 500) if request.filters else max(1, request.limit + request.offset + 1)
         chroma_ids = await asyncio.to_thread(
             self.vector_repo.query_similar_by_embedding,
             target_embedding,

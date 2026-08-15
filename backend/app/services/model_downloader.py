@@ -10,10 +10,22 @@ KNOWN_MODEL_SIZES: Dict[str, int] = {
     "widegather/unipercept-mirror": 24952254453,
 }
 
-def get_repo_downloaded_bytes(repo_id: str) -> int:
+_size_cache: Dict[str, tuple[float, int]] = {}
+_size_cache_lock = threading.Lock()
+
+def get_repo_downloaded_bytes(repo_id: str, ttl: float = 1.5) -> int:
+    now = time.time()
+    with _size_cache_lock:
+        if repo_id in _size_cache:
+            ts, cached_val = _size_cache[repo_id]
+            if now - ts < ttl:
+                return cached_val
+
     folder_name = "models--" + repo_id.replace("/", "--")
     hub_path = os.path.expanduser(f"~/.cache/huggingface/hub/{folder_name}")
     if not os.path.isdir(hub_path):
+        with _size_cache_lock:
+            _size_cache[repo_id] = (now, 0)
         return 0
     blobs_path = os.path.join(hub_path, "blobs")
     target_dir = blobs_path if os.path.isdir(blobs_path) else hub_path
@@ -26,6 +38,8 @@ def get_repo_downloaded_bytes(repo_id: str) -> int:
                     total += os.path.getsize(f_path)
                 except OSError:
                     pass
+    with _size_cache_lock:
+        _size_cache[repo_id] = (now, total)
     return total
 
 class ModelDownloadStatusTracker:

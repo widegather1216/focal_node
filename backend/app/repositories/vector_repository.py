@@ -29,11 +29,13 @@ class VectorRepository:
                     print(f"[VectorRepository] Failed to delete chunk from ChromaDB: {chroma_err}", flush=True)
 
     def query_similar_by_embedding(self, query_embedding: List[float], n_results: int) -> List[str]:
-        if self.count() == 0:
+        total = self.count()
+        if total == 0 or n_results <= 0:
             return []
+        safe_n = max(1, min(n_results, total))
         results = self.collection.query(
             query_embeddings=[query_embedding],
-            n_results=n_results
+            n_results=safe_n
         )
         if results and results.get('ids') and len(results['ids']) > 0 and len(results['ids'][0]) > 0:
             return results['ids'][0]

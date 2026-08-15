@@ -1,17 +1,17 @@
 import os
 import hashlib
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Union
+from typing import Dict, Any, Union, Optional
 from utils.image import extract_metadata
 from services.photo import generate_and_cache_thumbnail
 from services.ai_factory import get_siglip_adapter, get_gemma_adapter
 
 class PipelineContext:
-    def __init__(self, file_path: str):
+    def __init__(self, file_path: str, image_id: Optional[str] = None):
         self.file_path: str = file_path
         self.file_size: int = os.path.getsize(file_path) if os.path.exists(file_path) else 0
         self.file_mtime: float = os.path.getmtime(file_path) if os.path.exists(file_path) else 0.0
-        self.image_id: str = ""
+        self.image_id: str = image_id or ""
         self.metadata: Dict[str, Any] = {}
         self.embedding: list[float] = []
         self.ai_result: Dict[str, Any] = {}
@@ -25,8 +25,9 @@ class PipelineStep(ABC):
 
 class HashStep(PipelineStep):
     def execute(self, ctx: PipelineContext) -> bool:
-        from services.indexing_service import calculate_sha256
-        ctx.image_id = calculate_sha256(ctx.file_path)
+        if not ctx.image_id:
+            from services.indexing_service import calculate_sha256
+            ctx.image_id = calculate_sha256(ctx.file_path)
         return True
 
 
@@ -75,8 +76,8 @@ class IndexingPipeline:
             AIInferenceStep()
         ]
 
-    def run(self, file_path: str) -> Union[Dict[str, Any], str]:
-        ctx = PipelineContext(file_path)
+    def run(self, file_path: str, image_id: Optional[str] = None) -> Union[Dict[str, Any], str]:
+        ctx = PipelineContext(file_path, image_id=image_id)
         for step in self.steps:
             cont = step.execute(ctx)
             if not cont or ctx.status == "error":

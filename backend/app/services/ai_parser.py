@@ -158,6 +158,15 @@ def format_siglip_hints_text(hints: list[str] | None) -> str:
         f"- {joined_hints}\n\n"
     )
 
+def _ensure_string_list(val) -> list[str]:
+    if isinstance(val, list):
+        return [str(t).strip() for t in val if str(t).strip()]
+    elif isinstance(val, str) and val.strip():
+        if "," in val:
+            return [t.strip() for t in val.split(",") if t.strip()]
+        return [val.strip()]
+    return []
+
 def parse_gemma_json_output(output: str) -> dict:
     """
     Safely parses JSON candidate from VLM output text with fallback handling.
@@ -188,8 +197,8 @@ def parse_gemma_json_output(output: str) -> dict:
             if isinstance(data, dict):
                 return {
                     "caption": str(data.get("caption", "") or ""),
-                    "tags": [str(t) for t in (data.get("tags") or [])],
-                    "aesthetic_tags": [str(t) for t in (data.get("aesthetic_tags") or [])]
+                    "tags": _ensure_string_list(data.get("tags")),
+                    "aesthetic_tags": _ensure_string_list(data.get("aesthetic_tags"))
                 }
         except Exception as parse_err:
             print(f"[AI Parser] JSON parsing failed: {parse_err}. Raw: {output}", flush=True)

@@ -12,7 +12,11 @@ def _parse_json_list(val: str | None) -> list:
         return []
     try:
         res = json.loads(val)
-        return res if isinstance(res, list) else []
+        if isinstance(res, list):
+            return [str(item) for item in res if item is not None]
+        if isinstance(res, str) and res.strip():
+            return [res.strip()]
+        return []
     except (json.JSONDecodeError, TypeError):
         return []
 

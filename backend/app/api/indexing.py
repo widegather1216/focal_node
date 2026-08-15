@@ -14,6 +14,9 @@ router = APIRouter(prefix="/api/index", tags=["indexing"])
 
 @router.post("/start", status_code=202)
 def start_indexing(payload: schemas.IndexStartRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    if not payload.folder_paths:
+        raise HTTPException(status_code=400, detail="No folder paths provided.")
+
     if indexing_state_manager.status in ["processing", "paused"]:
         raise HTTPException(status_code=400, detail="Indexing is already in progress or paused.")
         

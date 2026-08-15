@@ -153,8 +153,7 @@ async def export_photos(payload: schemas.ExportRequest):
     from database import SessionLocal
     with SessionLocal() as db:
         photo_repo = PhotoRepository(db)
-        images = [photo_repo.get_by_id(pid) for pid in payload.photo_ids]
-        images = [img for img in images if img is not None]
+        images = photo_repo.get_by_ids(payload.photo_ids)
         if not images:
             raise HTTPException(status_code=404, detail="No photos found to export")
         export_items = [{"file_path": img.file_path, "file_name": img.file_name} for img in images]
