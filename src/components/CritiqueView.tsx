@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, Search, Wand2, FileText, Loader2 } from 'lucide-react';
@@ -65,16 +65,16 @@ export const CritiqueView: React.FC = () => {
     setTimeout(() => setCopiedSummary(false), 2000);
   };
 
-  const filteredCritiques = critiques.filter((item) => {
-    if (!filterQuery.trim()) return true;
+  const filteredCritiques = useMemo(() => {
+    if (!filterQuery.trim()) return critiques;
     const q = filterQuery.toLowerCase();
-    return (
+    return critiques.filter((item) => (
       item.file_name.toLowerCase().includes(q) ||
       item.critique.toLowerCase().includes(q) ||
       (item.camera_model && item.camera_model.toLowerCase().includes(q)) ||
       (item.lens_model && item.lens_model.toLowerCase().includes(q))
-    );
-  });
+    ));
+  }, [critiques, filterQuery]);
 
   if (isLoading) {
     return <LoadingSpinner fullScreen message="AI 비평 목록을 불러오는 중..." />;

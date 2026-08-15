@@ -15,6 +15,15 @@ class ApiClient {
     return `http://127.0.0.1:${port}`;
   }
 
+  private async parseError(res: Response, defaultMsg: string): Promise<string> {
+    try {
+      const data = await res.json();
+      return data.detail || defaultMsg;
+    } catch {
+      return res.statusText || defaultMsg;
+    }
+  }
+
   async healthCheck(): Promise<any> {
     const res = await fetch(`${this.baseUrl}/api/health`);
     if (!res.ok) throw new Error(`Health check failed: ${res.status}`);
@@ -27,12 +36,15 @@ class ApiClient {
       url += `&parent_dir=${encodeURIComponent(folder)}`;
     }
     const res = await fetch(url);
-    if (!res.ok) throw new Error("Failed to fetch photos");
+    if (!res.ok) {
+      const err = await this.parseError(res, "Failed to fetch photos");
+      throw new Error(err);
+    }
     return res.json();
   }
 
   async searchPhotos(query: string | undefined, filters: SearchFilters | undefined, limit: number, offset: number): Promise<any[]> {
-    let cleanQuery = query ? query.trim() : undefined;
+    const cleanQuery = query ? query.trim() : undefined;
     
     // Check if it's a similar search
     if (cleanQuery && cleanQuery.startsWith('similar:')) {
@@ -47,7 +59,10 @@ class ApiClient {
           offset
         })
       });
-      if (!res.ok) throw new Error("Failed to search similar photos");
+      if (!res.ok) {
+        const err = await this.parseError(res, "Failed to search similar photos");
+        throw new Error(err);
+      }
       return res.json();
     }
 
@@ -62,13 +77,19 @@ class ApiClient {
         offset
       })
     });
-    if (!res.ok) throw new Error("Failed to search photos");
+    if (!res.ok) {
+      const err = await this.parseError(res, "Failed to search photos");
+      throw new Error(err);
+    }
     return res.json();
   }
 
   async getPhotoDetail(id: string): Promise<any> {
     const res = await fetch(`${this.baseUrl}/api/photos/${id}`);
-    if (!res.ok) throw new Error("Failed to fetch photo detail");
+    if (!res.ok) {
+      const err = await this.parseError(res, "Failed to fetch photo detail");
+      throw new Error(err);
+    }
     return res.json();
   }
 
@@ -78,7 +99,10 @@ class ApiClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ caption, tags })
     });
-    if (!res.ok) throw new Error("Failed to update photo metadata");
+    if (!res.ok) {
+      const err = await this.parseError(res, "Failed to update photo metadata");
+      throw new Error(err);
+    }
     return res.json();
   }
 
@@ -92,7 +116,10 @@ class ApiClient {
       })
     });
     
-    if (!res.ok) throw new Error("Failed to export photos");
+    if (!res.ok) {
+      const err = await this.parseError(res, "Failed to export photos");
+      throw new Error(err);
+    }
     if (!res.body) throw new Error("No response body");
 
     const reader = res.body.getReader();
@@ -128,7 +155,10 @@ class ApiClient {
 
   async fetchFolders(): Promise<any[]> {
     const res = await fetch(`${this.baseUrl}/api/folders`);
-    if (!res.ok) throw new Error("Failed to fetch folders");
+    if (!res.ok) {
+      const err = await this.parseError(res, "Failed to fetch folders");
+      throw new Error(err);
+    }
     return res.json();
   }
 
@@ -136,7 +166,10 @@ class ApiClient {
     const res = await fetch(`${this.baseUrl}/api/folders?path=${encodeURIComponent(path)}`, {
       method: 'DELETE',
     });
-    if (!res.ok) throw new Error("Failed to remove folder");
+    if (!res.ok) {
+      const err = await this.parseError(res, "Failed to remove folder");
+      throw new Error(err);
+    }
   }
 
   async startIndexing(folderPaths: string[]): Promise<any> {
@@ -146,8 +179,8 @@ class ApiClient {
       body: JSON.stringify({ folder_paths: folderPaths })
     });
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
-      throw new Error(`Failed to start indexing: ${err.detail}`);
+      const err = await this.parseError(res, "Failed to start indexing");
+      throw new Error(`Failed to start indexing: ${err}`);
     }
     return res.json();
   }
@@ -155,8 +188,8 @@ class ApiClient {
   async syncDatabase(): Promise<any> {
     const res = await fetch(`${this.baseUrl}/api/index/sync`, { method: 'POST' });
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
-      throw new Error(`Sync failed: ${err.detail}`);
+      const err = await this.parseError(res, "Sync failed");
+      throw new Error(`Sync failed: ${err}`);
     }
     return res.json();
   }
@@ -164,8 +197,8 @@ class ApiClient {
   async pauseIndexing(): Promise<any> {
     const res = await fetch(`${this.baseUrl}/api/index/pause`, { method: 'POST' });
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
-      throw new Error(`Failed to pause indexing: ${err.detail}`);
+      const err = await this.parseError(res, "Failed to pause indexing");
+      throw new Error(`Failed to pause indexing: ${err}`);
     }
     return res.json();
   }
@@ -173,8 +206,8 @@ class ApiClient {
   async resumeIndexing(): Promise<any> {
     const res = await fetch(`${this.baseUrl}/api/index/resume`, { method: 'POST' });
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
-      throw new Error(`Failed to resume indexing: ${err.detail}`);
+      const err = await this.parseError(res, "Failed to resume indexing");
+      throw new Error(`Failed to resume indexing: ${err}`);
     }
     return res.json();
   }
@@ -182,15 +215,18 @@ class ApiClient {
   async cancelIndexing(): Promise<any> {
     const res = await fetch(`${this.baseUrl}/api/index/cancel`, { method: 'POST' });
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
-      throw new Error(`Failed to cancel indexing: ${err.detail}`);
+      const err = await this.parseError(res, "Failed to cancel indexing");
+      throw new Error(`Failed to cancel indexing: ${err}`);
     }
     return res.json();
   }
 
   async getIndexingStatus(): Promise<any> {
     const res = await fetch(`${this.baseUrl}/api/index/status`);
-    if (!res.ok) throw new Error("Failed to fetch indexing status");
+    if (!res.ok) {
+      const err = await this.parseError(res, "Failed to fetch indexing status");
+      throw new Error(err);
+    }
     return res.json();
   }
 
@@ -200,13 +236,19 @@ class ApiClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ photo_id: photoId })
     });
-    if (!res.ok) throw new Error("Failed to get photo critique");
+    if (!res.ok) {
+      const err = await this.parseError(res, "Failed to get photo critique");
+      throw new Error(err);
+    }
     return res.json();
   }
 
   async getCritiques(): Promise<any[]> {
     const res = await fetch(`${this.baseUrl}/api/chat/critiques`);
-    if (!res.ok) throw new Error("Failed to fetch critiques");
+    if (!res.ok) {
+      const err = await this.parseError(res, "Failed to fetch critiques");
+      throw new Error(err);
+    }
     return res.json();
   }
 
@@ -214,7 +256,10 @@ class ApiClient {
     const res = await fetch(`${this.baseUrl}/api/chat/critique/${encodeURIComponent(photoId)}`, {
       method: 'DELETE'
     });
-    if (!res.ok) throw new Error("Failed to delete critique");
+    if (!res.ok) {
+      const err = await this.parseError(res, "Failed to delete critique");
+      throw new Error(err);
+    }
     return res.json();
   }
 
@@ -225,15 +270,18 @@ class ApiClient {
       body: JSON.stringify({ photo_ids: photoIds || null })
     });
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
-      throw new Error(err.detail || "Failed to generate critique summary");
+      const err = await this.parseError(res, "Failed to generate critique summary");
+      throw new Error(err);
     }
     return res.json();
   }
 
   async getCritiqueStatus(photoId: string): Promise<any> {
     const res = await fetch(`${this.baseUrl}/api/chat/critique/status/${photoId}`);
-    if (!res.ok) throw new Error("Failed to fetch critique status");
+    if (!res.ok) {
+      const err = await this.parseError(res, "Failed to fetch critique status");
+      throw new Error(err);
+    }
     return res.json();
   }
 
@@ -243,8 +291,8 @@ class ApiClient {
       method: 'POST'
     });
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
-      throw new Error(`Failed to reindex photo: ${err.detail}`);
+      const err = await this.parseError(res, "Failed to reindex photo");
+      throw new Error(`Failed to reindex photo: ${err}`);
     }
     return res.json();
   }
@@ -254,8 +302,8 @@ class ApiClient {
       method: 'POST'
     });
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
-      throw new Error(`Failed to toggle favorite: ${err.detail}`);
+      const err = await this.parseError(res, "Failed to toggle favorite");
+      throw new Error(`Failed to toggle favorite: ${err}`);
     }
     return res.json();
   }

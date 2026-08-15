@@ -8,6 +8,7 @@ import { api } from '../services/api';
 export function ActionBar() {
   const { apiPort, selectedPhotoIds, clearSelection } = useAppStore();
   const [exporting, setExporting] = useState(false);
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
 
   if (selectedPhotoIds.size === 0) return null;
 
@@ -18,26 +19,32 @@ export function ActionBar() {
       const selectedDir = await open({
         directory: true,
         multiple: false,
-        title: "Select Destination Folder for Export"
+        title: "사진을 내보낼 대상 폴더를 선택하세요"
       });
       
       if (!selectedDir) return;
       
-      // Ensure selectedDir is string (Tauri API can return string[] if multiple is true, but we set false)
       const targetFolder = Array.isArray(selectedDir) ? selectedDir[0] : selectedDir;
-      
+      if (!targetFolder) return;
+
       setExporting(true);
+      setExportMessage(null);
       
       try {
         const data = await api.exportPhotos(Array.from(selectedPhotoIds), targetFolder);
-        alert(`Successfully exported ${data.exported_count} photos.`);
-        clearSelection();
+        setExportMessage(`${data.exported_count}장의 사진 내보내기 완료 ✅`);
+        setTimeout(() => {
+          clearSelection();
+          setExportMessage(null);
+        }, 1800);
       } catch (err: any) {
-        alert(err.message || "Failed to export photos.");
+        setExportMessage(`내보내기 실패: ${err.message || '오류'}`);
+        setTimeout(() => setExportMessage(null), 3000);
       }
     } catch (err) {
       console.error("Export error:", err);
-      alert("Error during export.");
+      setExportMessage("내보내기 도중 오류가 발생했습니다.");
+      setTimeout(() => setExportMessage(null), 3000);
     } finally {
       setExporting(false);
     }
@@ -53,46 +60,75 @@ export function ActionBar() {
           position: 'fixed',
           bottom: '24px',
           left: '50%',
-          backgroundColor: '#333',
+          backgroundColor: '#1c1917',
+          border: '1px solid rgba(255, 255, 255, 0.15)',
           color: '#fff',
-          padding: '12px 24px',
+          padding: '10px 20px',
           borderRadius: '32px',
           display: 'flex',
           alignItems: 'center',
-          gap: '24px',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-          zIndex: 50
+          gap: '20px',
+          boxShadow: '0 12px 36px rgba(0,0,0,0.6)',
+          zIndex: 50,
+          backdropFilter: 'blur(12px)'
         }}
       >
-        <span style={{ fontWeight: 500 }}>{selectedPhotoIds.size} items selected</span>
+        <span style={{ fontWeight: 600, fontSize: '13px', color: '#f4f4f5' }}>
+          {exportMessage || `${selectedPhotoIds.size}장의 사진 선택됨`}
+        </span>
         
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <motion.button
-            onClick={handleExport}
-            disabled={exporting}
-            whileHover={exporting ? {} : { 
-              scale: 1.03, 
-              backgroundColor: '#45a049', 
-              boxShadow: '0 0 10px rgba(76, 175, 80, 0.4)' 
-            }}
-            whileTap={exporting ? {} : { scale: 0.97 }}
-            transition={{ type: "spring", stiffness: 400, damping: 15 }}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#4CAF50', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '20px', cursor: exporting ? 'not-allowed' : 'pointer', fontWeight: 500 }}
-          >
-            <Download size={16} />
-            {exporting ? 'Exporting...' : 'Export'}
-          </motion.button>
-          
-          <motion.button
-            onClick={clearSelection}
-            whileHover={{ scale: 1.1, backgroundColor: '#666' }}
-            whileTap={{ scale: 0.9 }}
-            transition={{ type: "spring", stiffness: 500, damping: 15 }}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#555', color: '#fff', border: 'none', padding: '8px', borderRadius: '50%', cursor: 'pointer' }}
-          >
-            <X size={16} />
-          </motion.button>
-        </div>
+        {!exportMessage && (
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <motion.button
+              onClick={handleExport}
+              disabled={exporting}
+              whileHover={exporting ? {} : { 
+                scale: 1.03, 
+                backgroundColor: '#22c55e', 
+                boxShadow: '0 0 12px rgba(34, 197, 94, 0.4)' 
+              }}
+              whileTap={exporting ? {} : { scale: 0.97 }}
+              transition={{ type: "spring", stiffness: 400, damping: 15 }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                backgroundColor: '#16a34a',
+                color: '#fff',
+                border: 'none',
+                padding: '7px 16px',
+                borderRadius: '20px',
+                cursor: exporting ? 'not-allowed' : 'pointer',
+                fontWeight: 600,
+                fontSize: '13px'
+              }}
+            >
+              <Download size={15} />
+              {exporting ? '내보내는 중...' : '내보내기 (Export)'}
+            </motion.button>
+            
+            <motion.button
+              onClick={clearSelection}
+              whileHover={{ scale: 1.1, backgroundColor: '#3f3f46' }}
+              whileTap={{ scale: 0.9 }}
+              transition={{ type: "spring", stiffness: 500, damping: 15 }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: '#27272a',
+                color: '#a1a1aa',
+                border: 'none',
+                padding: '7px',
+                borderRadius: '50%',
+                cursor: 'pointer'
+              }}
+              title="선택 해제"
+            >
+              <X size={15} />
+            </motion.button>
+          </div>
+        )}
       </motion.div>
     </AnimatePresence>
   );

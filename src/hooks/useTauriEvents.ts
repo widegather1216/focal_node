@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { listen } from '@tauri-apps/api/event';
+import { useEffect, useRef } from 'react';
+import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../store/useAppStore';
 
@@ -13,9 +13,30 @@ export function useTauriEvents() {
     setDownloadModelName
   } = useAppStore();
   const queryClient = useQueryClient();
+  const invalidateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    const unlistenProgress = listen<{ processed: number; total: number; file_path: string }>(
+    let isSubscribed = true;
+    const unlisteners: UnlistenFn[] = [];
+
+    const registerListener = async <T>(
+      eventName: string,
+      handler: (event: { payload: T }) => void
+    ) => {
+      try {
+        const unlisten = await listen<T>(eventName, handler);
+        if (isSubscribed) {
+          unlisteners.push(unlisten);
+        } else {
+          unlisten();
+        }
+      } catch (err) {
+        console.error(`Failed to register Tauri event listener [${eventName}]:`, err);
+      }
+    };
+
+    // 1. Indexing Progress
+    registerListener<{ processed: number; total: number; file_path: string }>(
       "indexing-progress",
       (event) => {
         setIndexingState('processing');
@@ -25,15 +46,19 @@ export function useTauriEvents() {
           filePath: event.payload.file_path,
         });
 
+        // Throttled intermediate query invalidation
         if (event.payload.processed % 100 === 0) {
-          setTimeout(() => {
+          if (invalidateTimerRef.current) clearTimeout(invalidateTimerRef.current);
+          invalidateTimerRef.current = setTimeout(() => {
             queryClient.invalidateQueries({ queryKey: ['photos'] });
           }, 1500);
         }
       }
     );
 
-    const unlistenCompleted = listen("indexing-completed", () => {
+    // 2. Indexing Lifecycle
+    registerListener("indexing-completed", () => {
+      if (invalidateTimerRef.current) clearTimeout(invalidateTimerRef.current);
       setIndexingState('idle');
       setTimeout(() => {
         setIsIndexing(false);
@@ -43,16 +68,17 @@ export function useTauriEvents() {
       queryClient.invalidateQueries({ queryKey: ['analyticsStats'] });
     });
 
-    const unlistenPaused = listen("indexing-paused", () => {
+    registerListener("indexing-paused", () => {
       setIndexingState('paused');
     });
 
-    const unlistenResumed = listen("indexing-resumed", () => {
+    registerListener("indexing-resumed", () => {
       setIndexingState('processing');
       setIsIndexing(true);
     });
 
-    const unlistenCancelled = listen("indexing-cancelled", () => {
+    registerListener("indexing-cancelled", () => {
+      if (invalidateTimerRef.current) clearTimeout(invalidateTimerRef.current);
       setIndexingState('idle');
       setIsIndexing(false);
       setIndexingProgress(null);
@@ -60,11 +86,12 @@ export function useTauriEvents() {
       queryClient.invalidateQueries({ queryKey: ['analyticsStats'] });
     });
 
-    const unlistenSync = listen("sync-completed", () => {
+    registerListener("sync-completed", () => {
       queryClient.invalidateQueries({ queryKey: ['photos'] });
     });
 
-    const unlistenDownloadStarted = listen<string>("model-download-started", (event) => {
+    // 3. Model Download Lifecycle
+    registerListener<string>("model-download-started", (event) => {
       setIsDownloadingModel(true);
       setDownloadProgress(0);
       if (event.payload) {
@@ -72,24 +99,28 @@ export function useTauriEvents() {
       }
     });
 
-    const unlistenDownloadProgress = listen<number>("model-download-progress", (event) => {
+    registerListener<number>("model-download-progress", (event) => {
       setDownloadProgress(event.payload);
     });
 
-    const unlistenDownloadCompleted = listen("model-download-completed", () => {
+    registerListener("model-download-completed", () => {
       setIsDownloadingModel(false);
     });
 
     return () => {
-      unlistenProgress.then((unlisten) => unlisten());
-      unlistenCompleted.then((unlisten) => unlisten());
-      unlistenPaused.then((unlisten) => unlisten());
-      unlistenResumed.then((unlisten) => unlisten());
-      unlistenCancelled.then((unlisten) => unlisten());
-      unlistenSync.then((unlisten) => unlisten());
-      unlistenDownloadStarted.then((unlisten) => unlisten());
-      unlistenDownloadProgress.then((unlisten) => unlisten());
-      unlistenDownloadCompleted.then((unlisten) => unlisten());
+      isSubscribed = false;
+      if (invalidateTimerRef.current) {
+        clearTimeout(invalidateTimerRef.current);
+      }
+      unlisteners.forEach((unlisten) => unlisten());
     };
-  }, [setIsIndexing, setIndexingState, setIndexingProgress, queryClient, setIsDownloadingModel, setDownloadProgress, setDownloadModelName]);
+  }, [
+    setIsIndexing,
+    setIndexingState,
+    setIndexingProgress,
+    queryClient,
+    setIsDownloadingModel,
+    setDownloadProgress,
+    setDownloadModelName
+  ]);
 }

@@ -1,6 +1,6 @@
-import { useRef } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ZoomOut, ZoomIn, RotateCcw, Eye, Info, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, ZoomOut, ZoomIn, RotateCcw, Eye, Info, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { usePhotoDetailQuery } from '../hooks/usePhotoDetailQuery';
 import { useFullscreenControls } from '../hooks/useFullscreenControls';
 import { FullscreenMetadataOverlay } from './fullscreen/FullscreenMetadataOverlay';
@@ -26,13 +26,29 @@ export function FullscreenViewer() {
   } = useFullscreenControls();
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const [isFullLoaded, setIsFullLoaded] = useState(false);
   const { data: photo } = usePhotoDetailQuery(fullscreenPhotoId);
+
+  useEffect(() => {
+    setIsFullLoaded(false);
+  }, [fullscreenPhotoId]);
 
   if (!isFullscreenOpen || !fullscreenPhotoId) return null;
 
-  const imageUrl = imgError 
-    ? api.getPhotoThumbnailUrl(fullscreenPhotoId)
-    : `${api.getPhotoOriginalUrl(fullscreenPhotoId)}?raw=true`;
+  const thumbUrl = api.getPhotoThumbnailUrl(fullscreenPhotoId);
+  const originalUrl = `${api.getPhotoOriginalUrl(fullscreenPhotoId)}?raw=true`;
+  const imageUrl = imgError ? thumbUrl : originalUrl;
+
+  const handleWheel = (e: React.WheelEvent) => {
+    if (e.ctrlKey || e.metaKey || scale > 1) {
+      e.preventDefault();
+      if (e.deltaY < 0) {
+        setScale(prev => Math.min(prev + 0.25, 4));
+      } else {
+        setScale(prev => Math.max(prev - 0.25, 0.5));
+      }
+    }
+  };
 
   return (
     <AnimatePresence>
@@ -289,6 +305,7 @@ export function FullscreenViewer() {
           {/* Main Image Container */}
           <div
             ref={containerRef}
+            onWheel={handleWheel}
             style={{
               position: 'absolute',
               top: 0,
@@ -325,14 +342,38 @@ export function FullscreenViewer() {
                 y: scale === 1 ? 0 : undefined
               }}
               transition={scale === 1 ? { type: 'spring', stiffness: 300, damping: 30 } : { duration: 0 }}
-              style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', height: '100%', touchAction: 'none' }}
+              style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', height: '100%', touchAction: 'none', position: 'relative' }}
             >
+              {/* Thumbnail Placeholder while Full Res is loading */}
+              {!isFullLoaded && !imgError && (
+                <img
+                  src={thumbUrl}
+                  alt="미리보기"
+                  style={{
+                    position: 'absolute',
+                    height: fitMode === 'fit-height' ? '100vh' : fitMode === 'cover' ? '100vh' : 'auto',
+                    width: fitMode === 'cover' ? '100vw' : 'auto',
+                    maxHeight: fitMode === 'fit-height' ? '100vh' : fitMode === 'contain' ? '92vh' : 'none',
+                    maxWidth: fitMode === 'contain' ? '92vw' : 'none',
+                    objectFit: fitMode === 'cover' ? 'cover' : 'contain',
+                    filter: 'blur(8px)',
+                    opacity: 0.8,
+                    pointerEvents: 'none',
+                  }}
+                />
+              )}
+
+              {/* Full-resolution Image */}
               <img
                 src={imageUrl}
                 alt={photo?.file_name || '원본 사진'}
                 draggable={false}
                 onDragStart={(e) => e.preventDefault()}
-                onError={() => setImgError(true)}
+                onLoad={() => setIsFullLoaded(true)}
+                onError={() => {
+                  setImgError(true);
+                  setIsFullLoaded(true);
+                }}
                 onDoubleClick={() => setScale(prev => (prev === 1 ? 2 : 1))}
                 style={{
                   height: fitMode === 'fit-height' ? '100vh' : fitMode === 'cover' ? '100vh' : 'auto',
@@ -343,9 +384,34 @@ export function FullscreenViewer() {
                   display: 'block',
                   userSelect: 'none',
                   WebkitUserSelect: 'none',
-                  boxShadow: '0 20px 50px rgba(0,0,0,0.8)'
+                  boxShadow: '0 20px 50px rgba(0,0,0,0.8)',
+                  position: 'relative',
+                  zIndex: 2,
                 }}
               />
+
+              {/* Decoding RAW spinner badge */}
+              {!isFullLoaded && !imgError && (
+                <div style={{
+                  position: 'absolute',
+                  bottom: '24px',
+                  right: '24px',
+                  background: 'rgba(0, 0, 0, 0.7)',
+                  backdropFilter: 'blur(8px)',
+                  padding: '6px 12px',
+                  borderRadius: '20px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  color: '#e4e4e7',
+                  fontSize: '12px',
+                  zIndex: 10,
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                }}>
+                  <Loader2 size={13} className="spin" color="#38bdf8" />
+                  <span>원본 고해상도 디코딩 중...</span>
+                </div>
+              )}
             </motion.div>
           </div>
 

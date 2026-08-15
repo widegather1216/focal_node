@@ -17,33 +17,41 @@ export const GlobalCritiqueToast: React.FC = () => {
     }
 
     let isMounted = true;
-    let intervalId: any = null;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+    let dismissTimerId: ReturnType<typeof setTimeout> | null = null;
 
     const pollStatus = async () => {
       try {
         const res = await api.getCritiqueStatus(activeCritiqueJob.photoId);
-        if (isMounted && res) {
+        if (!isMounted) return;
+
+        if (res) {
           setStatus(res);
-          if (res.status === 'completed' || res.status === 'error' || res.progress === 100) {
-            if (intervalId) clearInterval(intervalId);
-            setTimeout(() => {
+          const isDone = res.status === 'completed' || res.status === 'error' || res.progress === 100;
+          if (isDone) {
+            dismissTimerId = setTimeout(() => {
               if (isMounted) {
                 setActiveCritiqueJob(null);
               }
             }, 4000);
+            return;
           }
         }
-      } catch (e) {
-        // Silently ignore transient errors
+      } catch {
+        // Silently ignore transient network errors
+      }
+
+      if (isMounted) {
+        timerId = setTimeout(pollStatus, 1200);
       }
     };
 
     pollStatus();
-    intervalId = setInterval(pollStatus, 1200);
 
     return () => {
       isMounted = false;
-      if (intervalId) clearInterval(intervalId);
+      if (timerId) clearTimeout(timerId);
+      if (dismissTimerId) clearTimeout(dismissTimerId);
     };
   }, [activeCritiqueJob?.photoId, setActiveCritiqueJob]);
 

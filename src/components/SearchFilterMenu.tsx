@@ -5,6 +5,13 @@ import { SlidersHorizontal, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { FilterRangeInput } from './filter/FilterRangeInput';
 
+function parseNumericValue(val: string): number | undefined {
+  const trimmed = val.trim();
+  if (trimmed === '') return undefined;
+  const num = Number(trimmed);
+  return isNaN(num) ? undefined : num;
+}
+
 export function SearchFilterMenu() {
   const { searchFilters, setSearchFilters, clearSearchFilters } = useAppStore();
   const [isOpen, setIsOpen] = useState(false);
@@ -118,26 +125,26 @@ export function SearchFilterMenu() {
 
             <FilterRangeInput
               label="ISO Range"
-              minValue={localFilters.iso_min || ''}
-              maxValue={localFilters.iso_max || ''}
-              onMinChange={val => setLocalFilters({...localFilters, iso_min: parseInt(val) || undefined})}
-              onMaxChange={val => setLocalFilters({...localFilters, iso_max: parseInt(val) || undefined})}
+              minValue={localFilters.iso_min ?? ''}
+              maxValue={localFilters.iso_max ?? ''}
+              onMinChange={val => setLocalFilters({...localFilters, iso_min: parseNumericValue(val)})}
+              onMaxChange={val => setLocalFilters({...localFilters, iso_max: parseNumericValue(val)})}
             />
 
             <FilterRangeInput
               label="Aperture (f/)"
-              minValue={localFilters.f_number_min || ''}
-              maxValue={localFilters.f_number_max || ''}
-              onMinChange={val => setLocalFilters({...localFilters, f_number_min: parseFloat(val) || undefined})}
-              onMaxChange={val => setLocalFilters({...localFilters, f_number_max: parseFloat(val) || undefined})}
+              minValue={localFilters.f_number_min ?? ''}
+              maxValue={localFilters.f_number_max ?? ''}
+              onMinChange={val => setLocalFilters({...localFilters, f_number_min: parseNumericValue(val)})}
+              onMaxChange={val => setLocalFilters({...localFilters, f_number_max: parseNumericValue(val)})}
             />
 
             <FilterRangeInput
               label="Focal Length (mm)"
-              minValue={localFilters.focal_length_min || ''}
-              maxValue={localFilters.focal_length_max || ''}
-              onMinChange={val => setLocalFilters({...localFilters, focal_length_min: parseFloat(val) || undefined})}
-              onMaxChange={val => setLocalFilters({...localFilters, focal_length_max: parseFloat(val) || undefined})}
+              minValue={localFilters.focal_length_min ?? ''}
+              maxValue={localFilters.focal_length_max ?? ''}
+              onMinChange={val => setLocalFilters({...localFilters, focal_length_min: parseNumericValue(val)})}
+              onMaxChange={val => setLocalFilters({...localFilters, focal_length_max: parseNumericValue(val)})}
             />
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>

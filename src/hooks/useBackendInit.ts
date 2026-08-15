@@ -44,16 +44,37 @@ export function useBackendInit() {
     initBackend();
   }, [setApiPort, setBackendStatus, setBackendError]);
 
-  // Continuous health ping to detect backend crashes
+  // Continuous health ping to detect backend crashes with consecutive failure resilience
   useEffect(() => {
     if (!apiPort) return;
 
+    let consecutiveFailures = 0;
+    const MAX_FAILURES = 3;
+
     const interval = setInterval(async () => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+
       try {
-        await fetch(`http://127.0.0.1:${apiPort}/api/health`, { method: 'GET' });
+        const res = await fetch(`http://127.0.0.1:${apiPort}/api/health`, {
+          method: 'GET',
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          consecutiveFailures = 0;
+        } else {
+          consecutiveFailures += 1;
+        }
       } catch (err) {
-        console.error("Health ping failed. Backend may have crashed.", err);
-        setBackendError("백엔드 서버와 통신이 끊어졌습니다. (메모리 부족 등으로 AI 엔진이 강제 종료되었을 수 있습니다.) 앱을 재시작해주세요.");
+        clearTimeout(timeoutId);
+        consecutiveFailures += 1;
+      }
+
+      if (consecutiveFailures >= MAX_FAILURES) {
+        console.error("Health ping failed 3 consecutive times. Backend is unreachable.");
+        setBackendError("백엔드 서버와 통신이 끊어졌습니다. (AI 모델 가중치 로딩 실패 또는 메모리 부족으로 종료되었을 수 있습니다.) 앱을 재시작해주세요.");
       }
     }, 5000);
 

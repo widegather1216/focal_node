@@ -75,10 +75,20 @@ export function usePhotoDetail() {
   }, [photo]);
 
   const getActivePhotoList = (): any[] => {
+    if (useAppStore.getState().activeTab === 'critique') {
+      const critiqueData = queryClient.getQueryData<any[]>(['critiques']);
+      if (Array.isArray(critiqueData) && critiqueData.length > 0) {
+        return critiqueData.map(c => ({ id: c.photo_id, ...c }));
+      }
+    }
+
     const queryCache = queryClient.getQueriesData<any>({ queryKey: ['photos'] });
     for (const [, data] of queryCache) {
-      if (data && data.pages) {
+      if (data && data.pages && Array.isArray(data.pages)) {
         return data.pages.flatMap((page: any) => page);
+      }
+      if (Array.isArray(data)) {
+        return data;
       }
     }
     return [];

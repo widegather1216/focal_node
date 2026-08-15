@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { motion } from 'framer-motion';
 import { CheckCircle2, Heart } from 'lucide-react';
 import { api } from '../../services/api';
@@ -12,7 +12,9 @@ interface PhotoCardProps {
   onToggleFavorite: (id: string, e: React.MouseEvent) => void;
 }
 
-export const PhotoCard: React.FC<PhotoCardProps> = ({
+const FALLBACK_SVG = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none"><rect width="100%" height="100%" fill="%232a2a2a"/><text x="50%" y="50%" font-family="sans-serif" font-size="8" fill="%23666" text-anchor="middle" dy=".3em">File Missing</text></svg>';
+
+export const PhotoCard = memo<PhotoCardProps>(({
   photo,
   isSelected,
   onSelectPhoto,
@@ -25,7 +27,7 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
       whileHover={{ scale: 1.02, transition: { duration: 0.2 } }}
       style={{
         flex: 1,
-        maxWidth: `calc(25% - 12px)`,
+        minWidth: 0,
         backgroundColor: '#222',
         borderRadius: '8px',
         overflow: 'hidden',
@@ -84,6 +86,8 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
       <img 
         src={api.getPhotoThumbnailUrl(photo.id)}
         alt={photo.file_name}
+        decoding="async"
+        loading="lazy"
         style={{
           width: '100%',
           height: '100%',
@@ -91,9 +95,10 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
           display: 'block',
           backgroundColor: '#2a2a2a'
         }}
-        loading="lazy"
         onError={(e) => {
-          e.currentTarget.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none"><rect width="100%" height="100%" fill="%232a2a2a"/><text x="50%" y="50%" font-family="sans-serif" font-size="8" fill="%23666" text-anchor="middle" dy=".3em">File Missing</text></svg>';
+          if (e.currentTarget.getAttribute('data-has-failed')) return;
+          e.currentTarget.setAttribute('data-has-failed', 'true');
+          e.currentTarget.src = FALLBACK_SVG;
         }}
       />
 
@@ -124,4 +129,8 @@ export const PhotoCard: React.FC<PhotoCardProps> = ({
       </div>
     </motion.div>
   );
-};
+}, (prev, next) => (
+  prev.photo.id === next.photo.id &&
+  prev.photo.is_favorite === next.photo.is_favorite &&
+  prev.isSelected === next.isSelected
+));

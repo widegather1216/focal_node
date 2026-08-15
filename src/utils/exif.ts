@@ -4,16 +4,39 @@
 
 export function formatAperture(fNumber?: number | string | null): string {
   if (fNumber === undefined || fNumber === null || fNumber === '') return '';
-  const num = typeof fNumber === 'number' ? fNumber : parseFloat(fNumber);
+  const num = typeof fNumber === 'number' ? fNumber : parseFloat(String(fNumber));
   if (isNaN(num)) return `f/${fNumber}`;
-  const rounded = Math.round(num * 100) / 100;
-  return `f/${rounded}`;
+  const rounded = Math.round(num * 10) / 10;
+  return `f/${rounded % 1 === 0 ? rounded.toFixed(1) : rounded}`;
 }
 
 export function formatShutterSpeed(shutterSpeed?: string | number | null): string {
   if (shutterSpeed === undefined || shutterSpeed === null || shutterSpeed === '') return '';
-  const str = String(shutterSpeed);
-  return str.endsWith('s') ? str : `${str}s`;
+  
+  if (typeof shutterSpeed === 'string') {
+    const trimmed = shutterSpeed.trim();
+    if (trimmed.includes('/')) {
+      return trimmed.endsWith('s') ? trimmed : `${trimmed}s`;
+    }
+    const parsed = parseFloat(trimmed);
+    if (!isNaN(parsed)) {
+      return formatNumericShutterSpeed(parsed);
+    }
+    return trimmed.endsWith('s') ? trimmed : `${trimmed}s`;
+  }
+
+  return formatNumericShutterSpeed(shutterSpeed);
+}
+
+function formatNumericShutterSpeed(seconds: number): string {
+  if (seconds <= 0) return '';
+  if (seconds >= 1) {
+    const rounded = Math.round(seconds * 10) / 10;
+    return `${rounded}s`;
+  }
+  // Convert decimals < 1 into standard photo fractions like 1/250s, 1/1000s
+  const denominator = Math.round(1 / seconds);
+  return `1/${denominator}s`;
 }
 
 export function formatIso(iso?: number | string | null): string {
@@ -32,7 +55,7 @@ export function formatFocalLength(focalLength?: number | null, focal35mm?: numbe
 
 export function formatExifSummary(metadata: any): string {
   if (!metadata) return '';
-  const parts = [];
+  const parts: string[] = [];
   if (metadata.f_number) parts.push(formatAperture(metadata.f_number));
   if (metadata.shutter_speed) parts.push(formatShutterSpeed(metadata.shutter_speed));
   if (metadata.iso) parts.push(formatIso(metadata.iso));
