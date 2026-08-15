@@ -13,25 +13,41 @@ export const IndexingProgressCard: React.FC<IndexingProgressCardProps> = ({
   indexingState,
   indexingProgress
 }) => {
-  if (!isIndexing || !indexingProgress) return null;
+  if (!isIndexing && !indexingProgress) return null;
+
+  const isPaused = indexingState === 'paused';
+  const total = indexingProgress?.total || 0;
+  const processed = indexingProgress?.processed || 0;
+  const progressPct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
+  
+  const rawPath = indexingProgress?.filePath || 'Preparing indexing...';
+  const currentFileName = rawPath.includes('/') || rawPath.includes('\\') 
+    ? rawPath.split(/[/\\]/).pop() 
+    : rawPath;
+
+  const statusTitle = isPaused
+    ? 'Indexing Paused'
+    : total > 0
+      ? 'Indexing Photos'
+      : 'Scanning Folders...';
 
   return (
     <div style={{
       marginTop: 'auto',
       padding: '14px',
-      backgroundColor: indexingState === 'paused' ? 'rgba(234, 179, 8, 0.12)' : 'rgba(0, 0, 0, 0.35)',
+      backgroundColor: isPaused ? 'rgba(234, 179, 8, 0.12)' : 'rgba(0, 0, 0, 0.35)',
       borderRadius: '8px',
-      border: indexingState === 'paused' ? '1px solid rgba(234, 179, 8, 0.3)' : '1px solid rgba(255, 255, 255, 0.1)',
+      border: isPaused ? '1px solid rgba(234, 179, 8, 0.3)' : '1px solid rgba(255, 255, 255, 0.1)',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {indexingState === 'paused' ? (
+          {isPaused ? (
             <span style={{ fontSize: '12px' }}>⏸️</span>
           ) : (
             <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
           )}
-          <span style={{ fontSize: '12px', fontWeight: '600', color: indexingState === 'paused' ? '#fde047' : '#fff' }}>
-            {indexingState === 'paused' ? 'Indexing Paused' : 'Indexing Photos'}
+          <span style={{ fontSize: '12px', fontWeight: '600', color: isPaused ? '#fde047' : '#fff' }}>
+            {statusTitle}
           </span>
         </div>
         
@@ -91,16 +107,19 @@ export const IndexingProgressCard: React.FC<IndexingProgressCardProps> = ({
         overflow: 'hidden'
       }}>
         <div style={{
-          width: `${(indexingProgress.processed / Math.max(1, indexingProgress.total)) * 100}%`,
+          width: `${progressPct}%`,
           height: '100%',
-          backgroundColor: indexingState === 'paused' ? '#facc15' : '#4ade80',
+          backgroundColor: isPaused ? '#facc15' : '#4ade80',
           transition: 'width 0.3s ease'
         }} />
       </div>
-      <div style={{ fontSize: '11px', color: '#aaa', display: 'flex', justifyContent: 'space-between' }}>
-        <span>{indexingProgress.processed} / {indexingProgress.total}</span>
-        <span style={{ maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={indexingProgress.filePath}>
-          {indexingProgress.filePath.split('/').pop()}
+      <div style={{ fontSize: '11px', color: '#aaa', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+        <span>{total > 0 ? `${processed} / ${total}` : 'Scanning...'}</span>
+        <span 
+          style={{ maxWidth: '110px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} 
+          title={rawPath}
+        >
+          {currentFileName}
         </span>
       </div>
     </div>

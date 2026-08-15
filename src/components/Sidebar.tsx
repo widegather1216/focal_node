@@ -257,10 +257,12 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
             try {
               setIsIndexing(true);
               setIndexingState('processing');
+              setIndexingProgress({ processed: 0, total: 0, filePath: "Scanning database folders..." });
               await api.syncDatabase();
             } catch (e: any) {
               setIsIndexing(false);
               setIndexingState('idle');
+              setIndexingProgress(null);
               alert(e.message);
             }
           }}

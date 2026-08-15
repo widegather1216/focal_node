@@ -378,46 +378,43 @@ async def run_indexing_background(folder_paths: list[str]):
     """
     Main background scheduler executing the indexing lifecycle without blocking the main event loop.
     """
-    global cancel_requested, indexing_status, pause_event
-
-    cancel_requested = False
-    pause_event.set()
-    indexing_status["status"] = "processing"
-    indexing_status["processed_files"] = 0
-    indexing_status["total_files"] = 0
-    indexing_status["current_file"] = ""
+    indexing_state_manager.reset_status()
+    indexing_state_manager.status = "processing"
     
     try:
         files = await asyncio.to_thread(scan_directory, folder_paths)
-        indexing_status["total_files"] = len(files)
-        print(f"[Indexer] Starting background indexing. Found {len(files)} files.", flush=True)
+        total_files = len(files)
+        indexing_state_manager.update_progress(0, total_files, "")
+        print(f"[Indexer] Starting background indexing. Found {total_files} files.", flush=True)
         
         await asyncio.to_thread(cleanup_zombie_records)
         
         if not files:
-            indexing_status["status"] = "idle"
-            indexing_status["processed_files"] = 0
-            indexing_status["total_files"] = 0
+            indexing_state_manager.status = "idle"
+            indexing_state_manager.update_progress(0, 0, "")
             print("[Indexer] Background indexing completed.", flush=True)
             print("[Indexer] Sync completed.", flush=True)
             return
             
         semaphore = asyncio.Semaphore(4)
+        processed_count = 0
         
         async def process_file(f_path):
-            if cancel_requested:
+            nonlocal processed_count
+            if indexing_state_manager.cancel_requested:
                 return "cancelled"
             async with semaphore:
-                if cancel_requested:
+                if indexing_state_manager.cancel_requested:
                     return "cancelled"
-                if not pause_event.is_set():
-                    await pause_event.wait()
-                if cancel_requested:
+                if not indexing_state_manager.pause_event.is_set():
+                    await indexing_state_manager.pause_event.wait()
+                if indexing_state_manager.cancel_requested:
                     return "cancelled"
 
-                indexing_status["current_file"] = f_path
                 res = await asyncio.to_thread(index_single_file_sync, f_path)
-                indexing_status["processed_files"] += 1
+                processed_count += 1
+                indexing_state_manager.update_progress(processed_count, total_files, f_path)
+                
                 if isinstance(res, dict):
                     status_str = "Indexed with AI"
                 elif res == "skipped_duplicate_hash":
@@ -427,19 +424,18 @@ async def run_indexing_background(folder_paths: list[str]):
                 else:
                     status_str = f"Status: {res}"
                     
-                if indexing_status["processed_files"] % 1 == 0 or indexing_status["processed_files"] == indexing_status["total_files"]:
-                    print(f"[Indexing] Progress: {indexing_status['processed_files']}/{indexing_status['total_files']} - {f_path} ({status_str})", flush=True)
+                print(f"[Indexing] Progress: {processed_count}/{total_files} - {f_path} ({status_str})", flush=True)
                 return res
 
         chunk_size = 100
         for i in range(0, len(files), chunk_size):
-            if cancel_requested:
+            if indexing_state_manager.cancel_requested:
                 break
 
-            if not pause_event.is_set():
+            if not indexing_state_manager.pause_event.is_set():
                 print("[Indexer] Background indexing waiting for pause release...", flush=True)
-                await pause_event.wait()
-                if cancel_requested:
+                await indexing_state_manager.pause_event.wait()
+                if indexing_state_manager.cancel_requested:
                     break
 
             chunk_files = files[i:i+chunk_size]
@@ -474,23 +470,21 @@ async def run_indexing_background(folder_paths: list[str]):
             
             await asyncio.sleep(0.01)
             
-        if cancel_requested:
-            indexing_status["status"] = "cancelled"
+        if indexing_state_manager.cancel_requested:
+            indexing_state_manager.status = "cancelled"
             print("[Indexer] Background indexing cancelled.", flush=True)
         else:
-            indexing_status["status"] = "idle"
+            indexing_state_manager.status = "idle"
             print("[Indexer] Background indexing completed.", flush=True)
             print("[Indexer] Sync completed.", flush=True)
     except Exception as e:
         print(f"[Indexer] Background task error: {e}", flush=True)
-        indexing_status["status"] = "error"
+        indexing_state_manager.status = "error"
 
 
 __all__ = [
     "SUPPORTED_EXTENSIONS",
-    "indexing_status",
-    "pause_event",
-    "cancel_requested",
+    "indexing_state_manager",
     "pause_indexing",
     "resume_indexing",
     "cancel_indexing",

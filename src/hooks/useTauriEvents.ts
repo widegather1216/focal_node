@@ -35,8 +35,10 @@ export function useTauriEvents() {
 
     const unlistenCompleted = listen("indexing-completed", () => {
       setIndexingState('idle');
-      setIsIndexing(false);
-      setIndexingProgress(null);
+      setTimeout(() => {
+        setIsIndexing(false);
+        setIndexingProgress(null);
+      }, 1200);
       queryClient.invalidateQueries({ queryKey: ['photos'] });
       queryClient.invalidateQueries({ queryKey: ['analyticsStats'] });
     });

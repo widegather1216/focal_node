@@ -236,8 +236,9 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         3. ISTA Score (Structure & Texture)
         Overall = round(0.4*IAA + 0.3*IQA + 0.3*ISTA)
         """
-        with self.lock:
-            self.active_requests += 1
+        with GPU_LOCK:
+            with self.lock:
+                self.active_requests += 1
 
         try:
             self._load_model_locked()
@@ -298,8 +299,9 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         2. IQA (Technical Quality, Sharpness, Noise, Depth of Field)
         3. ISTA (Surface Texture, Edge Definition, Micro-contrast)
         """
-        with self.lock:
-            self.active_requests += 1
+        with GPU_LOCK:
+            with self.lock:
+                self.active_requests += 1
 
         try:
             self._load_model_locked()
@@ -411,8 +413,9 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             return self.generate_full_ensemble_critique(image_path, metadata)
 
         # Custom single-prompt path
-        with self.lock:
-            self.active_requests += 1
+        with GPU_LOCK:
+            with self.lock:
+                self.active_requests += 1
 
         try:
             self._load_model_locked()

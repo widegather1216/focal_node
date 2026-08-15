@@ -29,9 +29,9 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
         self._load_model()
 
     def _load_model(self):
-        with self.lock:
-            if self.model is None:
-                with GPU_LOCK:
+        with GPU_LOCK:
+            with self.lock:
+                if self.model is None:
                     import torch
                     from transformers import AutoModel, AutoProcessor
                     print(f"[SigLIP2Adapter] Loading model {self.model_id} on {self.device}...", flush=True)
@@ -49,7 +49,7 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
                         ).to(self.device)
                         self.processor = AutoProcessor.from_pretrained(self.model_id)
                     print("[SigLIP2Adapter] Model loaded successfully.", flush=True)
-                self._precompute_taxonomy_embeddings()
+            self._precompute_taxonomy_embeddings()
 
     def _precompute_taxonomy_embeddings(self):
         try:
@@ -194,9 +194,10 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
 
 
     def generate_caption_and_tags(self, image_path: str, metadata: dict = None, siglip_hints: list[str] = None) -> dict:
-        with self.lock:
-            self._load_model_locked()
-            self.active_requests += 1
+        with GPU_LOCK:
+            with self.lock:
+                self._load_model_locked()
+                self.active_requests += 1
             
         try:
             from services.ai_parser import (
@@ -266,10 +267,11 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
             from services.critique_status import critique_status_manager
             critique_status_manager.update(photo_id, 2, 4, "비평 작성 중", 50)
 
-        with self.lock:
-            self._load_model_locked()
-            self.last_used_time = time.time()
-            self.active_requests += 1
+        with GPU_LOCK:
+            with self.lock:
+                self._load_model_locked()
+                self.last_used_time = time.time()
+                self.active_requests += 1
             
         try:
             from services.ai_parser import GEMMA_CRITIQUE_SYSTEM_PROMPT, format_exif_text
@@ -323,10 +325,11 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                 self.active_requests -= 1
 
     def generate_critique_summary(self, critiques_list: list[dict]) -> str:
-        with self.lock:
-            self._load_model_locked()
-            self.last_used_time = time.time()
-            self.active_requests += 1
+        with GPU_LOCK:
+            with self.lock:
+                self._load_model_locked()
+                self.last_used_time = time.time()
+                self.active_requests += 1
 
         try:
             from services.ai_parser import GEMMA_CRITIQUE_SUMMARY_SYSTEM_PROMPT
@@ -381,10 +384,11 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                 self.active_requests -= 1
 
     def translate_and_format_critique(self, raw_en_critique: str, scores_dict: dict = None, quality_score: int = None, photo_id: str = None) -> str:
-        with self.lock:
-            self._load_model_locked()
-            self.last_used_time = time.time()
-            self.active_requests += 1
+        with GPU_LOCK:
+            with self.lock:
+                self._load_model_locked()
+                self.last_used_time = time.time()
+                self.active_requests += 1
 
         try:
             from services.ai_parser import (
