@@ -78,16 +78,25 @@ def scan_directory(folder_paths: List[str]) -> List[str]:
 
 
 # --- Database & Cache Cleanup Routines ---
+# --- Database & Cache Cleanup Routines ---
 def delete_photo_atomic_sync(db: Session, image_id: str):
     """
-    Atomically removes database records of an image from SQLite and ChromaDB.
-    Maintains a compensation transaction style for deletion.
+    Atomically removes database records of an image from SQLite and ChromaDB,
+    and purges its cached thumbnail from disk.
     """
     db_image = db.query(DBImage).filter(DBImage.id == image_id).first()
     if db_image:
         db.delete(db_image)
     db.commit()
     vector_repo.delete([image_id])
+    
+    # Clean up cached thumbnail
+    t_path = get_thumbnail_path(image_id)
+    if os.path.exists(t_path):
+        try:
+            os.remove(t_path)
+        except Exception:
+            pass
 
 
 def cleanup_zombie_records(db: Session = None):
@@ -141,7 +150,7 @@ def cleanup_zombie_records(db: Session = None):
             else:
                 sqlite_ids.add(img_id)
                 
-        # 1. SQLite Zombie Cleanup
+        # 1. SQLite Zombie Cleanup & Direct ChromaDB / Thumbnail Purge
         if zombie_ids:
             print(f"[Indexer] Found {len(zombie_ids)} unindexed/zombie records in SQLite. Cleaning up...", flush=True)
             for i in range(0, len(zombie_ids), 900):
@@ -155,24 +164,10 @@ def cleanup_zombie_records(db: Session = None):
                         except Exception:
                             pass
             db.commit()
+            vector_repo.delete(zombie_ids)
         else:
             print("[Indexer] No SQLite zombie/unindexed records found.", flush=True)
 
-        # 2. ChromaDB Garbage Collection
-        try:
-            chroma_data = vector_repo.collection.get(include=[])
-            if chroma_data and chroma_data.get('ids'):
-                chroma_ids = set(chroma_data['ids'])
-                orphaned_ids = list(chroma_ids - sqlite_ids)
-                
-                if orphaned_ids:
-                    print(f"[Indexer] Found {len(orphaned_ids)} orphaned embeddings in ChromaDB. Cleaning up...", flush=True)
-                    vector_repo.delete(orphaned_ids)
-                else:
-                    print("[Indexer] No ChromaDB garbage vectors found.", flush=True)
-        except Exception as chroma_err:
-            print(f"[Compensating Tx Error] Failed to access/clean ChromaDB: {chroma_err}", flush=True)
-            
         print("[Indexer] Zombie cleanup completed.", flush=True)
     finally:
         if close_db:
@@ -229,7 +224,11 @@ def remove_folder_data(folder_path: str, db: Session = None):
         all_indexed = db.query(IndexedFolder).all()
         for f_rec in all_indexed:
             f_real = os.path.realpath(f_rec.path).lower()
-            if f_real in [target_lower, without_sep_lower, orig_lower] or f_rec.path.lower() in [target_lower, without_sep_lower, orig_lower]:
+            if (
+                f_real in [target_lower, without_sep_lower, orig_lower]
+                or f_rec.path.lower() in [target_lower, without_sep_lower, orig_lower]
+                or f_real.startswith(prefix_lower)
+            ):
                 db.delete(f_rec)
 
         db.commit()
@@ -270,7 +269,7 @@ def index_single_file_sync(file_path: str) -> Union[dict, str]:
     try:
         existing_by_path = db.query(DBImage).filter(DBImage.file_path == file_path).first()
         if existing_by_path:
-            if existing_by_path.file_mtime == file_mtime and existing_by_path.file_size == file_size:
+            if abs(existing_by_path.file_mtime - file_mtime) < 0.01 and existing_by_path.file_size == file_size:
                 return "skipped"
             else:
                 print(f"[Indexer] File modified. Marking for re-indexing: {file_path}", flush=True)
@@ -280,6 +279,11 @@ def index_single_file_sync(file_path: str) -> Union[dict, str]:
         
         existing_by_id = db.query(DBImage).filter(DBImage.id == image_id).first()
         if existing_by_id:
+            if existing_by_id.file_path == file_path:
+                existing_by_id.file_mtime = file_mtime
+                existing_by_id.file_size = file_size
+                db.commit()
+                return "skipped"
             print(f"[Indexer] Hash duplicate found. Skipping: {file_path}", flush=True)
             return "skipped_duplicate_hash"
     finally:
@@ -387,6 +391,7 @@ async def reindex_single_photo_inplace(photo_id: str) -> dict:
 async def run_indexing_background(folder_paths: list[str]):
     """
     Main background scheduler executing the indexing lifecycle without blocking the main event loop.
+    Guarantees status reset to idle and completion log emission in all execution branches via finally.
     """
     indexing_state_manager.reset_status()
     indexing_state_manager.status = "processing"
@@ -400,10 +405,7 @@ async def run_indexing_background(folder_paths: list[str]):
         await asyncio.to_thread(cleanup_zombie_records)
         
         if not files:
-            indexing_state_manager.status = "idle"
-            indexing_state_manager.update_progress(0, 0, "")
-            print("[Indexer] Background indexing completed.", flush=True)
-            print("[Indexer] Sync completed.", flush=True)
+            print("[Indexer] No files found for indexing.", flush=True)
             return
             
         semaphore = asyncio.Semaphore(4)
@@ -479,17 +481,18 @@ async def run_indexing_background(folder_paths: list[str]):
                 await asyncio.to_thread(_save_batch)
             
             await asyncio.sleep(0.01)
-            
+
+    except Exception as e:
+        print(f"[Indexer] Background task error: {e}", flush=True)
+    finally:
         if indexing_state_manager.cancel_requested:
             indexing_state_manager.status = "cancelled"
             print("[Indexer] Background indexing cancelled.", flush=True)
         else:
             indexing_state_manager.status = "idle"
+            indexing_state_manager.update_progress(0, 0, "")
             print("[Indexer] Background indexing completed.", flush=True)
             print("[Indexer] Sync completed.", flush=True)
-    except Exception as e:
-        print(f"[Indexer] Background task error: {e}", flush=True)
-        indexing_state_manager.status = "error"
 
 
 __all__ = [

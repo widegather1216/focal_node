@@ -3,6 +3,7 @@ import { useAppStore } from "./store/useAppStore";
 import { useBackendInit } from "./hooks/useBackendInit";
 import { useTauriEvents } from "./hooks/useTauriEvents";
 import { useModelDownloadStatus } from "./hooks/useModelDownloadStatus";
+import { useIndexingStatus } from "./hooks/useIndexingStatus";
 import { Sidebar } from "./components/Sidebar";
 import { PhotoGallery } from "./components/PhotoGallery";
 import { ActionBar } from "./components/ActionBar";
@@ -24,6 +25,7 @@ function App() {
   const { loading, backendStatus, backendError } = useBackendInit();
   useTauriEvents();
   useModelDownloadStatus();
+  useIndexingStatus();
 
   const { isDownloadingModel, activeTab } = useAppStore();
 

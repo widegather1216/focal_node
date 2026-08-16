@@ -1,4 +1,4 @@
-import React from 'react';
+import { motion } from 'framer-motion';
 import { Loader2, Pause, Play, Square } from 'lucide-react';
 import { api } from '../../services/api';
 
@@ -32,13 +32,19 @@ export const IndexingProgressCard: React.FC<IndexingProgressCardProps> = ({
       : 'Scanning Folders...';
 
   return (
-    <div style={{
-      marginTop: 'auto',
-      padding: '14px',
-      backgroundColor: isPaused ? 'rgba(234, 179, 8, 0.12)' : 'rgba(0, 0, 0, 0.35)',
-      borderRadius: '8px',
-      border: isPaused ? '1px solid rgba(234, 179, 8, 0.3)' : '1px solid rgba(255, 255, 255, 0.1)',
-    }}>
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 10 }}
+      transition={{ duration: 0.25 }}
+      style={{
+          marginTop: 'auto',
+          padding: '14px',
+          backgroundColor: isPaused ? 'rgba(234, 179, 8, 0.12)' : 'rgba(0, 0, 0, 0.35)',
+          borderRadius: '8px',
+          border: isPaused ? '1px solid rgba(234, 179, 8, 0.3)' : '1px solid rgba(255, 255, 255, 0.1)',
+        }}
+      >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {isPaused ? (
@@ -122,6 +128,6 @@ export const IndexingProgressCard: React.FC<IndexingProgressCardProps> = ({
           {currentFileName}
         </span>
       </div>
-    </div>
+    </motion.div>
   );
 };

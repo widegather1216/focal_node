@@ -276,3 +276,176 @@ def test_scan_directory_deduplication(tmp_path):
     scanned = scan_directory([str(tmp_path), str(sub_dir)])
     assert len(scanned) == 1
     assert str(sample_img) in scanned
+
+
+def test_delete_photo_atomic_sync(db_session, tmp_path, monkeypatch):
+    """
+    Verifies delete_photo_atomic_sync cleans SQLite, ChromaDB, and disk thumbnail.
+    """
+    from services.indexing_service import delete_photo_atomic_sync
+    import services.indexing_service as idx_svc
+
+    thumb_dir = tmp_path / "thumbs"
+    thumb_dir.mkdir()
+    monkeypatch.setattr(idx_svc, "get_thumbnail_path", lambda pid: str(thumb_dir / f"{pid}.jpg"))
+
+    pid = "delete_test_photo_1"
+    # Create fake thumbnail
+    fake_thumb = thumb_dir / f"{pid}.jpg"
+    fake_thumb.write_bytes(b"thumbnail_bytes")
+
+    img = models.Image(
+        id=pid,
+        parent_dir="/test",
+        file_path="/test/photo1.jpg",
+        file_name="photo1.jpg",
+        file_size=1000,
+        file_mtime=time.time(),
+        mime_type="image/jpeg",
+        is_favorite=False
+    )
+    db_session.add(img)
+    db_session.commit()
+
+    delete_photo_atomic_sync(db_session, pid)
+
+    # SQLite record must be gone
+    assert db_session.query(models.Image).filter(models.Image.id == pid).first() is None
+    # Thumbnail file must be deleted from disk
+    assert not fake_thumb.exists()
+
+
+def test_remove_folder_data(db_session, tmp_path, monkeypatch):
+    """
+    Verifies remove_folder_data deletes all contained images, thumbnails, and IndexedFolder records.
+    """
+    from services.indexing_service import remove_folder_data
+    import services.indexing_service as idx_svc
+
+    thumb_dir = tmp_path / "thumbs"
+    thumb_dir.mkdir()
+    monkeypatch.setattr(idx_svc, "get_thumbnail_path", lambda pid: str(thumb_dir / f"{pid}.jpg"))
+
+    folder_a = str(tmp_path / "FolderA")
+    folder_a_sub = str(tmp_path / "FolderA" / "Sub")
+
+    f1 = models.IndexedFolder(path=folder_a)
+    f2 = models.IndexedFolder(path=folder_a_sub)
+    img1 = models.Image(
+        id="folder_test_1",
+        parent_dir=folder_a,
+        file_path=os.path.join(folder_a, "p1.jpg"),
+        file_name="p1.jpg",
+        file_size=100,
+        file_mtime=time.time(),
+        mime_type="image/jpeg",
+        is_favorite=False
+    )
+    img2 = models.Image(
+        id="folder_test_2",
+        parent_dir=folder_a_sub,
+        file_path=os.path.join(folder_a_sub, "p2.jpg"),
+        file_name="p2.jpg",
+        file_size=100,
+        file_mtime=time.time(),
+        mime_type="image/jpeg",
+        is_favorite=False
+    )
+    db_session.add_all([f1, f2, img1, img2])
+    db_session.commit()
+
+    # Fake thumbnails
+    (thumb_dir / "folder_test_1.jpg").write_bytes(b"t1")
+    (thumb_dir / "folder_test_2.jpg").write_bytes(b"t2")
+
+    remove_folder_data(folder_a, db=db_session)
+
+    # Both images should be deleted
+    assert db_session.query(models.Image).filter(models.Image.id.in_(["folder_test_1", "folder_test_2"])).count() == 0
+    # Both IndexedFolder records should be deleted
+    assert db_session.query(models.IndexedFolder).count() == 0
+    # Thumbnails should be removed
+    assert not (thumb_dir / "folder_test_1.jpg").exists()
+    assert not (thumb_dir / "folder_test_2.jpg").exists()
+
+
+def test_cleanup_zombie_records_when_file_deleted(db_session, tmp_path, monkeypatch):
+    """
+    Verifies cleanup_zombie_records detects physically deleted files and cleans SQLite & thumbnails.
+    """
+    from services.indexing_service import cleanup_zombie_records
+    import services.indexing_service as idx_svc
+
+    thumb_dir = tmp_path / "thumbs"
+    thumb_dir.mkdir()
+    monkeypatch.setattr(idx_svc, "get_thumbnail_path", lambda pid: str(thumb_dir / f"{pid}.jpg"))
+
+    folder = tmp_path / "photos"
+    folder.mkdir()
+    f_rec = models.IndexedFolder(path=str(folder))
+
+    # Real file that exists
+    real_file = folder / "exists.jpg"
+    real_file.write_bytes(b"real")
+    img_real = models.Image(
+        id="zombie_test_real",
+        parent_dir=str(folder),
+        file_path=str(real_file),
+        file_name="exists.jpg",
+        file_size=4,
+        file_mtime=time.time(),
+        mime_type="image/jpeg",
+        is_favorite=False
+    )
+
+    # Missing file (deleted by user on disk)
+    missing_file = folder / "deleted.jpg"
+    img_deleted = models.Image(
+        id="zombie_test_deleted",
+        parent_dir=str(folder),
+        file_path=str(missing_file),
+        file_name="deleted.jpg",
+        file_size=4,
+        file_mtime=time.time(),
+        mime_type="image/jpeg",
+        is_favorite=False
+    )
+
+    db_session.add_all([f_rec, img_real, img_deleted])
+    db_session.commit()
+
+    (thumb_dir / "zombie_test_deleted.jpg").write_bytes(b"thumb_deleted")
+
+    cleanup_zombie_records(db=db_session)
+
+    # Real image survives
+    assert db_session.query(models.Image).filter(models.Image.id == "zombie_test_real").first() is not None
+    # Deleted image is purged from SQLite
+    assert db_session.query(models.Image).filter(models.Image.id == "zombie_test_deleted").first() is None
+    # Thumbnail for deleted image is purged from disk
+    assert not (thumb_dir / "zombie_test_deleted.jpg").exists()
+
+
+@pytest.mark.asyncio
+async def test_sync_and_zero_file_indexing_lifecycle(client):
+    """
+    Verifies that running background indexing with 0 files cleanly sets status to idle and emits completion.
+    """
+    from services.indexing_service import run_indexing_background
+    from services.indexing_state import indexing_state_manager
+
+    # 1. Direct background run with empty list
+    await run_indexing_background([])
+    assert indexing_state_manager.status == "idle"
+    status_dict = indexing_state_manager.get_status_dict()
+    assert status_dict["status"] == "idle"
+    assert status_dict["total_files"] == 0
+    assert status_dict["processed_files"] == 0
+
+    # 2. Test /api/index/sync endpoint returns 202 and status returns idle
+    resp = client.post("/api/index/sync")
+    assert resp.status_code == 202
+
+    status_resp = client.get("/api/index/status")
+    assert status_resp.status_code == 200
+    assert status_resp.json()["status"] in ["idle", "processing"]
