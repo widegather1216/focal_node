@@ -21,6 +21,10 @@ class ChatService:
                 "camera_model": meta.camera_model if meta else None,
                 "lens_model": meta.lens_model if meta else None,
                 "f_number": meta.f_number if meta else None,
+                "focal_length": meta.focal_length if meta else None,
+                "focal_length_35mm": meta.focal_length_35mm if meta else None,
+                "sensor_format": meta.sensor_format if meta else None,
+                "crop_factor": meta.crop_factor if meta else None,
                 "shutter_speed": meta.shutter_speed if meta else None,
                 "iso": meta.iso if meta else None,
             }

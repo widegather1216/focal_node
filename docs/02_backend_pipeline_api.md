@@ -42,14 +42,15 @@
 사이드카(Sidecar)로 구동되는 Python FastAPI 서버는 프론트엔드와 루프백 인터페이스를 통해 통신합니다.
 유지보수와 확장을 위해 라우터(Router), 서비스(Service), 레포지토리(Repository) 3계층이 완전 캡슐화되어 있습니다.
 
-* **`api/photos.py`**: `/api/photos` 계열 - `PhotoRepository`를 사용한 갤러리 렌더링, 원본/썸네일 스트리밍, 메타데이터 수정 엔드포인트
-* **`api/indexing.py`**: `/api/index` 계열 - `services/indexer/status.py` 및 `worker.py`를 활용한 백그라운드 인덱스 조율 엔드포인트
+* **`api/photos.py`**: `/api/photos` 계열 - `PhotoRepository`를 사용한 갤러리 렌더링, 원본/썸네일 스트리밍, 메타데이터 수정, 즐겨찾기 토글, 다중 내보내기, 단일 재인덱싱 엔드포인트
+* **`api/indexing.py`**: `/api/index` 계열 - `services/indexer/status.py` 및 `worker.py`를 활용한 백그라운드 인덱스 조율(시작, 일시정지, 재개, 취소, 동기화) 엔드포인트
 * **`api/folders.py`**: `/api/folders` 계열 - `cleaner.py`를 활용한 스캔 폴더 조회 및 unindex 엔드포인트
 * **`api/search.py`**: `/api/search` 계열 - `SearchService` 기반의 하이브리드 검색 및 K-NN 유사도 검색 엔드포인트
 * **`api/chat.py`**: `/api/chat` 계열 - `ChatService` 기반의 VLM 사진 비평 생성 및 종합 보고서 요약 엔드포인트
+* **`api/analytics.py`**: `/api/analytics` 계열 - `PhotoRepository.get_gear_analytics` 기반의 카메라 바디, 렌즈, 화각, 조리개 통계 집계 엔드포인트
 
-### 2.1. `POST /api/index/start`
-* **설명:** 신규 사진 폴더 인덱싱 작업을 작업 큐에 등록하고 인덱싱 프로세스를 시작합니다.
+### 2.1. `POST /api/index/start` & `POST /api/index/sync`
+* **설명:** 신규 사진 폴더 인덱싱 작업을 큐에 등록하거나, 기존 등록된 폴더들의 변경사항(신규/수정/삭제 파일)을 감지하여 전체 동기화(`sync`)합니다.
 * **Request Body:**
   ```json
   {
@@ -74,7 +75,7 @@
 * **설명:** 실행 중인 백그라운드 인덱싱 작업을 비동기로 일시정지, 재개 또는 취소합니다.
 
 ### 2.4. `GET /api/folders` & `DELETE /api/folders`
-* **설명:** 현재 인덱싱된 폴더 목록을 조회하거나 특정 폴더의 모든 사진 레코드 및 ChromaDB 임베딩을 일괄 삭제합니다.
+* **설명:** 현재 인덱싱된 폴더 목록을 조회하거나 특정 폴더의 모든 사진 레코드 및 ChromaDB 임베딩을 일괄 삭제(Unindex)합니다.
 
 ### 2.5. `GET /api/photos`
 * **설명:** 갤러리 뷰(가상 스크롤) 렌더링에 필요한 사진 목록을 반환합니다. 페이징 처리를 지원합니다.
@@ -92,10 +93,19 @@
 ### 2.9. `POST /api/search/similar`
 * **설명:** `SearchService` 및 `VectorRepository`를 통해 특정 사진의 ChromaDB 저장 임베딩 기반 K-NN 시각 유사도 검색을 수행합니다.
 
-### 2.10. `GET /api/photos/{id}` & `PATCH /api/photos/{id}/metadata`
-* **설명:** 특정 사진의 상세 메타데이터를 조회하거나 사용자 편집 캡션/태그를 업데이트합니다.
+### 2.10. `GET /api/photos/{id}`, `PATCH /api/photos/{id}/metadata`, `POST /api/photos/{id}/reindex`
+* **설명:** 특정 사진의 상세 메타데이터를 조회하거나, 사용자 편집 캡션/태그를 업데이트하거나, 단일 사진을 강제 재인덱싱합니다.
 
-### 2.11. `POST /api/chat/critique` & `POST /api/chat/critique-summary`
+### 2.11. `POST /api/photos/{id}/favorite`
+* **설명:** 사진의 즐겨찾기(`is_favorite`) 상태를 토글(반전) 저장합니다.
+
+### 2.12. `POST /api/photos/export`
+* **설명:** 선택된 다중 사진 목록을 지정한 폴더로 복사하며, Server-Sent Events(SSE) 스트림으로 복사 진행률을 실시간 전송합니다.
+
+### 2.13. `GET /api/analytics`
+* **설명:** `PhotoRepository.get_gear_analytics`를 호출하여 카메라 바디 점유율, 렌즈 사용 분포, 실효 화각 및 35mm 환산 화각 분포, 조리개 분포를 집계하여 반환합니다.
+
+### 2.14. `POST /api/chat/critique` & `POST /api/chat/critique-summary`
 * **설명:** `ChatService`를 통해 VLM(Gemma 4 또는 UniPercept 8B) 모델로 사진 구도/조명 비평을 생성하거나 기존 비평들을 종합 분석한 LLM 요약 보고서를 생성합니다.
 
 ---

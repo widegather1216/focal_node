@@ -166,7 +166,7 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         attention_mask = model_inputs['attention_mask'].to(self.device)
 
         with GPU_LOCK:
-            with torch.no_grad():
+            with torch.inference_mode():
                 vit_embeds = self.model.extract_feature(pixel_values)
                 input_embeds = self.model.language_model.get_input_embeddings()(input_ids)
                 B, N, C = input_embeds.shape
@@ -179,17 +179,27 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                 outputs = self.model.language_model(
                     inputs_embeds=input_embeds,
                     attention_mask=attention_mask,
-                    use_cache=True,
-                    output_hidden_states=True,
                     return_dict=True,
                 )
+                logits = outputs.logits
+
         if self._cached_preferential_ids is None:
             self._cached_preferential_ids = [self.tokenizer.convert_tokens_to_ids(word) for word in AESTHETICS_TOKEN_LIST]
         output_logits = logits[:, -1, self._cached_preferential_ids].detach()
         if self._cached_weight_tensor is None or self._cached_weight_tensor.device != self.device or self._cached_weight_tensor.dtype != output_logits.dtype:
             self._cached_weight_tensor = torch.tensor([x for x in range(101)]).to(device=self.device, dtype=output_logits.dtype)
         score = torch.softmax(output_logits, -1) @ self._cached_weight_tensor
-        return float(score.item())
+        final_score = float(score.item())
+
+        # Explicitly clean up heavy forward tensors to prevent memory accumulation across 6-pass calls
+        del model_inputs, input_ids, attention_mask, input_embeds, vit_embeds, outputs, logits, output_logits, score
+        if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+            try:
+                torch.mps.empty_cache()
+            except Exception:
+                pass
+
+        return final_score
 
     @staticmethod
     def _load_pil_image(image_path: str):
@@ -227,13 +237,14 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         self,
         image_path: str,
         metadata: Optional[Dict[str, Any]] = None,
+        photo_id: Optional[str] = None,
         max_retries: int = 3
     ) -> Dict[str, Any]:
         """
-        Runs 3-Way VR Scoring using 100% official UniPercept Token-as-Score logic:
-        1. IAA Score (Aesthetics)
-        2. IQA Score (Quality)
-        3. ISTA Score (Structure & Texture)
+        Runs 3-Way VR Scoring with precise step-by-step logging & status updates:
+        Step 1: IAA Score (Aesthetics)
+        Step 2: IQA Score (Quality)
+        Step 3: ISTA Score (Structure & Texture)
         Overall = round(0.4*IAA + 0.3*IQA + 0.3*ISTA)
         """
         with GPU_LOCK:
@@ -246,24 +257,42 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             if (not os.path.exists(image_path) and not hasattr(self.model, "chat")) or self.model is None:
                 return {"overall": 70, "iaa": 70, "iqa": 70, "ista": 70, "raw_vr_text": ""}
 
+            vr_start_time = time.time()
+            print("\n" + "="*70, flush=True)
+            print("[UniPercept] 🚀 [VR 모드 시작] 3단계 정밀 지각 점수 산출 파이프라인 가동...", flush=True)
+            print("="*70, flush=True)
+
             pil_img = self._load_pil_image(image_path)
             pixel_values = self._prepare_pixel_values(pil_img)
 
             # 3 Official Perceptual Domains
-            domains = {
-                "iaa": "aesthetics",
-                "iqa": "quality",
-                "ista": "structure and texture richness"
-            }
+            domains = [
+                ("iaa", "aesthetics", "미학 점수 (IAA)", 1, 10),
+                ("iqa", "quality", "화질 점수 (IQA)", 2, 20),
+                ("ista", "structure and texture richness", "텍스처 점수 (ISTA)", 3, 30),
+            ]
 
             scores = {}
-            for key, desc in domains.items():
+            timings = {}
+            for key, desc, label, step_idx, prog in domains:
+                if photo_id:
+                    from services.critique_status import critique_status_manager
+                    critique_status_manager.update(
+                        photo_id, 1, 4, f"[{step_idx}/6] {label} 계산 중...", prog
+                    )
+
+                print(f"[UniPercept] ⏱️ [VR Step {step_idx}/3] {label} 계산 시작...", flush=True)
+                step_t0 = time.time()
                 try:
                     sc = self.compute_official_vr_score(pixel_values, desc)
                     scores[key] = round(sc, 2)
                 except Exception as vr_err:
-                    print(f"[UniPerceptAdapter] Official VR score error for {key}: {vr_err}", flush=True)
+                    print(f"[UniPercept] ⚠️ [VR Step {step_idx}/3] {label} 오류 ({vr_err}), 70.0 폴백", flush=True)
                     scores[key] = 70.0
+
+                elapsed = time.time() - step_t0
+                timings[key] = elapsed
+                print(f"[UniPercept] ✅ [VR Step {step_idx}/3] {label} 완료 ➔ {scores[key]}점 (소요시간: {elapsed:.2f}초)", flush=True)
 
             iaa_val = scores.get("iaa", 70.0)
             iqa_val = scores.get("iqa", 70.0)
@@ -272,14 +301,28 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             overall_val = round((0.4 * iaa_val) + (0.3 * iqa_val) + (0.3 * ista_val))
             overall_val = min(100, max(0, overall_val))
 
+            vr_total_elapsed = time.time() - vr_start_time
+            print(f"[UniPercept] 📊 [VR 모드 종료] 3개 점수 산출 완료 (총 소요시간: {vr_total_elapsed:.2f}초)", flush=True)
+            print(f"            - IAA: {iaa_val}점 ({timings.get('iaa', 0):.2f}s) | IQA: {iqa_val}점 ({timings.get('iqa', 0):.2f}s) | ISTA: {ista_val}점 ({timings.get('ista', 0):.2f}s) ➔ 종합: {overall_val}점", flush=True)
+            print("="*70 + "\n", flush=True)
+
             raw_vr_summary = f"IAA: {iaa_val}, IQA: {iqa_val}, ISTA: {ista_val} -> Overall: {overall_val}"
+
+            del pixel_values
+            if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+                try:
+                    torch.mps.empty_cache()
+                except Exception:
+                    pass
 
             return {
                 "overall": overall_val,
                 "iaa": iaa_val,
                 "iqa": iqa_val,
                 "ista": ista_val,
-                "raw_vr_text": raw_vr_summary
+                "raw_vr_text": raw_vr_summary,
+                "timings": timings,
+                "total_elapsed": vr_total_elapsed
             }
 
         finally:
@@ -291,13 +334,14 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         self,
         image_path: str,
         metadata: Optional[Dict[str, Any]] = None,
-        scores_context: Optional[Dict[str, Any]] = None
+        scores_context: Optional[Dict[str, Any]] = None,
+        photo_id: Optional[str] = None
     ) -> Dict[str, str]:
         """
-        Runs 3-Way Dedicated VQA inference with optional Stage 1 Score Conditioning:
-        1. IAA (Aesthetics, Lighting, Composition, Color Harmony)
-        2. IQA (Technical Quality, Sharpness, Noise, Depth of Field)
-        3. ISTA (Surface Texture, Edge Definition, Micro-contrast)
+        Runs 3-Way Dedicated VQA inference with step-by-step timing & UI status updates:
+        Step 4: IAA (Aesthetics, Lighting, Composition, Color Harmony)
+        Step 5: IQA (Technical Quality, Sharpness, Noise, Depth of Field)
+        Step 6: ISTA (Surface Texture, Edge Definition, Micro-contrast)
         """
         with GPU_LOCK:
             with self.lock:
@@ -312,6 +356,11 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                     "iqa": "이미지를 분석할 수 없습니다.",
                     "ista": "이미지를 분석할 수 없습니다."
                 }
+
+            vqa_start_time = time.time()
+            print("\n" + "="*70, flush=True)
+            print("[UniPercept] 🚀 [VQA 모드 시작] 3단계 심층 비평문 생성 파이프라인 가동...", flush=True)
+            print("="*70, flush=True)
 
             pil_img = self._load_pil_image(image_path)
             exif_desc = self._format_exif_desc(metadata)
@@ -339,11 +388,11 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                 UNIPERCEPT_VQA_ISTA_PROMPT
             )
 
-            vqa_prompts = {
-                "iaa": f"{exif_desc}{score_desc}{UNIPERCEPT_VQA_IAA_PROMPT}",
-                "iqa": f"{exif_desc}{score_desc}{UNIPERCEPT_VQA_IQA_PROMPT}",
-                "ista": f"{exif_desc}{score_desc}{UNIPERCEPT_VQA_ISTA_PROMPT}",
-            }
+            vqa_steps = [
+                ("iaa", UNIPERCEPT_VQA_IAA_PROMPT, "미학·구도 비평 (IAA)", 4, 45),
+                ("iqa", UNIPERCEPT_VQA_IQA_PROMPT, "화질·왜곡 비평 (IQA)", 5, 60),
+                ("ista", UNIPERCEPT_VQA_ISTA_PROMPT, "구조·재질 비평 (ISTA)", 6, 75),
+            ]
 
             generation_config = dict(
                 max_new_tokens=1024,
@@ -353,11 +402,21 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             )
 
             critiques = {}
-            for domain_key, prompt_text in vqa_prompts.items():
-                print(f"[UniPerceptAdapter] -> Generating VQA critique domain: {domain_key.upper()}...", flush=True)
+            timings = {}
+            for domain_key, base_prompt, label, step_idx, prog in vqa_steps:
+                if photo_id:
+                    from services.critique_status import critique_status_manager
+                    critique_status_manager.update(
+                        photo_id, 2, 4, f"[{step_idx}/6] {label} 작성 중...", prog
+                    )
+
+                print(f"[UniPercept] ⏱️ [VQA Step {step_idx-3}/3] {label} 생성 시작...", flush=True)
+                step_t0 = time.time()
+                prompt_text = f"{exif_desc}{score_desc}{base_prompt}"
+
                 with GPU_LOCK:
                     try:
-                        with torch.no_grad():
+                        with torch.inference_mode():
                             if hasattr(self.model, "chat"):
                                 txt = self.model.chat(
                                     self.tokenizer,
@@ -369,11 +428,35 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                                 inputs = self.processor(images=pil_img, text=prompt_text, return_tensors="pt").to(self.device, dtype=self.torch_dtype)
                                 outputs = self.model.generate(**inputs, max_new_tokens=1024)
                                 txt = self.processor.decode(outputs[0], skip_special_tokens=True)
+                                del inputs, outputs
                         critiques[domain_key] = txt.strip()
-                        print(f"[UniPerceptAdapter] -> Domain {domain_key.upper()} critique finished ({len(txt)} chars).", flush=True)
+                        elapsed = time.time() - step_t0
+                        timings[domain_key] = elapsed
+                        print(f"[UniPercept] ✅ [VQA Step {step_idx-3}/3] {label} 완료 ➔ {len(txt)}자 생성 (소요시간: {elapsed:.2f}초)", flush=True)
                     except Exception as eval_err:
-                        print(f"[UniPerceptAdapter] VQA inference error ({domain_key}): {eval_err}", flush=True)
+                        elapsed = time.time() - step_t0
+                        print(f"[UniPercept] ❌ [VQA Step {step_idx-3}/3] {label} 오류 ({eval_err}) (소요시간: {elapsed:.2f}초)", flush=True)
                         critiques[domain_key] = f"분석 오류: {eval_err}"
+                    finally:
+                        # Clear MPS activation buffers after each domain VQA generation
+                        if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+                            try:
+                                torch.mps.empty_cache()
+                            except Exception:
+                                pass
+
+            # Clean up pixel_values after completing all 3 VQA domains
+            del pixel_values
+            if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+                try:
+                    torch.mps.empty_cache()
+                except Exception:
+                    pass
+
+            vqa_total_elapsed = time.time() - vqa_start_time
+            print(f"[UniPercept] 📝 [VQA 모드 종료] 3개 비평문 생성 완료 (총 소요시간: {vqa_total_elapsed:.2f}초)", flush=True)
+            print(f"            - IAA 비평: {timings.get('iaa', 0):.2f}s | IQA 비평: {timings.get('iqa', 0):.2f}s | ISTA 비평: {timings.get('ista', 0):.2f}s", flush=True)
+            print("="*70 + "\n", flush=True)
 
             return critiques
 
@@ -386,10 +469,11 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         self,
         image_path: str,
         metadata: Optional[Dict[str, Any]] = None,
-        scores_context: Optional[Dict[str, Any]] = None
+        scores_context: Optional[Dict[str, Any]] = None,
+        photo_id: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Backward-compatible single VQA critique generator with optional score conditioning."""
-        res_3way = self.generate_vqa_critiques_3way(image_path, metadata, scores_context=scores_context)
+        """Backward-compatible single VQA critique generator with optional score conditioning & photo_id."""
+        res_3way = self.generate_vqa_critiques_3way(image_path, metadata, scores_context=scores_context, photo_id=photo_id)
         merged = (
             f"[Aesthetics & Composition]\n{res_3way.get('iaa', '')}\n\n"
             f"[Technical Quality & Clarity]\n{res_3way.get('iqa', '')}\n\n"
@@ -443,7 +527,7 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             for attempt in range(1, max_retries + 1):
                 with GPU_LOCK:
                     try:
-                        with torch.no_grad():
+                        with torch.inference_mode():
                             if hasattr(self.model, "chat"):
                                 gen_cfg = dict(generation_config, do_sample=True, temperature=0.7, top_p=0.9) if attempt > 1 else generation_config
                                 critique_text = self.model.chat(
@@ -637,13 +721,9 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         - Stage 2: VQA Mode -> Pure deep photographic critique without score constraints
         - Merges scores scoreboard and VQA critique for translation by Gemma.
         """
-        if photo_id:
-            from services.critique_status import critique_status_manager
-            critique_status_manager.update(photo_id, 1, 4, "점수 산출 중", 20)
-
         print("[UniPerceptAdapter] [Stage 1/2] Computing 3-Way VR scores (IAA / IQA / ISTA)...", flush=True)
         # 1. Stage 1: VR Mode (Fast 3-Metric Score Extraction)
-        vr_result = self.generate_vr_scores(image_path, metadata=metadata, max_retries=3)
+        vr_result = self.generate_vr_scores(image_path, metadata=metadata, photo_id=photo_id, max_retries=3)
         final_overall = vr_result["overall"]
         final_iaa = vr_result["iaa"]
         final_iqa = vr_result["iqa"]
@@ -659,13 +739,9 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         }
         print(f"[UniPerceptAdapter] [Stage 1/2] VR Scores computed: Overall={final_overall}, IAA={final_iaa}, IQA={final_iqa}, ISTA={final_ista}", flush=True)
 
-        if photo_id:
-            from services.critique_status import critique_status_manager
-            critique_status_manager.update(photo_id, 2, 4, "비평 작성 중", 50)
-
         print("[UniPerceptAdapter] [Stage 2/2] Generating 3-Way VQA deep critiques...", flush=True)
         # 2. Stage 2: VQA Mode (Score-Conditioned Photographic Critique)
-        vqa_result = self.generate_vqa_critique(image_path, metadata=metadata, scores_context=scores_summary)
+        vqa_result = self.generate_vqa_critique(image_path, metadata=metadata, scores_context=scores_summary, photo_id=photo_id)
         vqa_critique = vqa_result["critique"]
         print("[UniPerceptAdapter] UniPercept full ensemble critique generation finished.", flush=True)
 

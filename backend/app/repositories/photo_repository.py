@@ -32,7 +32,7 @@ class PhotoRepository:
         query = query.order_by(models.ImageMetadata.capture_date.desc().nullslast(), models.Image.id)
         return query.offset(offset).limit(limit).all()
 
-    def search_by_text(self, query_str: str) -> List[str]:
+    def search_by_text(self, query_str: str, limit: Optional[int] = 500) -> List[str]:
         """
         Performs full-text search against captions and tags in AIAnalysis table.
         Returns list of matching image IDs safely handling SQL LIKE wildcards.
@@ -44,6 +44,8 @@ class PhotoRepository:
                 models.AIAnalysis.caption.ilike(f"%{escaped}%", escape="\\")
             )
         )
+        if limit and limit > 0:
+            text_search_q = text_search_q.limit(limit)
         return [r[0] for r in text_search_q.all()]
 
     def filter_and_paginate(
@@ -55,12 +57,33 @@ class PhotoRepository:
     ) -> List[models.Image]:
         """
         Applies EXIF filters and orders/paginates results.
+        Optimized with fast-path pagination when no EXIF filters are present.
         """
         q = self.db.query(models.Image).options(joinedload(models.Image.metadata_rel)).outerjoin(models.ImageMetadata, models.Image.id == models.ImageMetadata.image_id)
         
+        has_active_filters = False
+        if filters:
+            for field in [
+                "is_favorite", "camera_model", "lens_model", "iso_min", "iso_max",
+                "f_number_min", "f_number_max", "focal_length_min", "focal_length_max",
+                "date_from", "date_to"
+            ]:
+                if getattr(filters, field, None) is not None:
+                    has_active_filters = True
+                    break
+
         if photo_ids_from_chroma is not None:
             if not photo_ids_from_chroma:
                 return []
+
+            # Fast-path: When no EXIF filters are active, query only the target page IDs from DB
+            if not has_active_filters:
+                page_pids = photo_ids_from_chroma[offset : offset + limit]
+                if not page_pids:
+                    return []
+                images = q.filter(models.Image.id.in_(page_pids)).all()
+                image_map = {img.id: img for img in images}
+                return [image_map[pid] for pid in page_pids if pid in image_map]
             
             chunk_size = 900
             if len(photo_ids_from_chroma) > chunk_size:
@@ -71,7 +94,7 @@ class PhotoRepository:
                 q = q.filter(models.Image.id.in_(photo_ids_from_chroma))
                 
         # Apply EXIF filters
-        if filters:
+        if has_active_filters:
             exif_filters = filters
             if getattr(exif_filters, 'is_favorite', None) is not None:
                 q = q.filter(models.Image.is_favorite == exif_filters.is_favorite)

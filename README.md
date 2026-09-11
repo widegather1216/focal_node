@@ -20,7 +20,7 @@ Apple Silicon(M 시리즈)의 GPU 자원을 활용하여, 수만 장의 사진 �
 * **Frontend:** Tauri (Rust), React 19, TypeScript, Vite, Zustand
 * **Backend (Sidecar):** FastAPI, SQLite, ChromaDB
 * **AI Engine:** MLX (Apple Native), PyTorch (MPS)
-* **Models:** SigLIP 2 (google/siglip2-base-patch16-224), Gemma 4 E4B-it (mlx-community/gemma-4-e4b-it-4bit)
+* **Models:** SigLIP 2 (google/siglip2-base-patch16-224), Gemma 4 (mlx-community/gemma-4-12B-it-8bit), UniPercept 8B (widegather/unipercept-mirror)
 
 ## 🚀 로컬 환경 실행 방법 (개발자용)
 

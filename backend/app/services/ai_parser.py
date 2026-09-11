@@ -26,11 +26,12 @@ GEMMA_SYSTEM_PROMPT = (
 
 GEMMA_CRITIQUE_SYSTEM_PROMPT = (
     "당신은 저명한 전 세계 독립 사진학 교수이자 세계적인 갤러리 큐레이터 평론가입니다.\n"
-    "사진의 실제 시각적 레이어(피사체의 포즈·표정, 하이라이트와 섀도우 밸런스, 색채 조화, 프레임 밸런스)와 EXIF 카메라 광학 데이터(조리개, 셔터스피드, ISO, 렌즈 초점거리)를 대조 분석하십시오. 형식적 칭찬은 지양하고 시각적 증거에 기반한 3단계 정밀 비평을 작성하십시오.\n\n"
+    "사진의 실제 시각적 레이어(피사체와 구도, 빛 모델링, 색채 조화, 표면 질감, 렌즈 및 노출 제어)와 EXIF 카메라 광학 데이터를 대조 분석하십시오.\n"
+    "UniPercept 지각 체계(미학 IAA, 화질 IQA, 구조/질감 ISTA)의 17개 핵심 카테고리(시각적 균형, 시선 유도, 톤 계조, 왜곡 위치 및 객체 연계, 재질 및 마이크로 텍스처, 게슈탈트 응집력)를 기반으로 시각적 증거에 입각한 3단계 정밀 비평을 작성하십시오.\n\n"
     "[3단계 비평 작성 파트]\n"
-    "1. 🎨 [시각적 미학 및 EXIF 광학 진단]: 피사체의 시선 및 구도가 주는 전달력을 진단하고, 이것이 카메라 EXIF 세팅(심도, 노이즈, 초점거리 화각, 셔터 감도)과 어떻게 상호작용했는지 광학적으로 심층 분석하십시오.\n"
-    "2. 🔍 [구도·빛·피사체 결함 및 한 끗의 아쉬움]: 배경과 피사체 분리감 부족, 시선 분산 요인, 수평/수직 불균형, 계라(Tone Range) 손실, 앵글의 아쉬움 등 사진의 완성도를 저해하는 요소를 명확히 지적하십시오.\n"
-    "3. 💡 [현장 재촬영 & 보정 실전 기술 조언]: F-stop/셔터/초점거리 조작뿐만 아니라, 라이팅 앵글, 피사체 동선, 라이트룸/보정 시 톤 커브 및 HSL 색조 조정 방안 등 구체적이고 실전적인 솔루션을 제시하십시오.\n\n"
+    "1. 🎨 [시각적 미학 및 EXIF 광학 진단]: 피사체의 시선 유도와 프레임 밸런스를 진단하고, 이것이 카메라 EXIF 세팅(조리개 심도, 셔터스피드, ISO 노이즈, 초점거리 화각)과 어떻게 상호작용하여 공간적 깊이감과 빛 모델링을 형성했는지 광학적으로 심층 분석하십시오.\n"
+    "2. 🔍 [구도·화질 결함 및 왜곡 위치 지적]: 왜곡(블러, 수차, 노이즈, 하이라이트/섀도우 클리핑)이 발생한 정확한 공간 영역과 피사체를 특정하고, 배경 분리감 부족이나 수평/수직 불균형 등 완성도를 저해하는 요소를 명확히 지적하십시오.\n"
+    "3. 💡 [현장 재촬영 & 보정 실전 기술 조언]: 셔터/조리개/초점거리 조작뿐만 아니라, 라이팅 앵글, 피사체 동선, 라이트룸/보정 시 톤 커브, HSL 색조, 텍스처 명료도 조정 방안 등 구체적이고 실전적인 솔루션을 제시하십시오.\n\n"
     "격조 높고 전문적인 한국어 평론체 문단으로 작성해주십시오."
 )
 
@@ -46,16 +47,16 @@ GEMMA_CRITIQUE_SUMMARY_SYSTEM_PROMPT = (
 )
 
 GEMMA_TRANSLATE_STEP1_SYSTEM_PROMPT = (
-    "당신은 정밀한 시각 언어 데이터 직역 전문 AI 번역가입니다.\n"
+    "당신은 정밀한 시각 지각 언어 데이터 직역 전문 AI 번역가입니다.\n"
     "제공된 영문 사진 비평 데이터를 한국어로 번역할 때 절대 임의로 해설이나 조언을 덧붙이지 마십시오.\n"
-    "원문의 미학(IAA), 화질(IQA), 구조/질감(ISTA) 분석 및 단점/근거 내용을 단 하나도 왜곡하거나 누락하지 말고 원문 그대로 100% 정확하게 1:1 직역하십시오."
+    "원문의 미학(IAA: 구도·시각요소·기술·독창성·주제·감정·게슈탈트·종합평가), 화질(IQA: 왜곡유형·왜곡위치 및 영향객체·심각도), 구조/질감(ISTA: 장면분해·물리구조 텍스처·재질 및 광학거동·기하구성·의미지각) 분석 내용을 단 하나도 왜곡하거나 누락하지 말고 원문 그대로 100% 정확하게 1:1 직역하십시오."
 )
 
 GEMMA_TRANSLATE_STEP2_SYSTEM_PROMPT = (
-    "당신은 저명한 사진 예술 잡지의 수석 에디터이자 평론가입니다.\n"
-    "제공된 1차 한국어 번역문의 사실관계, 분석 내용, 단점 및 수치를 단 하나도 변경하거나 누락하지 마십시오.\n"
-    "어색한 영문 직역 투를 품격 있고 매끄러운 한국어 사진 평론 스타일로 깔끔하게 문맥을 다듬어 정제하십시오.\n"
-    "출력 최상단의 `[📊 6-Way 앙상블 비평 스코어보드]` 대괄호 헤더 포맷을 토시 하나 바꾸지 말고 그대로 첫 줄에 유지하십시오."
+    "당신은 최고 권위의 사진 예술 잡지 수석 큐레이터이자 사진학 교수입니다.\n"
+    "제공된 1차 번역문의 시각적 분석 사실, 지각 수치, 결함 위치 지적을 100% 온전히 유지하십시오.\n"
+    "직역 투의 문장을 국내외 최상급 사진 평론가들이 사용하는 격조 높은 사진학 전문 용어(예: 시선 유도선, 프레임 밸런스, 전경/배경 원근 레이어 분리, 하이라이트 롤오프, 미세 질감 계조, 조형적 리듬감, 게슈탈트적 통일성)로 매끄럽고 유려하게 다듬으십시오.\n"
+    "출력 최상단의 `[📊 6-Way 앙상블 비평 스코어보드]` 헤더는 대괄호와 포맷을 토시 하나 바꾸지 말고 최상단 첫 줄에 그대로 유지하십시오."
 )
 
 # Backward compatibility alias
@@ -69,15 +70,31 @@ UNIPERCEPT_VR_SCORE_PROMPT = (
 )
 
 UNIPERCEPT_VQA_IAA_PROMPT = (
-    "Analyze the aesthetic qualities of this image in detail, focusing on composition, visual balance, lighting mood, color grading harmony, and artistic impact."
+    "Conduct a comprehensive Image Aesthetics Assessment (IAA) covering all 8 standard categories:\n"
+    "1. Composition & Design: Evaluate Visual Balance, Hierarchical Emphasis, Structural Organization, and Compositional Rhythm/Leading Lines.\n"
+    "2. Visual Elements & Structure: Analyze Line Dynamics, Shape Clarity, Form Realization (3D rendering), Spatial Illusion (Depth across layers), and Light Modeling.\n"
+    "3. Technical Execution: Critique Material Proficiency, Rendering Precision, Focus Hierarchy, and Tonal/Exposure Control.\n"
+    "4. Originality & Creativity: Evaluate Concept Innovation and Creative Problem-Solving in composition.\n"
+    "5. Theme & Communication: Assess Subject Clarity, Narrative Depth, and Cultural/Contextual Insight.\n"
+    "6. Emotion & Viewer Response: Analyze Emotional Resonance, Viewer Engagement, and Interpretive Openness.\n"
+    "7. Overall Gestalt: Critique Holistic Cohesion (how visual and conceptual components integrate into a unified whole).\n"
+    "8. Comprehensive Evaluation: Synthesize all artistic dimensions into an objective, evidence-grounded aesthetic evaluation."
 )
 
 UNIPERCEPT_VQA_IQA_PROMPT = (
-    "Analyze the technical image quality in detail, focusing on sharpness, optical clarity, depth of field, exposure balance, sensor noise, and lens characteristics."
+    "Conduct a rigorous Image Quality Assessment (IQA) covering all 3 standard categories:\n"
+    "1. Distortion Types Present: Identify specific optical/digital defects (e.g., motion blur, defocus softness, sensor noise/grain, chromatic aberration, exposure clipping, compression artifacts). If the photo is technically clean, explicitly state 'No noticeable technical distortion'.\n"
+    "2. Distortion Location & Object Association: Pinpoint spatial regions, edge sharpness, depth-of-field falloff, and focus accuracy across key subjects.\n"
+    "3. Distortion Severity Level: Objectively classify severity (None, Slight, or Obvious) and summarize optical clarity concisely in 2-3 focused paragraphs."
 )
 
 UNIPERCEPT_VQA_ISTA_PROMPT = (
-    "Analyze the structural and textural details in detail, focusing on surface textures, material definitions, edge clarity, geometry, and micro-contrast."
+    "Conduct a structural and material analysis following the Image Structure and Texture Assessment (ISTA) framework across all 5 standard categories:\n"
+    "1. Scene Decomposition: Decompose the scene into primary subject components, structural objects, and background elements.\n"
+    "2. Physical Structure: Describe surface micro-textures using base morphology descriptors (e.g., fibrous, grooved, crystalline, grid, marbled, wrinkled, smooth) and spatial arrangements (e.g., layered, radial, clustered, uniform).\n"
+    "3. Material Representation: Identify perceived material classes (e.g., Wood, Glass, Metal, Fabric, Stone, Foliage, Plastic) and optical surface behavior (e.g., Glossy, Matte, Reflective, Translucent).\n"
+    "4. Geometric Composition: Evaluate 2D planar contours (shapes) and 3D volumetric forms (e.g., cuboid, cylinder, sphere) constructing tangible tactile depth.\n"
+    "5. Semantic Perception: Assess stylistic classification (e.g., Minimalist, Classical, Modern, Cyberpunk) and functional/symbolic textural implications."
 )
 
 UNIPERCEPT_CRITIQUE_PROMPT = UNIPERCEPT_VQA_IAA_PROMPT

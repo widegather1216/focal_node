@@ -47,7 +47,11 @@
    * 백엔드 및 프론트엔드 소스 코드 추상화(Abstraction) 및 모듈화 달성 현황
 
 9. 🗺️ **[전체 개발 로드맵 (ROADMAP.md)](./ROADMAP.md)**
-   * Phase 1~18 마일스톤 완료 및 백엔드/프론트엔드 모듈화 리팩토링 현황
+   * Phase 1~19 마일스톤 완료 및 백엔드/프론트엔드 모듈화 리팩토링 현황
+
+10. 🔬 **연구 및 기술 분석 자료 (Research)**
+    * **[UniPercept RAM 30GB 점유 원인 분석 및 최적화 리포트](./research/UniPercept_Memory_Analysis.md)**
+    * **[UniPercept 논문 한국어 완역본](./research/UniPercept_Paper_Korean.md)**
 
 ---
 
@@ -60,7 +64,7 @@
 * **하드웨어 최적화:** M4 칩의 통합 메모리 구조를 극대화하는 MLX 어댑터를 우선 구축하고, 향후 Windows 확장성을 보장하는 어댑터(DIP) 패턴 적용.
 
 ### 1.2. 기술 스택 (Tech Stack)
-* **Frontend:** Tauri, React 18, TypeScript, Tailwind CSS, Zustand, TanStack Query, Recharts
+* **Frontend:** Tauri v2, React 19, TypeScript, Tailwind CSS, Zustand, TanStack Query, Recharts
 * **Backend:** Python (FastAPI), SQLAlchemy, PyInstaller
 * **Database:** SQLite (관계형 메타데이터, WAL 모드), ChromaDB (벡터 데이터)
-* **AI Models & Engine:** SigLIP 2, Gemma 4 E4B-it, UniPercept 8B / Apple MLX (Mac Native)
+* **AI Models & Engine:** SigLIP 2, Gemma 4 (12B-it-8bit), UniPercept 8B / Apple MLX & PyTorch MPS

@@ -9,10 +9,10 @@ interface CritiqueProgressWidgetProps {
 }
 
 const STEPS = [
-  { id: 1, label: '점수 산출 중', icon: BarChart3 },
-  { id: 2, label: '비평 작성 중', icon: FileText },
-  { id: 3, label: '비평 번역 중', icon: Languages },
-  { id: 4, label: '비평 다듬는 중', icon: Sparkles },
+  { id: 1, label: 'VR 점수 (3종)', icon: BarChart3 },
+  { id: 2, label: 'VQA 비평 (3종)', icon: FileText },
+  { id: 3, label: '한국어 직역', icon: Languages },
+  { id: 4, label: '사진학 정제', icon: Sparkles },
 ];
 
 export const CritiqueProgressWidget: React.FC<CritiqueProgressWidgetProps> = ({ status }) => {

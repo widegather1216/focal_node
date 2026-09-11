@@ -1,6 +1,6 @@
 # [Doc 3] 프론트엔드 아키텍처 및 UI/UX 설계
 
-이 문서는 React 18, TypeScript, Tailwind CSS, Tauri API를 결합한 데스크탑 앱의 프론트엔드 설계 및 사용자 인터페이스(UI) 최적화 전략을 다룹니다.
+이 문서는 React 19, TypeScript, Tailwind CSS, Tauri v2 API를 결합한 데스크탑 앱의 프론트엔드 설계 및 사용자 인터페이스(UI) 최적화 전략을 다룹니다.
 
 ---
 
@@ -35,11 +35,11 @@
 * **시나리오:** 처음 앱을 실행하여 데이터가 비어 있을 때 노출되는 화면입니다.
 * **구성:**
   * 화면 중앙에 입체감 있는 유리 효과(Glassmorphism) 스타일의 `[ + 사진 폴더 추가 ]` 버튼 배치.
-  * 해당 버튼 클릭 시 Tauri의 네이티브 파일 탐색기 창(`@tauri-apps/api/dialog.open` API)을 호출하여 로컬 폴더 경로를 가져옵니다.
+  * 해당 버튼 클릭 시 Tauri v2의 네이티브 파일 탐색기 창(`@tauri-apps/plugin-dialog`의 `open()` API)을 호출하여 로컬 폴더 경로를 가져옵니다.
 
 ### 2.2. 사이드바 (Navigation & Status)
 * **구성:**
-  * **메뉴 탭:** `[🖼️ Gallery]`, `[📊 Insights]`, `[❤️ Favorites]` 탭 제공.
+  * **메뉴 탭:** `[🖼️ Gallery]`, `[📊 Insights]`, `[🤖 Critique]` 탭 제공. (즐겨찾기는 갤러리/상세 필터 및 하트 토글로 지원)
   * **Folders 리스트:** 등록된 인덱싱 폴더 목록과 폴더 삭제(Unindex) 기능.
   * **인덱싱 진행 상태 패널:** Tauri 네이티브 이벤트 리스너(`@tauri-apps/api/event.listen`)를 등록하여 실시간 스트리밍 알림 수신 및 프로그레스 바 렌더링.
 

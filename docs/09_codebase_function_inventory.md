@@ -12,7 +12,7 @@ AI 모델 어댑터의 인터페이스 규격을 정의하는 추상 클래스�
 | 클래스 / 메서드 | 입력 (Parameters) | 출력 (Return Value) | 역할 및 사양 |
 | :--- | :--- | :--- | :--- |
 | `ImageEmbeddingPort.get_image_embedding` | `image_path: str` | `List[float]` | 이미지 파일 경로를 받아 고차원 시각 임베딩 벡터를 추출합니다. |
-| `ImageEmbeddingPort.get_zero_shot_hints` | `image_input: Any, top_k: int = 5` | `List[str]` | 이미지 임베딩 또는 경로를 받아 zero-shot 시각 키워드 후보를 반환합니다. |
+| `ImageEmbeddingPort.get_zero_shot_hints` | `image_input: Any, top_k: int = 15, min_score: float = 0.22` | `List[str]` | 이미지 임베딩 또는 경로를 받아 zero-shot 시각 키워드 후보를 반환합니다. |
 | `TextEmbeddingPort.get_text_embedding` | `text: str` | `List[float]` | 자연어 검색 쿼리를 받아 텍스트 임베딩 벡터를 추출합니다. |
 | `ImageCaptioningPort.generate_caption_and_tags` | `image_path: str, metadata: dict = None, siglip_hints: list = None` | `Dict[str, Any]` | 이미지 분석 후 `{"caption": str, "tags": list[str], "aesthetic_tags": list[str]}`를 반환합니다. |
 
@@ -39,6 +39,7 @@ SQLite ORM과 ChromaDB 벡터 스토리지를 전담 조작하는 레포지토�
 | 클래스 / 메서드 | 입력 (Parameters) | 출력 (Return Value) | 역할 및 사양 |
 | :--- | :--- | :--- | :--- |
 | `PhotoRepository.get_by_id` | `photo_id: str` | `Optional[Image]` | ID로 단일 사진 메타데이터 객체를 조회합니다. |
+| `PhotoRepository.get_by_ids` | `photo_ids: List[str]` | `List[Image]` | 900개 청크 분할 쿼리를 적용하여 다중 사진 ID 목록을 일괄 조회합니다. |
 | `PhotoRepository.get_by_path` | `file_path: str` | `Optional[Image]` | 원본 파일 경로로 단일 사진 객체를 조회합니다. |
 | `PhotoRepository.list_photos` | `limit: int, offset: int, parent_dir: str` | `List[Image]` | 페이지네이션 및 폴더 필터를 적용하여 사진 목록을 최신순 조회합니다. |
 | `PhotoRepository.search_by_text` | `query_str: str` | `List[str]` | SQLite `AIAnalysis` 캡션 및 태그에 대해 와일드카드 이스케이프가 적용된 텍스트 검색을 수행합니다. |
@@ -193,10 +194,19 @@ API 라우터로부터 비즈니스 로직을 분리 캡슐화한 서비스 모�
 | `ExifBarCharts` | `components/analytics/ExifBarCharts.tsx` | `focal_lengths, focal_lengths_35mm, apertures, customTooltip` | 화각(`use35mmMode` 상태 캡슐화) 및 조리개 사용 분포 막대 차트 2종 시각화 |
 | `PhotoAiAnalysisView` | `components/detail/PhotoAiAnalysisView.tsx` | `aiAnalysis, editing, captionEdit, tagsEdit, handleSave...` | AI 캡션/태그/미학 태그 렌더링 및 사용자 편집/저장 폼 |
 | `FilterRangeInput` | `components/filter/FilterRangeInput.tsx` | `label, minValue, maxValue, onMinChange, onMaxChange` | 검색 필터의 ISO/조리개/초점거리 Min-Max 숫자 범위 입력 컴포넌트 |
+| `ActionBar` | `components/ActionBar.tsx` | `isSelectMode, selectedCount, onToggleSelectMode, onExport, onSelectAll, onDeselectAll` | 상단 다중선택 모드 전환 및 내보내기/전체선택 액션바 컨트롤러 |
+| `ModelDownloadModal` | `components/ModelDownloadModal.tsx` | 없음 (Zustand 연동) | AI 모델 백그라운드 다운로드 진행률 및 취소/에러 모달 다이얼로그 |
 | `AppSplash` | `components/common/AppSplash.tsx` | `backendStatus, backendError, isDownloadingModel` | 앱 초기 구동 시 백엔드 포트 수신 및 환경 준비 대기 화면 |
 | `LoadingSpinner` | `components/common/LoadingSpinner.tsx` | `size, color, message, fullScreen` | 공통 로딩 스피너 및 무한 회전 애니메이션 컴포넌트 |
 | `useDebounce` | `hooks/useDebounce.ts` | `value: T, delay: number = 500` | 입력값(검색어 등) 500ms 디바운스 처리 범용 커스텀 훅 |
 | `useFullscreenControls` | `hooks/useFullscreenControls.ts` | 없음 | 풀스크린 뷰어 단축키(Esc, Arrow, Zoom, Zen), 확대/축소, 이전/다음 탐색 훅 |
+| `useAnalyticsQuery` | `hooks/useAnalyticsQuery.ts` | 없음 | `GET /api/analytics` 통계 데이터 캐싱을 위한 TanStack Query 훅 |
+| `useBackendInit` | `hooks/useBackendInit.ts` | 없음 | Sidecar 기동 대기, 포트 수신 및 헬스체크 초기화 훅 |
+| `useIndexingStatus` | `hooks/useIndexingStatus.ts` | 없음 | 백그라운드 인덱싱 진행률 및 상태 폴링 훅 |
+| `useModelDownloadStatus` | `hooks/useModelDownloadStatus.ts` | 없음 | AI 모델 백그라운드 다운로드 진행 상태 모니터링 훅 |
+| `usePhotoDetailQuery` | `hooks/usePhotoDetailQuery.ts` | `photoId: string | null` | 선택한 사진의 상세 메타데이터 조회를 위한 TanStack Query 훅 |
+| `usePhotosQuery` | `hooks/usePhotosQuery.ts` | `selectedFolder: string | null` | 갤러리 그리드 사진 목록 무한 스크롤 및 캐싱 TanStack Query 훅 |
+| `useTauriEvents` | `hooks/useTauriEvents.ts` | 없음 | Tauri Native Event 스트림 리스너 등록 및 전역 상태 디스패치 훅 |
 | `types/photo.ts` | `types/photo.ts` | N/A | `Photo`, `PhotoMetadata`, `SearchFilters` 타입 정의 모듈 |
 | `types/critique.ts` | `types/critique.ts` | N/A | `CritiqueItem`, `CritiqueSummaryResponse` 타입 정의 모듈 |
 

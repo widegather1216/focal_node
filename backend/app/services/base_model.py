@@ -29,8 +29,9 @@ class BaseKeepAliveModel:
 
     def touch_used(self):
         """Updates last used timestamp and ensures keep-alive timer is running."""
-        self.last_used_time = time.time()
-        self._start_keep_alive_timer_locked()
+        with self.lock:
+            self.last_used_time = time.time()
+            self._start_keep_alive_timer_locked()
 
     def _start_keep_alive_timer_locked(self):
         if not self.timer_active:

@@ -76,9 +76,9 @@ def test_safety_net_retry_logic(monkeypatch):
     import os
     adapter = UniPerceptAdapter()
     
-    test_img = os.path.abspath("scratch/test_images/test_scenic.jpg")
+    test_img = os.path.join(os.path.dirname(__file__), "fixtures", "test_scenic.jpg")
     if not os.path.exists(test_img):
-        test_img = os.path.abspath("../scratch/test_images/test_scenic.jpg")
+        test_img = os.path.abspath("backend/tests/fixtures/test_scenic.jpg")
     
     call_count = 0
     def mock_chat(*args, **kwargs):
@@ -134,9 +134,9 @@ def test_official_score2aestoken_mapping():
 def test_full_ensemble_6way_pipeline(monkeypatch):
     import os
     adapter = UniPerceptAdapter()
-    test_img = os.path.abspath("scratch/test_images/test_scenic.jpg")
+    test_img = os.path.join(os.path.dirname(__file__), "fixtures", "test_scenic.jpg")
     if not os.path.exists(test_img):
-        test_img = os.path.abspath("../scratch/test_images/test_scenic.jpg")
+        test_img = os.path.abspath("backend/tests/fixtures/test_scenic.jpg")
     
     vr_calls = []
     def mock_compute_vr(pixel_values, desc):
@@ -162,9 +162,9 @@ def test_full_ensemble_6way_pipeline(monkeypatch):
                     text = v
                     break
         vqa_calls.append(text)
-        if "aesthetic qualities" in text:
+        if "Image Aesthetics Assessment" in text or "aesthetic qualities" in text:
             return "Striking aesthetic composition with golden hour lighting."
-        elif "technical image quality" in text:
+        elif "Image Quality Assessment" in text or "technical image quality" in text:
             return "Pin-sharp optical clarity with minimal sensor noise."
         else:
             return "Exceptional micro-contrast and rich surface textures."

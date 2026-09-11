@@ -40,6 +40,8 @@ focal_node/
 │       ├── analytics/       # 통계 요약 및 차트 (AnalyticsKpiGrid, GearDonutCharts, ExifBarCharts)
 │       ├── filter/          # 필터 범위 입력 (FilterRangeInput)
 │       ├── detail/          # 상세 패널 뷰 (PhotoExifView, PhotoCritiqueView, PhotoAiAnalysisView)
+│       ├── ActionBar.tsx    # 상단 다중선택 및 내보내기/비평 액션바
+│       ├── ModelDownloadModal.tsx # AI 모델 다운로드 진행률 및 모달 다이얼로그
 │       ├── PhotoGallery.tsx # 가상화 수직 그리드 레이아웃 뷰
 │       ├── CritiqueView.tsx # AI 비평 대시보드 레이아웃 뷰
 │       ├── FullscreenViewer.tsx # 풀스크린 뷰어 조립 레이아웃

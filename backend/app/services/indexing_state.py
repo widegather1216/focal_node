@@ -19,9 +19,19 @@ class IndexingStateManager:
             "processed_files": 0,
             "current_file": ""
         }
-        self.pause_event = asyncio.Event()
-        self.pause_event.set()  # set() = running, clear() = paused
+        self._pause_event: asyncio.Event | None = None
         self.cancel_requested = False
+
+    @property
+    def pause_event(self) -> asyncio.Event:
+        if self._pause_event is None:
+            self._pause_event = asyncio.Event()
+            self._pause_event.set()
+        return self._pause_event
+
+    @pause_event.setter
+    def pause_event(self, val: asyncio.Event):
+        self._pause_event = val
 
     @property
     def status(self) -> str:

@@ -49,13 +49,17 @@ async def get_photo_thumbnail(id: str, db: Session = Depends(get_db)):
         
     try:
         cache_path = photo_service.get_thumbnail_path(id)
-        if await asyncio.to_thread(os.path.exists, cache_path):
+        def _is_cache_valid():
+            return os.path.exists(cache_path) and os.path.getsize(cache_path) > 0
+
+        if await asyncio.to_thread(_is_cache_valid):
             try:
                 def _read_cache():
                     with open(cache_path, "rb") as f:
                         return f.read()
                 thumb_bytes = await asyncio.to_thread(_read_cache)
-                return Response(content=thumb_bytes, media_type="image/jpeg")
+                if thumb_bytes:
+                    return Response(content=thumb_bytes, media_type="image/jpeg")
             except Exception:
                 pass
                 
@@ -165,24 +169,31 @@ async def export_photos(payload: schemas.ExportRequest):
         
         yield f"event: start\ndata: {json.dumps({'total': total_count})}\n\n".encode('utf-8')
         
+        def _copy_file_worker(item_dict: dict) -> tuple[bool, str, Optional[str]]:
+            src_path = item_dict["file_path"]
+            src_name = item_dict["file_name"]
+            if not os.path.exists(src_path):
+                return False, src_name, f"File not found: {src_path}"
+            
+            base, ext = os.path.splitext(src_name)
+            final_name = src_name
+            counter = 1
+            target_path = os.path.join(dest_folder, final_name)
+            while os.path.exists(target_path):
+                final_name = f"{base} ({counter}){ext}"
+                target_path = os.path.join(dest_folder, final_name)
+                counter += 1
+            shutil.copy2(src_path, target_path)
+            return True, final_name, None
+
         for idx, item in enumerate(export_items):
             try:
-                if os.path.exists(item["file_path"]):
-                    base, ext = os.path.splitext(item["file_name"])
-                    final_name = item["file_name"]
-                    counter = 1
-                    target_path = os.path.join(dest_folder, final_name)
-                    while os.path.exists(target_path):
-                        final_name = f"{base} ({counter}){ext}"
-                        target_path = os.path.join(dest_folder, final_name)
-                        counter += 1
-                        
-                    await asyncio.to_thread(shutil.copy2, item["file_path"], target_path)
+                success, final_name, err_msg = await asyncio.to_thread(_copy_file_worker, item)
+                if success:
                     exported_count += 1
-                    
                     yield f"event: progress\ndata: {json.dumps({'processed': idx + 1, 'total': total_count, 'file': final_name})}\n\n".encode('utf-8')
                 else:
-                    errors.append(f"File not found: {item['file_path']}")
+                    errors.append(err_msg)
             except Exception as e:
                 errors.append(f"Failed to copy {item['file_name']}: {str(e)}")
             

@@ -402,9 +402,11 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
             import mlx.core as mx
 
             # --- Pass 1: 1차 무왜곡 100% 직역 추론 (Direct Translation) ---
-            print("[GemmaAdapter] [Pass 1/2] Generating direct Korean translation...", flush=True)
+            print("\n" + "-"*60, flush=True)
+            print("[GemmaAdapter] ⏱️ [Gemma Step 1/2] 무왜곡 100% 한국어 직역 시작...", flush=True)
+            t_pass1 = time.time()
             if photo_id:
-                critique_status_manager.update(photo_id, 3, 4, "비평 번역 중", 75)
+                critique_status_manager.update(photo_id, 3, 4, "[Gemma] 한국어 정밀 직역 중...", 85)
             step1_prompt_text = format_unipercept_translate_step1_user_prompt(raw_en_critique, scores_dict, quality_score)
             messages_step1 = [
                 {
@@ -426,14 +428,16 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                 prompt1 = tokenizer.apply_chat_template(messages_step1, tokenize=False, add_generation_prompt=True)
 
                 from mlx_vlm import generate
-                result1 = generate(self.model, self.processor, prompt=prompt1, max_tokens=768, verbose=False)
+                result1 = generate(self.model, self.processor, prompt=prompt1, max_tokens=4096, verbose=False)
                 step1_output = (result1.text if hasattr(result1, "text") else str(result1)).strip()
-                print("[GemmaAdapter] [Pass 1/2] Direct Korean translation finished.", flush=True)
+                elapsed_pass1 = time.time() - t_pass1
+                print(f"[GemmaAdapter] ✅ [Gemma Step 1/2] 1차 직역 완료 ({len(step1_output)}자, 소요시간: {elapsed_pass1:.2f}초)", flush=True)
 
             # --- Pass 2: 2차 문맥 & 미학 스타일 다듬기 추론 (Style & Context Refinement) ---
-            print("[GemmaAdapter] [Pass 2/2] Refining style and photographic context...", flush=True)
+            print("[GemmaAdapter] ⏱️ [Gemma Step 2/2] 사진학 문맥 및 어조 다듬기 시작...", flush=True)
+            t_pass2 = time.time()
             if photo_id:
-                critique_status_manager.update(photo_id, 4, 4, "비평 다듬는 중", 90)
+                critique_status_manager.update(photo_id, 4, 4, "[Gemma] 사진학 평론 문맥 다듬는 중...", 95)
             step2_prompt_text = format_unipercept_translate_step2_user_prompt(step1_output, scores_dict, quality_score)
             messages_step2 = [
                 {
@@ -453,12 +457,16 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                     mx.clear_cache()
                     gc.collect()
                     prompt2 = tokenizer.apply_chat_template(messages_step2, tokenize=False, add_generation_prompt=True)
-                    result2 = generate(self.model, self.processor, prompt=prompt2, max_tokens=768, verbose=False)
+                    result2 = generate(self.model, self.processor, prompt=prompt2, max_tokens=4096, verbose=False)
                     step2_output = (result2.text if hasattr(result2, "text") else str(result2)).strip()
-                    print("[GemmaAdapter] [Pass 2/2] Style refinement finished.", flush=True)
+                    elapsed_pass2 = time.time() - t_pass2
+                    print(f"[GemmaAdapter] ✅ [Gemma Step 2/2] 2차 정제 완료 ({len(step2_output)}자, 소요시간: {elapsed_pass2:.2f}초)", flush=True)
+                    print(f"[GemmaAdapter] 🏁 Gemma 번역 파이프라인 전체 완료 (총 소요시간: {elapsed_pass1 + elapsed_pass2:.2f}초)", flush=True)
+                    print("-" * 60 + "\n", flush=True)
                     return step2_output
             except Exception as pass2_err:
-                print(f"[GemmaAdapter] Pass 2 context refinement warning ({pass2_err}). Returning Pass 1 direct translation.", flush=True)
+                elapsed_pass2 = time.time() - t_pass2
+                print(f"[GemmaAdapter] ⚠️ [Gemma Step 2/2] Pass 2 정제 실패 ({pass2_err}), 1차 직역본 사용 (소요시간: {elapsed_pass2:.2f}초)", flush=True)
                 return step1_output
 
         except Exception as e:
