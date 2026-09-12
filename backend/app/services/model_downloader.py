@@ -11,7 +11,7 @@ KNOWN_MODEL_SIZES: Dict[str, int] = {
 }
 
 _size_cache: Dict[str, tuple[float, int]] = {}
-_size_cache_lock = threading.Lock()
+_size_cache_lock = threading.RLock()
 
 def get_repo_downloaded_bytes(repo_id: str, ttl: float = 1.5) -> int:
     now = time.time()
@@ -44,7 +44,7 @@ def get_repo_downloaded_bytes(repo_id: str, ttl: float = 1.5) -> int:
 
 class ModelDownloadStatusTracker:
     _instance = None
-    _lock = threading.Lock()
+    _lock = threading.RLock()
 
     def __new__(cls):
         with cls._lock:
@@ -316,7 +316,7 @@ def download_models_background():
     print("[Downloader] Completed all model downloads.", flush=True)
 
 _downloader_thread: Optional[threading.Thread] = None
-_downloader_lock = threading.Lock()
+_downloader_lock = threading.RLock()
 
 def start_background_model_downloader(force: bool = False) -> bool:
     global _downloader_thread

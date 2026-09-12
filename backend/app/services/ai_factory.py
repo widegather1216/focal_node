@@ -3,7 +3,7 @@ from core.ports import ImageEmbeddingPort, TextEmbeddingPort, ImageCaptioningPor
 
 _siglip_adapter = None
 _gemma_adapter = None
-_factory_lock = threading.Lock()
+_factory_lock = threading.RLock()
 
 def get_siglip_adapter() -> ImageEmbeddingPort:
     """

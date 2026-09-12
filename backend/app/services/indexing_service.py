@@ -369,6 +369,9 @@ async def reindex_single_photo_inplace(photo_id: str) -> dict:
         
         chroma_meta = _prepare_chroma_metadata(metadata)
         
+        # Backup existing Chroma embedding in case SQLite commit fails
+        old_embedding = await asyncio.to_thread(vector_repo.get_embedding_by_id, photo_id)
+        
         await asyncio.to_thread(
             vector_repo.upsert,
             ids=[photo_id],
@@ -376,10 +379,26 @@ async def reindex_single_photo_inplace(photo_id: str) -> dict:
             metadatas=[chroma_meta]
         )
         
-        db.commit()
-        db.refresh(db_img)
-        
-        return db_img.to_detail_dict()
+        try:
+            db.commit()
+            db.refresh(db_img)
+            return db_img.to_detail_dict()
+        except Exception as commit_err:
+            db.rollback()
+            try:
+                if old_embedding:
+                    await asyncio.to_thread(
+                        vector_repo.upsert,
+                        ids=[photo_id],
+                        embeddings=[old_embedding],
+                        metadatas=[chroma_meta]
+                    )
+                else:
+                    await asyncio.to_thread(vector_repo.delete, [photo_id])
+                print(f"[CompensatingTx] Successfully reverted ChromaDB after SQLite failure: {commit_err}", flush=True)
+            except Exception as comp_err:
+                print(f"[CompensatingTx] Failed to execute compensating ChromaDB rollback: {comp_err}", flush=True)
+            raise commit_err
     except Exception as e:
         db.rollback()
         print(f"[Indexer] Re-index failed for {photo_id}: {e}", flush=True)

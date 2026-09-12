@@ -22,13 +22,15 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
         self.model = None
         self.processor = None
         self.cached_taxonomy_embeddings = None
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         
         # SigLIP 2 is relatively lightweight and serves critical search path,
         # so we keep it loaded in memory from startup/initialization.
         self._load_model()
 
     def _load_model(self):
+        if self.model is not None:
+            return
         with GPU_LOCK:
             with self.lock:
                 if self.model is None:
@@ -52,6 +54,8 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
             self._precompute_taxonomy_embeddings()
 
     def _precompute_taxonomy_embeddings(self):
+        if self.cached_taxonomy_embeddings is not None:
+            return
         try:
             from services.taxonomy import SIGLIP_VISUAL_TAXONOMY
             import torch
@@ -142,8 +146,10 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
 
     def _load_model_locked(self):
         # Assumes self.lock is already acquired
-        if self.model is None:
-            with GPU_LOCK:
+        if self.model is not None:
+            self.touch_used()
+            return
+        with GPU_LOCK:
                 print(f"[GemmaAdapter] Lazy loading model {self.model_id} via mlx_vlm...", flush=True)
                 import sys, os
                 if getattr(sys, 'frozen', False) and "MLX_METAL_PATH" not in os.environ:

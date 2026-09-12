@@ -46,8 +46,10 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         self.torch_dtype = torch.bfloat16 if self.device == "mps" else torch.float32
 
     def _load_model_locked(self):
-        if self.model is None:
-            with GPU_LOCK:
+        if self.model is not None:
+            self.touch_used()
+            return
+        with GPU_LOCK:
                 # Pre-load cache cleanup for MPS
                 gc.collect()
                 if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
@@ -754,7 +756,7 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         }
 
 _unipercept_adapter_instance = None
-_unipercept_lock = threading.Lock()
+_unipercept_lock = threading.RLock()
 
 def get_unipercept_adapter() -> UniPerceptAdapter:
     global _unipercept_adapter_instance

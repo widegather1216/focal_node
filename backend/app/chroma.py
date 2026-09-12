@@ -9,7 +9,7 @@ CHROMA_DB_PATH = CHROMA_DIR
 
 _chroma_client = None
 _collection = None
-_init_lock = threading.Lock()
+_init_lock = threading.RLock()
 
 def _init_chroma_client():
     global _chroma_client

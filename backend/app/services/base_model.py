@@ -23,7 +23,7 @@ class BaseKeepAliveModel:
 
         self.last_used_time: float = 0.0
         self.active_requests: int = 0
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.timer_thread: Optional[threading.Thread] = None
         self.timer_active: bool = False
 
