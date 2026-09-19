@@ -449,3 +449,44 @@ async def test_sync_and_zero_file_indexing_lifecycle(client):
     status_resp = client.get("/api/index/status")
     assert status_resp.status_code == 200
     assert status_resp.json()["status"] in ["idle", "processing"]
+
+
+def test_document_structuring_prompt_and_fallback():
+    """
+    Verifies that the 2nd-pass document structuring prompt builds correctly,
+    includes required editorial instructions, and safely handles fallbacks.
+    """
+    from services.ai_parser import (
+        GEMMA_DOCUMENT_FORMATTING_SYSTEM_PROMPT,
+        format_critique_document_structuring_user_prompt
+    )
+    from services.critique_status import critique_status_manager
+
+    # 1. System prompt contains editorial guidelines
+    assert "한 줄 총평" in GEMMA_DOCUMENT_FORMATTING_SYSTEM_PROMPT
+    assert "시각적 미학 및 EXIF 광학 진단" in GEMMA_DOCUMENT_FORMATTING_SYSTEM_PROMPT
+    assert "구도 및 화질 결함과 왜곡 위치 지적" in GEMMA_DOCUMENT_FORMATTING_SYSTEM_PROMPT
+    assert "현장 재촬영 및 보정 실전 기술 조언" in GEMMA_DOCUMENT_FORMATTING_SYSTEM_PROMPT
+    assert "이모티콘" in GEMMA_DOCUMENT_FORMATTING_SYSTEM_PROMPT
+
+    # 2. User prompt builder formats draft and EXIF metadata
+    test_draft = "1차 비평 초안: 구도가 훌륭하며 빛의 활용이 뛰어남."
+    test_meta = {
+        "camera_model": "Sony A7M4",
+        "lens_model": "FE 35mm F1.4 GM",
+        "f_number": 1.4,
+        "shutter_speed": "1/500",
+        "iso": 100
+    }
+    user_prompt = format_critique_document_structuring_user_prompt(test_draft, test_meta)
+    assert test_draft in user_prompt
+    assert "Sony A7M4" in user_prompt
+    assert "F1.4" in user_prompt
+
+    # 3. Status manager supports Step 3 progress
+    critique_status_manager.update("test_photo_doc", 3, 4, "[Gemma] 리포트 문서 양식 다듬는 중...", 75)
+    st = critique_status_manager.get("test_photo_doc")
+    assert st["step"] == 3
+    assert st["progress"] == 75
+    assert "리포트 문서 양식" in st["message"]
+

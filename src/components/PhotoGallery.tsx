@@ -6,6 +6,7 @@ import { api } from '../services/api';
 import { useDebounce } from '../hooks/useDebounce';
 import { PhotoCard } from './gallery/PhotoCard';
 import { LoadingSpinner } from './common/LoadingSpinner';
+import { Loader2 } from 'lucide-react';
 
 interface PhotoGalleryProps {
   selectedFolder: string | null;
@@ -187,8 +188,9 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
             >
               {isLoaderRow ? (
                 hasNextPage ? (
-                  <div style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#a1a1aa', fontSize: '13px' }}>
-                    사진 추가 로딩 중...
+                  <div style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', color: '#a1a1aa', fontSize: '13px' }}>
+                    <Loader2 size={15} className="spin" color="#c084fc" />
+                    <span>사진 추가 로딩 중...</span>
                   </div>
                 ) : null
               ) : (

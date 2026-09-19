@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { Wand2, RefreshCw, Trash2 } from 'lucide-react';
+import { Wand2, RefreshCw, Trash2, FileText } from 'lucide-react';
 import { api } from '../../services/api';
 import { CritiqueStatus } from '../../types/critique';
 import { CritiqueProgressWidget } from '../critique/CritiqueProgressWidget';
+import { CritiqueContentRenderer } from '../critique/CritiqueContentRenderer';
+import { useAppStore } from '../../store/useAppStore';
 
 interface PhotoCritiqueViewProps {
   photoId?: string;
@@ -19,6 +21,7 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
   onRequestCritique,
   onDeleteCritique
 }) => {
+  const { openCritiqueDocument } = useAppStore();
   const [status, setStatus] = useState<CritiqueStatus | null>(null);
 
   useEffect(() => {
@@ -96,8 +99,32 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
       )}
 
       {!loadingCritique && critique && (
-        <div style={{ fontSize: '13px', lineHeight: '1.6', color: '#ddd', whiteSpace: 'pre-line' }}>
-          {critique}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button
+              onClick={() => photoId && openCritiqueDocument(photoId)}
+              style={{
+                background: 'rgba(168, 85, 247, 0.15)',
+                border: '1px solid rgba(168, 85, 247, 0.35)',
+                color: '#c084fc',
+                cursor: 'pointer',
+                fontSize: '11.5px',
+                fontWeight: 600,
+                padding: '5px 10px',
+                borderRadius: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                transition: 'all 0.2s ease'
+              }}
+              title="리포트 문서 모드로 넓게 읽기"
+            >
+              <FileText size={13} />
+              <span>문서로 크게 보기</span>
+            </button>
+          </div>
+
+          <CritiqueContentRenderer content={critique} mode="compact" />
         </div>
       )}
 

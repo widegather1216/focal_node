@@ -50,7 +50,7 @@ export const IndexingProgressCard: React.FC<IndexingProgressCardProps> = ({
           {isPaused ? (
             <span style={{ fontSize: '12px' }}>⏸️</span>
           ) : (
-            <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+            <Loader2 size={14} className="spin" color="#4ade80" />
           )}
           <span style={{ fontSize: '12px', fontWeight: '600', color: isPaused ? '#fde047' : '#fff' }}>
             {statusTitle}

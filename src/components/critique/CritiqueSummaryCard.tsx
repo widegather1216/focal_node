@@ -1,7 +1,8 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Award, Check, Copy, RefreshCw, ChevronUp, ChevronDown, X, Loader2, AlertCircle } from 'lucide-react';
+import { Award, RefreshCw, Copy, Check, ChevronDown, ChevronUp, X, Loader2, AlertCircle } from 'lucide-react';
 import { CritiqueSummaryResponse } from '../../types/critique';
+import { CritiqueContentRenderer } from './CritiqueContentRenderer';
 
 interface CritiqueSummaryCardProps {
   isGeneratingSummary: boolean;
@@ -172,15 +173,11 @@ export const CritiqueSummaryCard: React.FC<CritiqueSummaryCardProps> = ({
 
           {!isGeneratingSummary && summaryData && (
             <div style={{
-              fontSize: '14px',
-              lineHeight: '1.75',
-              color: '#f4f4f5',
-              whiteSpace: 'pre-line',
-              maxHeight: '400px',
+              maxHeight: '500px',
               overflowY: 'auto',
               paddingRight: '8px'
             }}>
-              {summaryData.summary}
+              <CritiqueContentRenderer content={summaryData.summary} mode="document" />
             </div>
           )}
         </div>

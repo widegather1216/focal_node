@@ -112,6 +112,7 @@ export const GlobalCritiqueToast: React.FC = () => {
                 borderRadius: '6px',
                 background: isCompleted ? 'rgba(34, 197, 94, 0.2)' : 'rgba(168, 85, 247, 0.2)',
                 border: isCompleted ? '1px solid rgba(34, 197, 94, 0.4)' : '1px solid rgba(168, 85, 247, 0.4)',
+                boxShadow: isCompleted ? '0 0 8px rgba(34, 197, 94, 0.3)' : '0 0 8px rgba(168, 85, 247, 0.3)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',

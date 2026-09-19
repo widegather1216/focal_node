@@ -439,11 +439,11 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                 elapsed_pass1 = time.time() - t_pass1
                 print(f"[GemmaAdapter] ✅ [Gemma Step 1/2] 1차 직역 완료 ({len(step1_output)}자, 소요시간: {elapsed_pass1:.2f}초)", flush=True)
 
-            # --- Pass 2: 2차 문맥 & 미학 스타일 다듬기 추론 (Style & Context Refinement) ---
-            print("[GemmaAdapter] ⏱️ [Gemma Step 2/2] 사진학 문맥 및 어조 다듬기 시작...", flush=True)
+            # --- Pass 2: 2차 학술 감수 및 리포트 양식 정돈 (Academic Proofreading & Report Formatting) ---
+            print("[GemmaAdapter] ⏱️ [Gemma Step 2/2] 학술 감수 및 리포트 양식 정돈 시작...", flush=True)
             t_pass2 = time.time()
             if photo_id:
-                critique_status_manager.update(photo_id, 4, 4, "[Gemma] 사진학 평론 문맥 다듬는 중...", 95)
+                critique_status_manager.update(photo_id, 4, 4, "[Gemma] 학술 리포트 양식 감수 및 정돈 중...", 95)
             step2_prompt_text = format_unipercept_translate_step2_user_prompt(step1_output, scores_dict, quality_score)
             messages_step2 = [
                 {
@@ -488,5 +488,87 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
             with self.lock:
                 self.last_used_time = time.time()
                 self.active_requests -= 1
+
+    def format_and_structure_critique(self, critique_draft: str, metadata: dict = None, photo_id: str = None) -> str:
+        """
+        Pass 2: Uses Gemma LLM (pure text completion) to restructure and polish draft critique
+        into official photo critique magazine report format without content distortion.
+        """
+        if not critique_draft or len(critique_draft.strip()) < 20:
+            return critique_draft
+
+        with GPU_LOCK:
+            with self.lock:
+                self._load_model_locked()
+                self.last_used_time = time.time()
+                self.active_requests += 1
+
+        try:
+            from services.ai_parser import (
+                GEMMA_DOCUMENT_FORMATTING_SYSTEM_PROMPT,
+                format_critique_document_structuring_user_prompt
+            )
+            from services.critique_status import critique_status_manager
+
+            if photo_id:
+                critique_status_manager.update(photo_id, 3, 4, "[Gemma] 리포트 문서 양식 다듬는 중...", 75)
+
+            print("[GemmaAdapter] ⏱️ [Gemma Document Polish] 비평 문서 구조화 및 양식 정돈 시작...", flush=True)
+            t_start = time.time()
+
+            user_prompt = format_critique_document_structuring_user_prompt(critique_draft, metadata)
+            messages = [
+                {
+                    "role": "system",
+                    "content": GEMMA_DOCUMENT_FORMATTING_SYSTEM_PROMPT
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": user_prompt}
+                    ]
+                }
+            ]
+
+            with GPU_LOCK:
+                try:
+                    import mlx.core as mx
+                    mx.clear_cache()
+                    gc.collect()
+
+                    tokenizer = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
+                    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+
+                    from mlx_vlm import generate
+                    result = generate(self.model, self.processor, prompt=prompt, max_tokens=2048, verbose=False)
+                    output = (result.text if hasattr(result, "text") else str(result)).strip()
+
+                    elapsed = time.time() - t_start
+                    print(f"[GemmaAdapter] ✅ [Gemma Document Polish] 문서 양식 정돈 완료 ({len(output)}자, 소요시간: {elapsed:.2f}초)", flush=True)
+
+                    # Ensure scoreboard is preserved if it was present in draft but omitted in output
+                    if "앙상블 비평 스코어보드" in critique_draft and "앙상블 비평 스코어보드" not in output:
+                        sb_match = critique_draft.split("\n\n## 1.")[0].split("\n\n1. ")[0]
+                        if "앙상블 비평 스코어보드" in sb_match:
+                            output = f"{sb_match.strip()}\n\n{output}"
+
+                    return output if output and len(output) > 30 else critique_draft
+                except RuntimeError as e:
+                    print(f"[GemmaAdapter] MLX OOM during document structuring: {e}. Falling back to draft...", flush=True)
+                    try:
+                        import mlx.core as mx
+                        mx.clear_cache()
+                    except Exception:
+                        pass
+                    gc.collect()
+                    return critique_draft
+                except Exception as e:
+                    print(f"[GemmaAdapter] Unexpected document structuring error: {e}. Falling back to draft...", flush=True)
+                    return critique_draft
+        finally:
+            with self.lock:
+                self.last_used_time = time.time()
+                self.active_requests -= 1
+
 
 

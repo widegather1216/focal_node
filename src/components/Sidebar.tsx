@@ -290,7 +290,7 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
             opacity: isIndexing ? 0.5 : 1
           }}
         >
-          <RefreshCw size={16} />
+          <RefreshCw size={16} className={isIndexing ? 'spin' : ''} />
           Sync Database
         </motion.button>
       </div>

@@ -242,4 +242,103 @@ def test_natural_flow_format_and_bracket_parsing():
     assert single_overall == 98
 
 
+def test_unipercept_prompts_strict_fidelity_and_no_emoji():
+    from services.ai_parser import (
+        GEMMA_TRANSLATE_STEP1_SYSTEM_PROMPT,
+        GEMMA_TRANSLATE_STEP2_SYSTEM_PROMPT,
+        format_unipercept_translate_step1_user_prompt,
+        format_unipercept_translate_step2_user_prompt
+    )
+
+    # 1. Step 1 system prompt fidelity & no emoji
+    assert "왜곡" in GEMMA_TRANSLATE_STEP1_SYSTEM_PROMPT
+    assert "이모티콘" in GEMMA_TRANSLATE_STEP1_SYSTEM_PROMPT
+
+    # 2. Step 2 system prompt: strictly prohibits subjective intervention and hallucination
+    assert "무개입" in GEMMA_TRANSLATE_STEP2_SYSTEM_PROMPT
+    assert "학술 번역 감수자" in GEMMA_TRANSLATE_STEP2_SYSTEM_PROMPT
+    assert "## 1. [미학 및 구도 평가 (IAA)]" in GEMMA_TRANSLATE_STEP2_SYSTEM_PROMPT
+    assert "## 2. [화질 및 광학 기술 평가 (IQA)]" in GEMMA_TRANSLATE_STEP2_SYSTEM_PROMPT
+    assert "## 3. [구조 및 질감 분석 (ISTA)]" in GEMMA_TRANSLATE_STEP2_SYSTEM_PROMPT
+    assert "이모티콘" in GEMMA_TRANSLATE_STEP2_SYSTEM_PROMPT
+
+    # 3. User prompts have matching standard headers
+    scores = {"overall": 90, "iaa": 92, "iqa": 88, "ista": 91}
+    step1_prompt = format_unipercept_translate_step1_user_prompt("Raw test critique", scores)
+    assert "## 1. [미학 및 구도 평가 (IAA)]" in step1_prompt
+    assert "## 2. [화질 및 광학 기술 평가 (IQA)]" in step1_prompt
+    assert "## 3. [구조 및 질감 분석 (ISTA)]" in step1_prompt
+
+    step2_prompt = format_unipercept_translate_step2_user_prompt("Draft ko critique", scores)
+    assert "## 1. [미학 및 구도 평가 (IAA)]" in step2_prompt
+    assert "한 줄 총평" in step2_prompt
+    assert "원문에 없는 새로운 조언" in step2_prompt
+
+
+@pytest.mark.asyncio
+async def test_chat_service_unipercept_pipeline_isolation(monkeypatch, db_session):
+    """
+    Verifies that when payload.engine == 'unipercept', format_and_structure_critique
+    is NEVER called, preventing Gemma from overriding UniPercept critique content.
+    """
+    from contextlib import contextmanager
+    from services.chat_service import ChatService
+    import schemas, models
+
+    photo_id = "test_critique_isolation_img"
+    test_img = models.Image(
+        id=photo_id,
+        parent_dir="/test",
+        file_path="/test/img.jpg",
+        file_name="img.jpg",
+        file_size=1000,
+        file_mtime=1.0,
+        mime_type="image/jpeg"
+    )
+    db_session.add(test_img)
+    db_session.commit()
+
+    @contextmanager
+    def mock_session_scope():
+        yield db_session
+
+    monkeypatch.setattr("services.chat_service.SessionLocal", mock_session_scope)
+
+    mock_format_called = False
+    mock_translate_called = False
+
+    class DummyUniPercept:
+        def generate_full_ensemble_critique(self, *args, **kwargs):
+            return {
+                "critique": "Raw english critique from UniPercept",
+                "scores": {"overall": 88, "iaa": 90, "iqa": 85, "ista": 89},
+                "quality_score": 88
+            }
+        def unload_model(self):
+            pass
+
+    class DummyGemma:
+        def translate_and_format_critique(self, *args, **kwargs):
+            nonlocal mock_translate_called
+            mock_translate_called = True
+            return "Translated UniPercept critique"
+
+        def format_and_structure_critique(self, *args, **kwargs):
+            nonlocal mock_format_called
+            mock_format_called = True
+            return "Overridden by format_and_structure"
+
+    monkeypatch.setattr("services.unipercept_adapter.get_unipercept_adapter", lambda: DummyUniPercept())
+    monkeypatch.setattr("services.chat_service.get_gemma_adapter", lambda: DummyGemma())
+
+    req = schemas.CritiqueRequest(photo_id=photo_id, engine="unipercept")
+    result = await ChatService.generate_photo_critique(req)
+
+    assert mock_translate_called is True
+    assert mock_format_called is False, "format_and_structure_critique should NOT be called for unipercept engine"
+    assert "6-Way 앙상블 비평 스코어보드" in result["critique"]
+    assert "Translated UniPercept critique" in result["critique"]
+
+
+
 

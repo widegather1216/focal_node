@@ -75,6 +75,10 @@ interface AppState {
   activeCritiqueJob: { photoId: string; fileName?: string } | null;
   setActiveCritiqueJob: (job: { photoId: string; fileName?: string } | null) => void;
 
+  critiqueDocumentPhotoId: string | null;
+  openCritiqueDocument: (photoId: string) => void;
+  closeCritiqueDocument: () => void;
+
   folders: IndexedFolder[];
   setFolders: (folders: IndexedFolder[]) => void;
   fetchFolders: () => Promise<void>;
@@ -153,6 +157,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   activeCritiqueJob: null,
   setActiveCritiqueJob: (activeCritiqueJob) => set({ activeCritiqueJob }),
+
+  critiqueDocumentPhotoId: null,
+  openCritiqueDocument: (photoId) => set({ critiqueDocumentPhotoId: photoId }),
+  closeCritiqueDocument: () => set({ critiqueDocumentPhotoId: null }),
 
   folders: [],
   setFolders: (folders) => set({ folders }),

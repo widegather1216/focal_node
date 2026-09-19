@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Download, X } from 'lucide-react';
+import { Download, X, Loader2 } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useAppStore } from '../store/useAppStore';
 import { api } from '../services/api';
@@ -103,7 +103,7 @@ export function ActionBar() {
                 fontSize: '13px'
               }}
             >
-              <Download size={15} />
+              {exporting ? <Loader2 size={15} className="spin" /> : <Download size={15} />}
               {exporting ? '내보내는 중...' : '내보내기 (Export)'}
             </motion.button>
             

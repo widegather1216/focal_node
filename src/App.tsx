@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import { useAppStore } from "./store/useAppStore";
 import { useBackendInit } from "./hooks/useBackendInit";
 import { useTauriEvents } from "./hooks/useTauriEvents";
@@ -19,6 +19,7 @@ const AnalyticsView = lazy(() => import("./components/AnalyticsView").then(m => 
 const CritiqueView = lazy(() => import("./components/CritiqueView").then(m => ({ default: m.CritiqueView })));
 const DetailPanel = lazy(() => import("./components/DetailPanel").then(m => ({ default: m.DetailPanel })));
 const FullscreenViewer = lazy(() => import("./components/FullscreenViewer").then(m => ({ default: m.FullscreenViewer })));
+const CritiqueDocumentModal = lazy(() => import("./components/critique/CritiqueDocumentModal").then(m => ({ default: m.CritiqueDocumentModal })));
 
 function App() {
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
@@ -27,7 +28,18 @@ function App() {
   useModelDownloadStatus();
   useIndexingStatus();
 
-  const { isDownloadingModel, activeTab } = useAppStore();
+  const { isDownloadingModel, activeTab, openCritiqueDocument } = useAppStore();
+
+  // Detect popout mode from query params
+  const urlParams = new URLSearchParams(window.location.search);
+  const isPopoutCritique = urlParams.get('popout') === 'critique';
+  const popoutPhotoId = urlParams.get('photoId');
+
+  useEffect(() => {
+    if (isPopoutCritique && popoutPhotoId) {
+      openCritiqueDocument(popoutPhotoId);
+    }
+  }, [isPopoutCritique, popoutPhotoId, openCritiqueDocument]);
 
   if (loading || backendError) {
     return (
@@ -36,6 +48,19 @@ function App() {
         backendError={backendError}
         isDownloadingModel={isDownloadingModel}
       />
+    );
+  }
+
+  // Pure standalone window mode when popped out
+  if (isPopoutCritique) {
+    return (
+      <ErrorBoundary fallbackTitle="비평 문서 뷰어 로딩 중 오류가 발생했습니다">
+        <div style={{ width: '100vw', height: '100vh', backgroundColor: '#09090b', overflow: 'hidden' }}>
+          <Suspense fallback={<LoadingSpinner fullScreen message="비평 문서를 불러오는 중..." />}>
+            <CritiqueDocumentModal />
+          </Suspense>
+        </div>
+      </ErrorBoundary>
     );
   }
 
@@ -75,6 +100,10 @@ function App() {
         
         <Suspense fallback={null}>
           <FullscreenViewer />
+        </Suspense>
+
+        <Suspense fallback={null}>
+          <CritiqueDocumentModal />
         </Suspense>
       </div>
     </ErrorBoundary>

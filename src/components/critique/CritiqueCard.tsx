@@ -1,8 +1,10 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Camera, Calendar, Eye, ExternalLink, Maximize2, Copy, Check, Trash2 } from 'lucide-react';
+import { Camera, Calendar, Eye, ExternalLink, Maximize2, Copy, Check, Trash2, FileText } from 'lucide-react';
 import { CritiqueItem } from '../../types/critique';
 import { api } from '../../services/api';
+import { useAppStore } from '../../store/useAppStore';
+import { CritiqueContentRenderer } from './CritiqueContentRenderer';
 
 interface CritiqueCardProps {
   item: CritiqueItem;
@@ -37,6 +39,7 @@ export const CritiqueCard: React.FC<CritiqueCardProps> = ({
   onCopy,
   onDelete
 }) => {
+  const { openCritiqueDocument } = useAppStore();
   const thumbUrl = api.getPhotoThumbnailUrl(item.photo_id);
   const formattedDate = item.critique_updated_at 
     ? new Date(item.critique_updated_at).toLocaleDateString('ko-KR', {
@@ -179,16 +182,17 @@ export const CritiqueCard: React.FC<CritiqueCardProps> = ({
         justifyContent: 'space-between',
         gap: '16px'
       }}>
-        <div style={{
-          fontSize: '13px',
-          lineHeight: '1.65',
-          color: '#e4e4e7',
-          whiteSpace: 'pre-line',
-          maxHeight: '180px',
-          overflowY: 'auto',
-          paddingRight: '6px'
-        }}>
-          {item.critique}
+        <div 
+          style={{
+            fontSize: '13px',
+            lineHeight: '1.65',
+            color: '#e4e4e7',
+            maxHeight: '200px',
+            overflowY: 'auto',
+            paddingRight: '6px'
+          }}
+        >
+          <CritiqueContentRenderer content={item.critique} mode="compact" />
         </div>
 
         {/* Card Action Footer */}
@@ -200,6 +204,18 @@ export const CritiqueCard: React.FC<CritiqueCardProps> = ({
           borderTop: '1px solid rgba(255, 255, 255, 0.06)'
         }}>
           <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={() => openCritiqueDocument(item.photo_id)}
+              style={{
+                ...cardBtnStyle,
+                background: 'rgba(168, 85, 247, 0.15)',
+                border: '1px solid rgba(168, 85, 247, 0.35)',
+                color: '#c084fc'
+              }}
+              title="리포트 문서 뷰어로 크게 보기"
+            >
+              <FileText size={12} /> 문서로 보기
+            </button>
             <button onClick={() => onSelectPhoto(item.photo_id)} style={cardBtnStyle}>
               <ExternalLink size={12} /> 상세 패널
             </button>

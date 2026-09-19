@@ -62,11 +62,11 @@ class ChatService:
                     )
                     if scores_dict and "앙상블 비평 스코어보드" not in critique_text:
                         sb_header = (
-                            f"[📊 6-Way 앙상블 비평 스코어보드]\n"
+                            f"[6-Way 앙상블 비평 스코어보드]\n"
                             f"- 최종 종합 평점: {scores_dict.get('overall')}점 / 100점\n"
-                            f"- 🎨 미학 & 구도 (IAA): {scores_dict.get('iaa')}점\n"
-                            f"- 🔍 화질 & 기술 (IQA): {scores_dict.get('iqa')}점\n"
-                            f"- 🧱 구조 & 질감 (ISTA): {scores_dict.get('ista')}점\n\n"
+                            f"- 미학 및 구도 (IAA): {scores_dict.get('iaa')}점\n"
+                            f"- 화질 및 선명도 (IQA): {scores_dict.get('iqa')}점\n"
+                            f"- 구조 및 질감 (ISTA): {scores_dict.get('ista')}점\n\n"
                         )
                         critique_text = f"{sb_header}{critique_text}"
                 except Exception as tr_err:
@@ -81,6 +81,19 @@ class ChatService:
                     meta_data,
                     payload.photo_id
                 )
+
+                # Pass 2: Gemma Document Structuring Pass (Polish & Formatting) - Only for Gemma direct critique
+                print("[ChatService] Starting Gemma document structuring pass...", flush=True)
+                critique_status_manager.update(payload.photo_id, 3, 4, "[Gemma] 리포트 문서 양식 다듬는 중...", 75)
+                try:
+                    critique_text = await asyncio.to_thread(
+                        get_gemma_adapter().format_and_structure_critique,
+                        critique_text,
+                        meta_data,
+                        payload.photo_id
+                    )
+                except Exception as fmt_err:
+                    print(f"[ChatService] Document structuring fallback to draft: {fmt_err}", flush=True)
             
             now_utc = models.utcnow()
             with SessionLocal() as db:

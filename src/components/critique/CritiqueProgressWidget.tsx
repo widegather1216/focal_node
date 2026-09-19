@@ -51,10 +51,11 @@ export const CritiqueProgressWidget: React.FC<CritiqueProgressWidgetProps> = ({ 
             height: '28px',
             borderRadius: '8px',
             background: 'rgba(168, 85, 247, 0.15)',
-            border: '1px solid rgba(168, 85, 247, 0.3)',
+            border: '1px solid rgba(168, 85, 247, 0.35)',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center'
+            justifyContent: 'center',
+            boxShadow: '0 0 12px rgba(168, 85, 247, 0.25)'
           }}>
             <Loader2 size={16} color="#c084fc" className="spin" />
           </div>
@@ -127,21 +128,36 @@ export const CritiqueProgressWidget: React.FC<CritiqueProgressWidgetProps> = ({ 
                 transition: 'all 0.3s ease'
               }}
             >
-              <div style={{
-                width: '24px',
-                height: '24px',
-                borderRadius: '50%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: isDone
-                  ? '#a855f7'
-                  : isCurrent
-                  ? 'rgba(168, 85, 247, 0.25)'
-                  : 'rgba(255, 255, 255, 0.05)',
-                color: isDone ? '#fff' : isCurrent ? '#c084fc' : '#71717a',
-              }}>
-                {isDone ? <CheckCircle2 size={14} /> : <Icon size={13} className={isCurrent ? 'spin-slow' : ''} />}
+              <div
+                className={isCurrent ? 'pulse-glow' : ''}
+                style={{
+                  width: '24px',
+                  height: '24px',
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: isDone
+                    ? '#a855f7'
+                    : isCurrent
+                    ? 'rgba(168, 85, 247, 0.25)'
+                    : 'rgba(255, 255, 255, 0.05)',
+                  border: isCurrent
+                    ? '1px solid rgba(192, 132, 252, 0.6)'
+                    : isDone
+                    ? '1px solid rgba(168, 85, 247, 0.8)'
+                    : '1px solid rgba(255, 255, 255, 0.08)',
+                  color: isDone ? '#fff' : isCurrent ? '#c084fc' : '#71717a',
+                  transition: 'all 0.3s ease'
+                }}
+              >
+                {isDone ? (
+                  <CheckCircle2 size={14} />
+                ) : isCurrent ? (
+                  <Loader2 size={13} className="spin" />
+                ) : (
+                  <Icon size={13} />
+                )}
               </div>
               <span style={{
                 fontSize: '11px',
