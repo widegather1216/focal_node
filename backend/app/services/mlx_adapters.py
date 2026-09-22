@@ -269,8 +269,9 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
         return parse_gemma_json_output(output)
 
     def generate_deep_critique(self, image_path: str, metadata: dict = None, photo_id: str = None) -> str:
+        from services.critique_status import critique_status_manager, CritiqueCancelledException
         if photo_id:
-            from services.critique_status import critique_status_manager
+            critique_status_manager.check_cancelled(photo_id)
             critique_status_manager.update(photo_id, 2, 4, "비평 작성 중", 50)
 
         with GPU_LOCK:
@@ -280,6 +281,9 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                 self.active_requests += 1
             
         try:
+            if photo_id:
+                critique_status_manager.check_cancelled(photo_id)
+
             from services.ai_parser import GEMMA_CRITIQUE_SYSTEM_PROMPT, format_exif_text
             exif_text = format_exif_text(metadata)
             messages = [
@@ -325,6 +329,8 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                     return "사진 비평 생성 중 알 수 없는 오류가 발생했습니다."
             
             return output.strip()
+        except CritiqueCancelledException:
+            raise
         finally:
             with self.lock:
                 self.last_used_time = time.time()
@@ -403,9 +409,12 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                 format_unipercept_translate_step1_user_prompt,
                 format_unipercept_translate_step2_user_prompt,
             )
-            from services.critique_status import critique_status_manager
+            from services.critique_status import critique_status_manager, CritiqueCancelledException
 
             import mlx.core as mx
+
+            if photo_id:
+                critique_status_manager.check_cancelled(photo_id)
 
             # --- Pass 1: 1차 무왜곡 100% 직역 추론 (Direct Translation) ---
             print("\n" + "-"*60, flush=True)
@@ -428,6 +437,8 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
             ]
 
             with GPU_LOCK:
+                if photo_id:
+                    critique_status_manager.check_cancelled(photo_id)
                 mx.clear_cache()
                 gc.collect()
                 tokenizer = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
@@ -438,6 +449,9 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                 step1_output = (result1.text if hasattr(result1, "text") else str(result1)).strip()
                 elapsed_pass1 = time.time() - t_pass1
                 print(f"[GemmaAdapter] ✅ [Gemma Step 1/2] 1차 직역 완료 ({len(step1_output)}자, 소요시간: {elapsed_pass1:.2f}초)", flush=True)
+
+            if photo_id:
+                critique_status_manager.check_cancelled(photo_id)
 
             # --- Pass 2: 2차 학술 감수 및 리포트 양식 정돈 (Academic Proofreading & Report Formatting) ---
             print("[GemmaAdapter] ⏱️ [Gemma Step 2/2] 학술 감수 및 리포트 양식 정돈 시작...", flush=True)
@@ -460,6 +474,8 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
 
             try:
                 with GPU_LOCK:
+                    if photo_id:
+                        critique_status_manager.check_cancelled(photo_id)
                     mx.clear_cache()
                     gc.collect()
                     prompt2 = tokenizer.apply_chat_template(messages_step2, tokenize=False, add_generation_prompt=True)
@@ -470,11 +486,15 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                     print(f"[GemmaAdapter] 🏁 Gemma 번역 파이프라인 전체 완료 (총 소요시간: {elapsed_pass1 + elapsed_pass2:.2f}초)", flush=True)
                     print("-" * 60 + "\n", flush=True)
                     return step2_output
+            except CritiqueCancelledException:
+                raise
             except Exception as pass2_err:
                 elapsed_pass2 = time.time() - t_pass2
                 print(f"[GemmaAdapter] ⚠️ [Gemma Step 2/2] Pass 2 정제 실패 ({pass2_err}), 1차 직역본 사용 (소요시간: {elapsed_pass2:.2f}초)", flush=True)
                 return step1_output
 
+        except CritiqueCancelledException:
+            raise
         except Exception as e:
             print(f"[GemmaAdapter] 2-Pass Translation failed ({e}). Returning raw UniPercept critique.", flush=True)
             return raw_en_critique
@@ -508,9 +528,10 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                 GEMMA_DOCUMENT_FORMATTING_SYSTEM_PROMPT,
                 format_critique_document_structuring_user_prompt
             )
-            from services.critique_status import critique_status_manager
+            from services.critique_status import critique_status_manager, CritiqueCancelledException
 
             if photo_id:
+                critique_status_manager.check_cancelled(photo_id)
                 critique_status_manager.update(photo_id, 3, 4, "[Gemma] 리포트 문서 양식 다듬는 중...", 75)
 
             print("[GemmaAdapter] ⏱️ [Gemma Document Polish] 비평 문서 구조화 및 양식 정돈 시작...", flush=True)
@@ -531,6 +552,8 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
             ]
 
             with GPU_LOCK:
+                if photo_id:
+                    critique_status_manager.check_cancelled(photo_id)
                 try:
                     import mlx.core as mx
                     mx.clear_cache()
@@ -553,6 +576,8 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                             output = f"{sb_match.strip()}\n\n{output}"
 
                     return output if output and len(output) > 30 else critique_draft
+                except CritiqueCancelledException:
+                    raise
                 except RuntimeError as e:
                     print(f"[GemmaAdapter] MLX OOM during document structuring: {e}. Falling back to draft...", flush=True)
                     try:
@@ -565,6 +590,8 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                 except Exception as e:
                     print(f"[GemmaAdapter] Unexpected document structuring error: {e}. Falling back to draft...", flush=True)
                     return critique_draft
+        except CritiqueCancelledException:
+            raise
         finally:
             with self.lock:
                 self.last_used_time = time.time()

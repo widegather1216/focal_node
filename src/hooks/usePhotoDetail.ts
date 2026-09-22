@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../store/useAppStore';
@@ -151,30 +151,71 @@ export function usePhotoDetail() {
     }
   };
 
+  const critiqueAbortControllerRef = useRef<AbortController | null>(null);
+
   const handleRequestCritique = async () => {
     const currentId = selectedPhotoId;
     if (!currentId || generatingCritiquePhotoIds.has(currentId)) return;
+
+    if (critiqueAbortControllerRef.current) {
+      critiqueAbortControllerRef.current.abort();
+    }
+    const abortController = new AbortController();
+    critiqueAbortControllerRef.current = abortController;
+
     addGeneratingCritiquePhotoId(currentId);
     useAppStore.getState().setActiveCritiqueJob({ photoId: currentId, fileName: photo?.file_name });
     try {
-      const result = await api.getPhotoCritique(currentId);
+      const result = await api.getPhotoCritique(currentId, abortController.signal);
+      if (result.status === 'cancelled') {
+        return;
+      }
       if (useAppStore.getState().selectedPhotoId === currentId) {
         setCritique(result.critique);
       }
       queryClient.invalidateQueries({ queryKey: ['critiques'] });
       queryClient.invalidateQueries({ queryKey: ['photoDetail', currentId] });
-    } catch (err) {
+    } catch (err: any) {
+      if (err.name === 'AbortError' || abortController.signal.aborted) {
+        return;
+      }
       if (useAppStore.getState().selectedPhotoId === currentId) {
         console.error("Failed to generate critique:", err);
         setCritique("비평을 생성하는 도중 오류가 발생했습니다.");
       }
     } finally {
       removeGeneratingCritiquePhotoId(currentId);
+      if (critiqueAbortControllerRef.current === abortController) {
+        critiqueAbortControllerRef.current = null;
+      }
       setTimeout(() => {
         if (useAppStore.getState().activeCritiqueJob?.photoId === currentId) {
           useAppStore.getState().setActiveCritiqueJob(null);
         }
       }, 3500);
+    }
+  };
+
+  const handleCancelCritique = async () => {
+    const currentId = selectedPhotoId;
+    if (!currentId) return;
+
+    if (critiqueAbortControllerRef.current) {
+      critiqueAbortControllerRef.current.abort();
+      critiqueAbortControllerRef.current = null;
+    }
+
+    try {
+      await api.cancelCritique(currentId);
+    } catch (err) {
+      console.warn("Backend cancel critique error:", err);
+    } finally {
+      removeGeneratingCritiquePhotoId(currentId);
+      if (useAppStore.getState().activeCritiqueJob?.photoId === currentId) {
+        useAppStore.getState().setActiveCritiqueJob(null);
+      }
+      queryClient.invalidateQueries({ queryKey: ['critiques'] });
+      queryClient.invalidateQueries({ queryKey: ['photoDetail', currentId] });
     }
   };
 
@@ -239,6 +280,7 @@ export function usePhotoDetail() {
     handleSave,
     handleReveal,
     handleRequestCritique,
+    handleCancelCritique,
     handleDeleteCritique,
     handleReindex,
     handleToggleFavorite,

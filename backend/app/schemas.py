@@ -107,6 +107,12 @@ class CritiqueResponse(BaseModel):
     critique: str
     critique_updated_at: Optional[str] = None
     engine_used: Optional[str] = "unipercept"
+    status: Optional[str] = "completed"
+
+class CritiqueCancelResponse(BaseModel):
+    photo_id: str
+    status: str = "cancelled"
+    message: str
 
 class CritiqueItemResponse(BaseModel):
     photo_id: str

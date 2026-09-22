@@ -279,6 +279,7 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             for key, desc, label, step_idx, prog in domains:
                 if photo_id:
                     from services.critique_status import critique_status_manager
+                    critique_status_manager.check_cancelled(photo_id)
                     critique_status_manager.update(
                         photo_id, 1, 4, f"[{step_idx}/6] {label} 계산 중...", prog
                     )
@@ -408,6 +409,7 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             for domain_key, base_prompt, label, step_idx, prog in vqa_steps:
                 if photo_id:
                     from services.critique_status import critique_status_manager
+                    critique_status_manager.check_cancelled(photo_id)
                     critique_status_manager.update(
                         photo_id, 2, 4, f"[{step_idx}/6] {label} 작성 중...", prog
                     )
@@ -723,9 +725,15 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         - Stage 2: VQA Mode -> Pure deep photographic critique without score constraints
         - Merges scores scoreboard and VQA critique for translation by Gemma.
         """
+        if photo_id:
+            from services.critique_status import critique_status_manager
+            critique_status_manager.check_cancelled(photo_id)
+
         print("[UniPerceptAdapter] [Stage 1/2] Computing 3-Way VR scores (IAA / IQA / ISTA)...", flush=True)
         # 1. Stage 1: VR Mode (Fast 3-Metric Score Extraction)
         vr_result = self.generate_vr_scores(image_path, metadata=metadata, photo_id=photo_id, max_retries=3)
+        if photo_id:
+            critique_status_manager.check_cancelled(photo_id)
         final_overall = vr_result["overall"]
         final_iaa = vr_result["iaa"]
         final_iqa = vr_result["iqa"]
@@ -744,6 +752,8 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         print("[UniPerceptAdapter] [Stage 2/2] Generating 3-Way VQA deep critiques...", flush=True)
         # 2. Stage 2: VQA Mode (Score-Conditioned Photographic Critique)
         vqa_result = self.generate_vqa_critique(image_path, metadata=metadata, scores_context=scores_summary, photo_id=photo_id)
+        if photo_id:
+            critique_status_manager.check_cancelled(photo_id)
         vqa_critique = vqa_result["critique"]
         print("[UniPerceptAdapter] UniPercept full ensemble critique generation finished.", flush=True)
 

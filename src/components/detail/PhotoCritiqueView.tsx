@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Wand2, RefreshCw, Trash2, FileText } from 'lucide-react';
+import { Wand2, RefreshCw, Trash2, FileText, Square } from 'lucide-react';
 import { api } from '../../services/api';
 import { CritiqueStatus } from '../../types/critique';
 import { CritiqueProgressWidget } from '../critique/CritiqueProgressWidget';
@@ -11,6 +11,7 @@ interface PhotoCritiqueViewProps {
   critique: string | null;
   loadingCritique: boolean;
   onRequestCritique: () => void;
+  onCancelCritique?: () => void;
   onDeleteCritique?: () => void;
 }
 
@@ -19,6 +20,7 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
   critique,
   loadingCritique,
   onRequestCritique,
+  onCancelCritique,
   onDeleteCritique
 }) => {
   const { openCritiqueDocument } = useAppStore();
@@ -40,7 +42,7 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
 
         if (res) {
           setStatus(res);
-          if (res.status === 'completed' || res.status === 'error' || res.progress === 100) {
+          if (res.status === 'completed' || res.status === 'error' || res.status === 'cancelled' || res.progress === 100) {
             return;
           }
         }
@@ -68,17 +70,42 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
           <Wand2 size={16} color="#a855f7" /> AI 사진 비평 (Gemma VLM)
         </h4>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button
-            onClick={onRequestCritique}
-            disabled={loadingCritique}
-            style={{
-              background: 'none', border: 'none', color: '#a855f7', cursor: 'pointer',
-              fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px'
-            }}
-          >
-            <RefreshCw size={12} className={loadingCritique ? 'spin' : ''} />
-            {critique ? '다시 비평받기' : 'AI 비평 생성'}
-          </button>
+          {loadingCritique ? (
+            onCancelCritique && (
+              <button
+                onClick={onCancelCritique}
+                style={{
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.35)',
+                  color: '#ef4444',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  fontWeight: 600,
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  transition: 'all 0.2s ease'
+                }}
+                title="진행 중인 비평 생성을 안전하게 중단합니다"
+              >
+                <Square size={11} fill="#ef4444" />
+                비평 중단
+              </button>
+            )
+          ) : (
+            <button
+              onClick={onRequestCritique}
+              style={{
+                background: 'none', border: 'none', color: '#a855f7', cursor: 'pointer',
+                fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px'
+              }}
+            >
+              <RefreshCw size={12} />
+              {critique ? '다시 비평받기' : 'AI 비평 생성'}
+            </button>
+          )}
           {!loadingCritique && critique && onDeleteCritique && (
             <button
               onClick={onDeleteCritique}
@@ -95,7 +122,7 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
       </div>
 
       {loadingCritique && (
-        <CritiqueProgressWidget status={status} photoId={photoId || ''} />
+        <CritiqueProgressWidget status={status} photoId={photoId || ''} onCancel={onCancelCritique} />
       )}
 
       {!loadingCritique && critique && (

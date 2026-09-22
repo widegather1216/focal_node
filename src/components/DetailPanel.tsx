@@ -28,6 +28,7 @@ export function DetailPanel() {
     handleSave,
     handleReveal,
     handleRequestCritique,
+    handleCancelCritique,
     handleDeleteCritique,
     handleReindex,
     handleToggleFavorite,
@@ -197,6 +198,7 @@ export function DetailPanel() {
                     critique={critique}
                     loadingCritique={loadingCritique}
                     onRequestCritique={handleRequestCritique}
+                    onCancelCritique={handleCancelCritique}
                     onDeleteCritique={handleDeleteCritique}
                   />
                 </>

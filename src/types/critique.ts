@@ -24,6 +24,6 @@ export interface CritiqueStatus {
   total_steps: number;
   message: string;
   progress: number;
-  status: 'idle' | 'processing' | 'completed' | 'error';
+  status: 'idle' | 'processing' | 'completed' | 'error' | 'cancelled';
 }
 

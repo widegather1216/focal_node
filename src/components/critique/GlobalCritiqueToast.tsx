@@ -6,7 +6,13 @@ import { api } from '../../services/api';
 import { CritiqueStatus } from '../../types/critique';
 
 export const GlobalCritiqueToast: React.FC = () => {
-  const { activeCritiqueJob, setActiveCritiqueJob, selectedPhotoId, setSelectedPhotoId } = useAppStore();
+  const {
+    activeCritiqueJob,
+    setActiveCritiqueJob,
+    cancelActiveCritique,
+    selectedPhotoId,
+    setSelectedPhotoId
+  } = useAppStore();
   const [status, setStatus] = useState<CritiqueStatus | null>(null);
 
   // Poll status when active job exists
@@ -27,7 +33,7 @@ export const GlobalCritiqueToast: React.FC = () => {
 
         if (res) {
           setStatus(res);
-          const isDone = res.status === 'completed' || res.status === 'error' || res.progress === 100;
+          const isDone = res.status === 'completed' || res.status === 'error' || res.status === 'cancelled' || res.progress === 100;
           if (isDone) {
             dismissTimerId = setTimeout(() => {
               if (isMounted) {
@@ -63,7 +69,16 @@ export const GlobalCritiqueToast: React.FC = () => {
 
   const currentMessage = status?.message || '비평 생성 진행 중';
   const progress = status?.progress || 15;
-  const isCompleted = status?.status === 'completed' || progress === 100;
+  const isCompleted = status?.status === 'completed' || status?.status === 'error' || status?.status === 'cancelled' || progress === 100;
+
+  const handleCloseOrCancel = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!isCompleted && activeCritiqueJob?.photoId) {
+      await cancelActiveCritique(activeCritiqueJob.photoId);
+    } else {
+      setActiveCritiqueJob(null);
+    }
+  };
 
   return (
     <AnimatePresence>
@@ -129,27 +144,26 @@ export const GlobalCritiqueToast: React.FC = () => {
               </span>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '2px', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
               <span style={{ fontSize: '11px', color: '#c084fc', fontWeight: 700 }}>
                 {progress}%
               </span>
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActiveCritiqueJob(null);
-                }}
+                onClick={handleCloseOrCancel}
                 style={{
                   background: 'none',
                   border: 'none',
-                  color: '#71717a',
+                  color: isCompleted ? '#71717a' : '#f87171',
                   cursor: 'pointer',
                   padding: '2px',
                   display: 'flex',
-                  alignItems: 'center'
+                  alignItems: 'center',
+                  borderRadius: '4px',
+                  transition: 'color 0.2s ease, background 0.2s ease'
                 }}
-                title="닫기"
+                title={isCompleted ? "닫기" : "비평 중단"}
               >
-                <X size={13} />
+                <X size={14} />
               </button>
             </div>
           </div>

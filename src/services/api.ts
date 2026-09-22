@@ -230,14 +230,26 @@ class ApiClient {
     return res.json();
   }
 
-  async getPhotoCritique(photoId: string): Promise<any> {
+  async getPhotoCritique(photoId: string, signal?: AbortSignal): Promise<any> {
     const res = await fetch(`${this.baseUrl}/api/chat/critique`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ photo_id: photoId })
+      body: JSON.stringify({ photo_id: photoId }),
+      signal
     });
     if (!res.ok) {
       const err = await this.parseError(res, "Failed to get photo critique");
+      throw new Error(err);
+    }
+    return res.json();
+  }
+
+  async cancelCritique(photoId: string): Promise<any> {
+    const res = await fetch(`${this.baseUrl}/api/chat/critique/cancel/${encodeURIComponent(photoId)}`, {
+      method: 'POST'
+    });
+    if (!res.ok) {
+      const err = await this.parseError(res, "Failed to cancel photo critique");
       throw new Error(err);
     }
     return res.json();

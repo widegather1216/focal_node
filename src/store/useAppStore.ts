@@ -74,6 +74,7 @@ interface AppState {
 
   activeCritiqueJob: { photoId: string; fileName?: string } | null;
   setActiveCritiqueJob: (job: { photoId: string; fileName?: string } | null) => void;
+  cancelActiveCritique: (photoId: string) => Promise<void>;
 
   critiqueDocumentPhotoId: string | null;
   openCritiqueDocument: (photoId: string) => void;
@@ -157,6 +158,24 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   activeCritiqueJob: null,
   setActiveCritiqueJob: (activeCritiqueJob) => set({ activeCritiqueJob }),
+  cancelActiveCritique: async (photoId: string) => {
+    const port = get().apiPort;
+    if (port) {
+      try {
+        await fetch(`http://127.0.0.1:${port}/api/chat/critique/cancel/${encodeURIComponent(photoId)}`, {
+          method: 'POST'
+        });
+      } catch (err) {
+        console.warn("Failed to send cancel critique request:", err);
+      }
+    }
+    set((state) => {
+      const nextSet = new Set(state.generatingCritiquePhotoIds);
+      nextSet.delete(photoId);
+      const nextJob = state.activeCritiqueJob?.photoId === photoId ? null : state.activeCritiqueJob;
+      return { generatingCritiquePhotoIds: nextSet, activeCritiqueJob: nextJob };
+    });
+  },
 
   critiqueDocumentPhotoId: null,
   openCritiqueDocument: (photoId) => set({ critiqueDocumentPhotoId: photoId }),

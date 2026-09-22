@@ -29,6 +29,20 @@ def get_photo_critique_status(photo_id: str):
     from services.critique_status import critique_status_manager
     return critique_status_manager.get(photo_id)
 
+@router.post("/critique/cancel/{photo_id}", response_model=schemas.CritiqueCancelResponse)
+@router.post("/critique/{photo_id}/cancel", response_model=schemas.CritiqueCancelResponse)
+def cancel_photo_critique(photo_id: str):
+    """
+    Cancels an ongoing photo critique generation task safely.
+    """
+    from services.critique_status import critique_status_manager
+    critique_status_manager.request_cancel(photo_id)
+    return schemas.CritiqueCancelResponse(
+        photo_id=photo_id,
+        status="cancelled",
+        message="비평 생성이 사용자에 의해 중단되었습니다."
+    )
+
 
 from repositories.photo_repository import PhotoRepository
 

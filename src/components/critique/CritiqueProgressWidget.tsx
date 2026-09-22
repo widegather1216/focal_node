@@ -1,11 +1,12 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { BarChart3, FileText, Languages, Sparkles, CheckCircle2, Loader2 } from 'lucide-react';
+import { BarChart3, FileText, Languages, Sparkles, CheckCircle2, Loader2, Square } from 'lucide-react';
 import { CritiqueStatus } from '../../types/critique';
 
 interface CritiqueProgressWidgetProps {
   status: CritiqueStatus | null;
   photoId: string;
+  onCancel?: () => void;
 }
 
 const STEPS = [
@@ -15,7 +16,7 @@ const STEPS = [
   { id: 4, label: '사진학 정제', icon: Sparkles },
 ];
 
-export const CritiqueProgressWidget: React.FC<CritiqueProgressWidgetProps> = ({ status }) => {
+export const CritiqueProgressWidget: React.FC<CritiqueProgressWidgetProps> = ({ status, onCancel }) => {
   const currentStep = status?.step || 1;
   const progress = status?.progress || 15;
   const currentMessage = status?.message || '점수 산출 중';
@@ -68,17 +69,42 @@ export const CritiqueProgressWidget: React.FC<CritiqueProgressWidgetProps> = ({ 
             </span>
           </div>
         </div>
-        <span style={{
-          fontSize: '12px',
-          fontWeight: 700,
-          color: '#c084fc',
-          background: 'rgba(168, 85, 247, 0.1)',
-          padding: '3px 10px',
-          borderRadius: '12px',
-          border: '1px solid rgba(168, 85, 247, 0.2)'
-        }}>
-          {currentStep} / {STEPS.length}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{
+            fontSize: '12px',
+            fontWeight: 700,
+            color: '#c084fc',
+            background: 'rgba(168, 85, 247, 0.1)',
+            padding: '3px 10px',
+            borderRadius: '12px',
+            border: '1px solid rgba(168, 85, 247, 0.2)'
+          }}>
+            {currentStep} / {STEPS.length}
+          </span>
+          {onCancel && (
+            <button
+              onClick={onCancel}
+              style={{
+                background: 'rgba(239, 68, 68, 0.12)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                color: '#f87171',
+                borderRadius: '8px',
+                padding: '3px 8px',
+                fontSize: '11px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+                transition: 'all 0.2s ease'
+              }}
+              title="비평 생성 중단"
+            >
+              <Square size={10} fill="#f87171" />
+              중단
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Progress Bar */}
