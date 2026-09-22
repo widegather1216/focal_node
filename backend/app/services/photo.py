@@ -103,7 +103,7 @@ def get_original_image_bytes(db_image: DBImage) -> tuple[bytes, str]:
 
     try:
         if is_raw_image(db_image.file_path):
-            img = decode_raw_to_pil(db_image.file_path)
+            img = decode_raw_to_pil(db_image.file_path, min_dimension=1920)
             buf = io.BytesIO()
             img.save(buf, format="JPEG", quality=95)
             return buf.getvalue(), "image/jpeg"

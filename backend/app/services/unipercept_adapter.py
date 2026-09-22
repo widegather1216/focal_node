@@ -46,60 +46,71 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         self.torch_dtype = torch.bfloat16 if self.device == "mps" else torch.float32
 
     def _load_model_locked(self):
+        """
+        Assumes both GPU_LOCK and self.lock are already acquired by caller
+        in strict GPU_LOCK -> self.lock hierarchy order.
+        """
         if self.model is not None:
-            self.touch_used()
+            self.last_used_time = time.time()
+            self._start_keep_alive_timer_locked()
             return
-        with GPU_LOCK:
-                # Pre-load cache cleanup for MPS
-                gc.collect()
-                if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
-                    try:
-                        torch.mps.empty_cache()
-                    except Exception:
-                        pass
 
-                print(f"[UniPerceptAdapter] Lazy loading UniPercept model ({self.model_id}) on {self.device} ({self.torch_dtype})...", flush=True)
-                from transformers import AutoModel, AutoTokenizer, AutoProcessor
+        # Pre-load cache cleanup for MPS
+        gc.collect()
+        if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+            try:
+                torch.mps.empty_cache()
+            except Exception:
+                pass
+
+        print(f"[UniPerceptAdapter] Lazy loading UniPercept model ({self.model_id}) on {self.device} ({self.torch_dtype})...", flush=True)
+        from transformers import AutoModel, AutoTokenizer, AutoProcessor
+        
+        extra_kwargs = {"local_files_only": True} if (self.is_local_path or os.path.exists(os.path.expanduser("~/.cache/huggingface/hub"))) else {}
+
+        try:
+            self.model = AutoModel.from_pretrained(
+                self.model_id,
+                torch_dtype=self.torch_dtype,
+                trust_remote_code=True,
+                low_cpu_mem_usage=True,
+                **extra_kwargs
+            ).to(self.device)
+            
+            try:
+                self.tokenizer = AutoTokenizer.from_pretrained(self.model_id, trust_remote_code=True, **extra_kwargs)
+            except Exception:
+                self.tokenizer = None
                 
-                extra_kwargs = {"local_files_only": True} if (self.is_local_path or os.path.exists(os.path.expanduser("~/.cache/huggingface/hub"))) else {}
+            try:
+                self.processor = AutoProcessor.from_pretrained(self.model_id, trust_remote_code=True, **extra_kwargs)
+            except Exception:
+                self.processor = None
+                
+            print("[UniPerceptAdapter] UniPercept Model loaded successfully.", flush=True)
+        except Exception as e:
+            print(f"[UniPerceptAdapter] Primary load failed ({e}). Falling back to AutoModel default config...", flush=True)
+            try:
+                self.torch_dtype = torch.float32
+                self.model = AutoModel.from_pretrained(
+                    self.model_id,
+                    torch_dtype=torch.float32,
+                    trust_remote_code=True,
+                    **extra_kwargs
+                ).to(self.device)
+                self.tokenizer = AutoTokenizer.from_pretrained(self.model_id, trust_remote_code=True, **extra_kwargs)
+                print("[UniPerceptAdapter] UniPercept Fallback Model loaded successfully.", flush=True)
+            except Exception as fallback_err:
+                print(f"[UniPerceptAdapter] Critical error loading UniPercept model: {fallback_err}", flush=True)
+                raise fallback_err
 
-                try:
-                    self.model = AutoModel.from_pretrained(
-                        self.model_id,
-                        torch_dtype=self.torch_dtype,
-                        trust_remote_code=True,
-                        low_cpu_mem_usage=True,
-                        **extra_kwargs
-                    ).to(self.device)
-                    
-                    try:
-                        self.tokenizer = AutoTokenizer.from_pretrained(self.model_id, trust_remote_code=True, **extra_kwargs)
-                    except Exception:
-                        self.tokenizer = None
-                        
-                    try:
-                        self.processor = AutoProcessor.from_pretrained(self.model_id, trust_remote_code=True, **extra_kwargs)
-                    except Exception:
-                        self.processor = None
-                        
-                    print("[UniPerceptAdapter] UniPercept Model loaded successfully.", flush=True)
-                except Exception as e:
-                    print(f"[UniPerceptAdapter] Primary load failed ({e}). Falling back to AutoModel default config...", flush=True)
-                    try:
-                        self.torch_dtype = torch.float32
-                        self.model = AutoModel.from_pretrained(
-                            self.model_id,
-                            torch_dtype=torch.float32,
-                            trust_remote_code=True,
-                            **extra_kwargs
-                        ).to(self.device)
-                        self.tokenizer = AutoTokenizer.from_pretrained(self.model_id, trust_remote_code=True, **extra_kwargs)
-                        print("[UniPerceptAdapter] UniPercept Fallback Model loaded successfully.", flush=True)
-                    except Exception as fallback_err:
-                        print(f"[UniPerceptAdapter] Critical error loading UniPercept model: {fallback_err}", flush=True)
-                        raise fallback_err
+        self.last_used_time = time.time()
+        self._start_keep_alive_timer_locked()
 
-        self.touch_used()
+    def load_model(self):
+        with GPU_LOCK:
+            with self.lock:
+                self._load_model_locked()
 
 
 
@@ -164,10 +175,10 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         query = query.replace('<image>', image_tokens, 1)
 
         model_inputs = self.tokenizer(query, return_tensors='pt')
-        input_ids = model_inputs['input_ids'].to(self.device)
-        attention_mask = model_inputs['attention_mask'].to(self.device)
-
         with GPU_LOCK:
+            input_ids = model_inputs['input_ids'].to(self.device)
+            attention_mask = model_inputs['attention_mask'].to(self.device)
+
             with torch.inference_mode():
                 vit_embeds = self.model.extract_feature(pixel_values)
                 input_embeds = self.model.language_model.get_input_embeddings()(input_ids)
@@ -185,21 +196,21 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                 )
                 logits = outputs.logits
 
-        if self._cached_preferential_ids is None:
-            self._cached_preferential_ids = [self.tokenizer.convert_tokens_to_ids(word) for word in AESTHETICS_TOKEN_LIST]
-        output_logits = logits[:, -1, self._cached_preferential_ids].detach()
-        if self._cached_weight_tensor is None or self._cached_weight_tensor.device != self.device or self._cached_weight_tensor.dtype != output_logits.dtype:
-            self._cached_weight_tensor = torch.tensor([x for x in range(101)]).to(device=self.device, dtype=output_logits.dtype)
-        score = torch.softmax(output_logits, -1) @ self._cached_weight_tensor
-        final_score = float(score.item())
+            if self._cached_preferential_ids is None:
+                self._cached_preferential_ids = [self.tokenizer.convert_tokens_to_ids(word) for word in AESTHETICS_TOKEN_LIST]
+            output_logits = logits[:, -1, self._cached_preferential_ids].detach()
+            if self._cached_weight_tensor is None or self._cached_weight_tensor.device != self.device or self._cached_weight_tensor.dtype != output_logits.dtype:
+                self._cached_weight_tensor = torch.tensor([x for x in range(101)]).to(device=self.device, dtype=output_logits.dtype)
+            score = torch.softmax(output_logits, -1) @ self._cached_weight_tensor
+            final_score = float(score.item())
 
-        # Explicitly clean up heavy forward tensors to prevent memory accumulation across 6-pass calls
-        del model_inputs, input_ids, attention_mask, input_embeds, vit_embeds, outputs, logits, output_logits, score
-        if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
-            try:
-                torch.mps.empty_cache()
-            except Exception:
-                pass
+            # Explicitly clean up heavy forward tensors to prevent memory accumulation across 6-pass calls
+            del model_inputs, input_ids, attention_mask, input_embeds, vit_embeds, outputs, logits, output_logits, score
+            if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+                try:
+                    torch.mps.empty_cache()
+                except Exception:
+                    pass
 
         return final_score
 
@@ -233,7 +244,9 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             except Exception:
                 pass
         transform = build_transform(input_size=448)
-        return transform(pil_img).unsqueeze(0).to(dtype=target_dtype).to(self.device)
+        transformed = transform(pil_img).unsqueeze(0).to(dtype=target_dtype)
+        with GPU_LOCK:
+            return transformed.to(self.device)
 
     def generate_vr_scores(
         self,
@@ -251,10 +264,10 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         """
         with GPU_LOCK:
             with self.lock:
+                self._load_model_locked()
                 self.active_requests += 1
 
         try:
-            self._load_model_locked()
 
             if (not os.path.exists(image_path) and not hasattr(self.model, "chat")) or self.model is None:
                 return {"overall": 70, "iaa": 70, "iqa": 70, "ista": 70, "raw_vr_text": ""}
@@ -348,10 +361,10 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         """
         with GPU_LOCK:
             with self.lock:
+                self._load_model_locked()
                 self.active_requests += 1
 
         try:
-            self._load_model_locked()
 
             if (not os.path.exists(image_path) and not hasattr(self.model, "chat")) or self.model is None:
                 return {
@@ -503,10 +516,10 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         # Custom single-prompt path
         with GPU_LOCK:
             with self.lock:
+                self._load_model_locked()
                 self.active_requests += 1
 
         try:
-            self._load_model_locked()
 
             if (not os.path.exists(image_path) and not hasattr(self.model, "chat")) or self.model is None:
                 return {

@@ -1,6 +1,7 @@
 import os
 import datetime
 import mimetypes
+from typing import Optional, Any
 from PIL import Image, ImageOps
 import rawpy
 import exifread
@@ -40,11 +41,13 @@ def get_mime_type(file_path: str) -> str:
     return mime or "image/jpeg"
 import io
 
-def decode_raw_to_pil(file_path: str) -> Image.Image:
+def decode_raw_to_pil(file_path: str, min_dimension: Optional[int] = None) -> Image.Image:
     """
     Decodes a RAW image file to a PIL Image (sRGB) in-memory.
     Attempts to extract embedded thumbnail first for performance and compatibility,
     then falls back to full raw post-processing.
+    If min_dimension is specified, embedded thumbnails smaller than min_dimension
+    are skipped in favor of raw postprocessing to guarantee adequate quality.
     """
     with rawpy.imread(file_path) as raw:
         try:
@@ -52,13 +55,17 @@ def decode_raw_to_pil(file_path: str) -> Image.Image:
             if thumb.format == rawpy.ThumbFormat.JPEG:
                 with Image.open(io.BytesIO(thumb.data)) as img:
                     img_t = ImageOps.exif_transpose(img)
-                    return img_t.convert("RGB") if img_t.mode != "RGB" else img_t.copy()
+                    img_rgb = img_t.convert("RGB") if img_t.mode != "RGB" else img_t.copy()
+                    if min_dimension is None or (img_rgb.width >= min_dimension and img_rgb.height >= min_dimension):
+                        return img_rgb
             elif thumb.format == rawpy.ThumbFormat.BITMAP:
-                return Image.fromarray(thumb.data).convert("RGB")
+                img_rgb = Image.fromarray(thumb.data).convert("RGB")
+                if min_dimension is None or (img_rgb.width >= min_dimension and img_rgb.height >= min_dimension):
+                    return img_rgb
         except Exception as e:
             print(f"[decode_raw_to_pil] Thumbnail extraction failed for {file_path}: {e}")
             
-        # Fallback to full postprocessing if thumbnail extraction fails or format is unknown
+        # Fallback to full postprocessing if thumbnail extraction fails, is low resolution, or format is unknown
         rgb = raw.postprocess(
             use_camera_wb=True,
             half_size=True,

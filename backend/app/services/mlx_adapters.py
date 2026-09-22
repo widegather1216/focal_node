@@ -78,8 +78,9 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
         from utils.image import load_pil_image
         image = load_pil_image(image_path)
             
-        inputs = self.processor(images=image, return_tensors="pt").to(self.device)
+        inputs = self.processor(images=image, return_tensors="pt")
         with GPU_LOCK:
+            inputs = inputs.to(self.device)
             with torch.no_grad():
                 feat = self.model.get_image_features(**inputs)
                 image_features = feat.pooler_output
@@ -91,8 +92,9 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
     def get_text_embedding(self, text: str) -> list[float]:
         import torch
         self._load_model()
-        inputs = self.processor(text=[text], padding="max_length", return_tensors="pt").to(self.device)
+        inputs = self.processor(text=[text], padding="max_length", return_tensors="pt")
         with GPU_LOCK:
+            inputs = inputs.to(self.device)
             with torch.no_grad():
                 feat = self.model.get_text_features(**inputs)
             text_features = feat.pooler_output
@@ -145,57 +147,61 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
         self.processor = None
 
     def _load_model_locked(self):
-        # Assumes self.lock is already acquired
+        """
+        Assumes both GPU_LOCK and self.lock are already acquired by the caller
+        in strict GPU_LOCK -> self.lock hierarchy order.
+        """
         if self.model is not None:
-            self.touch_used()
+            self.last_used_time = time.time()
+            self._start_keep_alive_timer_locked()
             return
-        with GPU_LOCK:
-                print(f"[GemmaAdapter] Lazy loading model {self.model_id} via mlx_vlm...", flush=True)
-                import sys, os
-                if getattr(sys, 'frozen', False) and "MLX_METAL_PATH" not in os.environ:
-                    exe_dir = os.path.dirname(sys.executable)
-                    candidates = [
-                        os.path.join(exe_dir, "_internal", "mlx", "lib", "mlx.metallib"),
-                        os.path.join(exe_dir, "_internal", "mlx.metallib"),
-                        os.path.join(exe_dir, "mlx.metallib"),
-                        os.path.join(exe_dir, "..", "Resources", "_internal", "mlx", "lib", "mlx.metallib"),
-                        os.path.join(exe_dir, "..", "Resources", "binaries", "_internal", "mlx", "lib", "mlx.metallib"),
-                    ]
-                    for c in candidates:
-                        if os.path.exists(c):
-                            os.environ["MLX_METAL_PATH"] = c
-                            break
-                # mlx_vlm.load only searches top-level directory for *.safetensors.
-                # Auto-link any subfolder safetensors (e.g. optiq/optiq_vision.safetensors) to top-level.
-                try:
-                    from huggingface_hub import snapshot_download
-                    import glob, shutil
-                    if os.path.exists(self.model_id):
-                        model_dir = self.model_id
-                    else:
-                        model_dir = snapshot_download(repo_id=self.model_id, local_files_only=True)
-                    
-                    sub_safetensors = glob.glob(os.path.join(model_dir, "**", "*.safetensors"), recursive=True)
-                    for s_path in sub_safetensors:
-                        rel_dir = os.path.relpath(os.path.dirname(s_path), model_dir)
-                        if rel_dir != ".":
-                            dst_name = f"{os.path.basename(os.path.dirname(s_path))}_{os.path.basename(s_path)}"
-                            top_dst = os.path.join(model_dir, dst_name)
-                            direct_dst = os.path.join(model_dir, os.path.basename(s_path))
-                            for dst in [top_dst, direct_dst]:
-                                if not os.path.exists(dst):
-                                    try:
-                                        os.symlink(s_path, dst)
-                                    except Exception:
-                                        shutil.copy2(s_path, dst)
-                except Exception as link_err:
-                    print(f"[GemmaAdapter] Subfolder safetensors link warning: {link_err}", flush=True)
 
-                from mlx_vlm import load
-                self.model, self.processor = load(self.model_id)
-                print("[GemmaAdapter] Model loaded successfully.", flush=True)
+        print(f"[GemmaAdapter] Lazy loading model {self.model_id} via mlx_vlm...", flush=True)
+        import sys, os
+        if getattr(sys, 'frozen', False) and "MLX_METAL_PATH" not in os.environ:
+            exe_dir = os.path.dirname(sys.executable)
+            candidates = [
+                os.path.join(exe_dir, "_internal", "mlx", "lib", "mlx.metallib"),
+                os.path.join(exe_dir, "_internal", "mlx.metallib"),
+                os.path.join(exe_dir, "mlx.metallib"),
+                os.path.join(exe_dir, "..", "Resources", "_internal", "mlx", "lib", "mlx.metallib"),
+                os.path.join(exe_dir, "..", "Resources", "binaries", "_internal", "mlx", "lib", "mlx.metallib"),
+            ]
+            for c in candidates:
+                if os.path.exists(c):
+                    os.environ["MLX_METAL_PATH"] = c
+                    break
+        # mlx_vlm.load only searches top-level directory for *.safetensors.
+        # Auto-link any subfolder safetensors (e.g. optiq/optiq_vision.safetensors) to top-level.
+        try:
+            from huggingface_hub import snapshot_download
+            import glob, shutil
+            if os.path.exists(self.model_id):
+                model_dir = self.model_id
+            else:
+                model_dir = snapshot_download(repo_id=self.model_id, local_files_only=True)
             
-        self.touch_used()
+            sub_safetensors = glob.glob(os.path.join(model_dir, "**", "*.safetensors"), recursive=True)
+            for s_path in sub_safetensors:
+                rel_dir = os.path.relpath(os.path.dirname(s_path), model_dir)
+                if rel_dir != ".":
+                    dst_name = f"{os.path.basename(os.path.dirname(s_path))}_{os.path.basename(s_path)}"
+                    top_dst = os.path.join(model_dir, dst_name)
+                    direct_dst = os.path.join(model_dir, os.path.basename(s_path))
+                    for dst in [top_dst, direct_dst]:
+                        if not os.path.exists(dst):
+                            try:
+                                os.symlink(s_path, dst)
+                            except Exception:
+                                shutil.copy2(s_path, dst)
+        except Exception as link_err:
+            print(f"[GemmaAdapter] Subfolder safetensors link warning: {link_err}", flush=True)
+
+        from mlx_vlm import load
+        self.model, self.processor = load(self.model_id)
+        print("[GemmaAdapter] Model loaded successfully.", flush=True)
+        self.last_used_time = time.time()
+        self._start_keep_alive_timer_locked()
 
 
 

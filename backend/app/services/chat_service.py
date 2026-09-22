@@ -5,30 +5,99 @@ import models
 import schemas
 from services.ai_factory import get_gemma_adapter
 
+def _get_photo_and_metadata(photo_id: str) -> tuple[str, dict]:
+    with SessionLocal() as db:
+        img = db.query(models.Image).filter(models.Image.id == photo_id).first()
+        if not img:
+            raise ValueError("Photo not found")
+            
+        meta = img.metadata_rel
+        meta_data = {
+            "camera_model": meta.camera_model if meta else None,
+            "lens_model": meta.lens_model if meta else None,
+            "f_number": meta.f_number if meta else None,
+            "focal_length": meta.focal_length if meta else None,
+            "focal_length_35mm": meta.focal_length_35mm if meta else None,
+            "sensor_format": meta.sensor_format if meta else None,
+            "crop_factor": meta.crop_factor if meta else None,
+            "shutter_speed": meta.shutter_speed if meta else None,
+            "iso": meta.iso if meta else None,
+        }
+        return img.file_path, meta_data
+
+def _save_critique_to_db(photo_id: str, critique_text: str, updated_at) -> None:
+    with SessionLocal() as db:
+        ai = db.query(models.AIAnalysis).filter(models.AIAnalysis.image_id == photo_id).first()
+        if not ai:
+            ai = models.AIAnalysis(
+                image_id=photo_id,
+                critique=critique_text,
+                critique_updated_at=updated_at
+            )
+            db.add(ai)
+        else:
+            ai.critique = critique_text
+            ai.critique_updated_at = updated_at
+        db.commit()
+
+def _clear_device_caches() -> None:
+    try:
+        import torch
+        if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+            torch.mps.empty_cache()
+    except Exception:
+        pass
+    try:
+        import mlx.core as mx
+        import gc
+        mx.clear_cache()
+        gc.collect()
+    except Exception:
+        pass
+
+def _fetch_critiques_from_db(photo_ids: Optional[List[str]]) -> List[Dict[str, Any]]:
+    with SessionLocal() as db:
+        query = (
+            db.query(models.AIAnalysis, models.Image, models.ImageMetadata)
+            .join(models.Image, models.AIAnalysis.image_id == models.Image.id)
+            .outerjoin(models.ImageMetadata, models.Image.id == models.ImageMetadata.image_id)
+            .filter(models.AIAnalysis.critique.isnot(None))
+            .filter(models.AIAnalysis.critique != "")
+        )
+        if photo_ids:
+            if len(photo_ids) > 900:
+                from sqlalchemy import or_
+                conditions = [
+                    models.Image.id.in_(photo_ids[i:i+900])
+                    for i in range(0, len(photo_ids), 900)
+                ]
+                query = query.filter(or_(*conditions))
+            else:
+                query = query.filter(models.Image.id.in_(photo_ids))
+            
+        results = query.all()
+        if not results:
+            raise ValueError("요약할 AI 비평 데이터가 존재하지 않습니다.")
+
+        critiques_list = []
+        for ai, img, meta in results:
+            critiques_list.append({
+                "photo_id": img.id,
+                "file_name": img.file_name,
+                "camera_model": meta.camera_model if meta else None,
+                "lens_model": meta.lens_model if meta else None,
+                "critique": ai.critique
+            })
+        return critiques_list
+
+
 class ChatService:
     @staticmethod
     async def generate_photo_critique(payload: schemas.CritiqueRequest) -> Dict[str, Any]:
         """
         Generates deep photo critique using VLM (Gemma / UniPercept) and saves it to DB.
         """
-        with SessionLocal() as db:
-            img = db.query(models.Image).filter(models.Image.id == payload.photo_id).first()
-            if not img:
-                raise ValueError("Photo not found")
-                
-            meta = img.metadata_rel
-            meta_data = {
-                "camera_model": meta.camera_model if meta else None,
-                "lens_model": meta.lens_model if meta else None,
-                "f_number": meta.f_number if meta else None,
-                "focal_length": meta.focal_length if meta else None,
-                "focal_length_35mm": meta.focal_length_35mm if meta else None,
-                "sensor_format": meta.sensor_format if meta else None,
-                "crop_factor": meta.crop_factor if meta else None,
-                "shutter_speed": meta.shutter_speed if meta else None,
-                "iso": meta.iso if meta else None,
-            }
-            file_path = img.file_path
+        file_path, meta_data = await asyncio.to_thread(_get_photo_and_metadata, payload.photo_id)
 
         from services.critique_status import critique_status_manager, CritiqueCancelledException
 
@@ -54,7 +123,7 @@ class ChatService:
                 scores_dict = res_dict.get("scores", {})
                 quality_score = res_dict.get("quality_score")
                 
-                get_unipercept_adapter().unload_model()
+                await asyncio.to_thread(get_unipercept_adapter().unload_model)
                 print("[ChatService] UniPercept ensemble completed. Starting Gemma 4 translation...", flush=True)
                 
                 try:
@@ -111,19 +180,7 @@ class ChatService:
             critique_status_manager.check_cancelled(payload.photo_id)
 
             now_utc = models.utcnow()
-            with SessionLocal() as db:
-                ai = db.query(models.AIAnalysis).filter(models.AIAnalysis.image_id == payload.photo_id).first()
-                if not ai:
-                    ai = models.AIAnalysis(
-                        image_id=payload.photo_id,
-                        critique=critique_text,
-                        critique_updated_at=now_utc
-                    )
-                    db.add(ai)
-                else:
-                    ai.critique = critique_text
-                    ai.critique_updated_at = now_utc
-                db.commit()
+            await asyncio.to_thread(_save_critique_to_db, payload.photo_id, critique_text, now_utc)
 
             critique_status_manager.update(payload.photo_id, 4, 4, "비평 완료", 100, status="completed")
 
@@ -136,20 +193,8 @@ class ChatService:
         except CritiqueCancelledException:
             print(f"[ChatService] 🛑 Photo critique generation cancelled for {payload.photo_id}", flush=True)
             critique_status_manager.update(payload.photo_id, 0, 4, "비평 생성이 사용자에 의해 중단되었습니다.", 0, status="cancelled")
-            # Clear device caches safely
-            try:
-                import torch
-                if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
-                    torch.mps.empty_cache()
-            except Exception:
-                pass
-            try:
-                import mlx.core as mx
-                import gc
-                mx.clear_cache()
-                gc.collect()
-            except Exception:
-                pass
+            # Clear device caches safely in worker thread
+            await asyncio.to_thread(_clear_device_caches)
             return {
                 "critique": "",
                 "critique_updated_at": None,
@@ -165,38 +210,10 @@ class ChatService:
         """
         Generates an aggregated summary report for photo critiques using Gemma LLM.
         """
-        with SessionLocal() as db:
-            query = (
-                db.query(models.AIAnalysis, models.Image, models.ImageMetadata)
-                .join(models.Image, models.AIAnalysis.image_id == models.Image.id)
-                .outerjoin(models.ImageMetadata, models.Image.id == models.ImageMetadata.image_id)
-                .filter(models.AIAnalysis.critique.isnot(None))
-                .filter(models.AIAnalysis.critique != "")
-            )
-            if payload and payload.photo_ids:
-                if len(payload.photo_ids) > 900:
-                    from sqlalchemy import or_
-                    conditions = [
-                        models.Image.id.in_(payload.photo_ids[i:i+900])
-                        for i in range(0, len(payload.photo_ids), 900)
-                    ]
-                    query = query.filter(or_(*conditions))
-                else:
-                    query = query.filter(models.Image.id.in_(payload.photo_ids))
-                
-            results = query.all()
-            if not results:
-                raise ValueError("요약할 AI 비평 데이터가 존재하지 않습니다.")
-
-            critiques_list = []
-            for ai, img, meta in results:
-                critiques_list.append({
-                    "photo_id": img.id,
-                    "file_name": img.file_name,
-                    "camera_model": meta.camera_model if meta else None,
-                    "lens_model": meta.lens_model if meta else None,
-                    "critique": ai.critique
-                })
+        critiques_list = await asyncio.to_thread(
+            _fetch_critiques_from_db,
+            payload.photo_ids if payload else None
+        )
 
         summary_text = await asyncio.to_thread(
             get_gemma_adapter().generate_critique_summary,

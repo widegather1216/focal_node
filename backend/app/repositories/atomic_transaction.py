@@ -62,16 +62,18 @@ class CompensatingTransactionManager:
     def delete_and_commit(self, image_ids: List[str]) -> bool:
         """
         Deletes database records from SQLite and ChromaDB atomically.
+        ChromaDB deletion is executed first; if successful, SQLite deletion is committed.
+        If either operation fails, SQLite is rolled back cleanly.
         """
         if not image_ids:
             return True
 
         try:
-            # 1. Commit SQLite Deletions
-            self.db.commit()
-
-            # 2. Delete from ChromaDB
+            # 1. Delete from ChromaDB
             self.vector_repo.delete(image_ids)
+
+            # 2. Commit SQLite Deletions
+            self.db.commit()
             return True
 
         except Exception as err:

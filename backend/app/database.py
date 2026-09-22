@@ -54,7 +54,13 @@ def run_migrations(bind_engine=None):
         "ALTER TABLE image_metadata ADD COLUMN crop_factor FLOAT",
         "ALTER TABLE image_metadata ADD COLUMN sensor_format VARCHAR(50)",
         "ALTER TABLE ai_analysis ADD COLUMN critique TEXT",
-        "ALTER TABLE ai_analysis ADD COLUMN critique_updated_at DATETIME"
+        "ALTER TABLE ai_analysis ADD COLUMN critique_updated_at DATETIME",
+        "CREATE INDEX IF NOT EXISTS idx_images_is_favorite ON images (is_favorite)",
+        "CREATE INDEX IF NOT EXISTS idx_image_metadata_camera_model ON image_metadata (camera_model)",
+        "CREATE INDEX IF NOT EXISTS idx_image_metadata_lens_model ON image_metadata (lens_model)",
+        "CREATE INDEX IF NOT EXISTS idx_image_metadata_iso ON image_metadata (iso)",
+        "CREATE INDEX IF NOT EXISTS idx_image_metadata_f_number ON image_metadata (f_number)",
+        "CREATE INDEX IF NOT EXISTS idx_image_metadata_focal_length ON image_metadata (focal_length)"
     ]
     
     for col_sql in migrations:

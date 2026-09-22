@@ -137,13 +137,17 @@ class PhotoRepository:
                 
         # Order and paginate
         if photo_ids_from_chroma is not None:
-            images = q.all()
-            image_map = {img.id: img for img in images}
-            sorted_images = []
-            for pid in photo_ids_from_chroma:
-                if pid in image_map:
-                    sorted_images.append(image_map[pid])
-            return sorted_images[offset : offset + limit]
+            # Memory & speed optimization: Fetch matching IDs first, slice target page,
+            # then instantiate only the requested page's ORM models instead of full table.
+            matching_id_rows = q.with_entities(models.Image.id).all()
+            matching_ids = set(r[0] for r in matching_id_rows)
+            sorted_pids = [pid for pid in photo_ids_from_chroma if pid in matching_ids]
+            page_pids = sorted_pids[offset : offset + limit]
+            if not page_pids:
+                return []
+            page_images = self.get_by_ids(page_pids)
+            image_map = {img.id: img for img in page_images}
+            return [image_map[pid] for pid in page_pids if pid in image_map]
         else:
             return q.order_by(models.ImageMetadata.capture_date.desc()).offset(offset).limit(limit).all()
 

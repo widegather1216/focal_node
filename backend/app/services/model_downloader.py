@@ -88,16 +88,28 @@ class ModelDownloadStatusTracker:
             }
 
     def get_all_statuses(self) -> Dict[str, Dict[str, Any]]:
+        # 1. Quickly snapshot downloading items to compute disk usage outside lock
         with self._lock:
-            # Refresh live downloaded_bytes and progress for downloading items
-            for repo_id, item in self._statuses.items():
-                if item.get("status") == "downloading":
-                    d_bytes = get_repo_downloaded_bytes(repo_id)
-                    t_bytes = item.get("total_bytes") or KNOWN_MODEL_SIZES.get(repo_id, 10000000000)
-                    item["downloaded_bytes"] = d_bytes
-                    item["total_bytes"] = t_bytes
-                    item["progress"] = min(99, int((d_bytes / t_bytes) * 100)) if t_bytes > 0 else 0
-            return dict(self._statuses)
+            downloading_targets = [
+                (repo_id, item.get("total_bytes") or KNOWN_MODEL_SIZES.get(repo_id, 10000000000))
+                for repo_id, item in self._statuses.items()
+                if item.get("status") == "downloading"
+            ]
+
+        # 2. Disk I/O (os.walk) performed outside lock to prevent starvation
+        refreshed_bytes = {
+            repo_id: (get_repo_downloaded_bytes(repo_id), t_bytes)
+            for repo_id, t_bytes in downloading_targets
+        }
+
+        # 3. Quickly update statuses under lock
+        with self._lock:
+            for repo_id, (d_bytes, t_bytes) in refreshed_bytes.items():
+                if repo_id in self._statuses and self._statuses[repo_id].get("status") == "downloading":
+                    self._statuses[repo_id]["downloaded_bytes"] = d_bytes
+                    self._statuses[repo_id]["total_bytes"] = t_bytes
+                    self._statuses[repo_id]["progress"] = min(99, int((d_bytes / t_bytes) * 100)) if t_bytes > 0 else 0
+            return {k: dict(v) for k, v in self._statuses.items()}
 
 def get_model_download_tracker() -> ModelDownloadStatusTracker:
     return ModelDownloadStatusTracker()

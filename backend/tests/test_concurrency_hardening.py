@@ -158,3 +158,205 @@ async def test_reindex_single_photo_compensating_transaction():
         assert upsert_calls[0].kwargs["embeddings"] == [new_embedding]
         # Second call (compensating transaction): restored old_embedding
         assert upsert_calls[1].kwargs["embeddings"] == [old_embedding]
+
+
+def test_vector_repository_thread_safe_lock():
+    """
+    Verifies that VectorRepository uses _vector_lock to synchronize concurrent calls.
+    """
+    from repositories.vector_repository import VectorRepository, _vector_lock
+    import concurrent.futures
+
+    repo = VectorRepository()
+    mock_coll = MagicMock()
+    mock_coll.count.return_value = 10
+    mock_coll.query.return_value = {"ids": [["id1", "id2"]]}
+
+    with patch.object(VectorRepository, "collection", new_callable=lambda: mock_coll):
+        def worker(i):
+            repo.count()
+            repo.query_similar_by_embedding([0.1, 0.2], 5)
+            repo.upsert([f"id_{i}"], [[0.1, 0.2]], [{"key": "val"}])
+            return True
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(executor.map(worker, range(20)))
+
+        assert all(results)
+        # repo.count() called directly 20 times + called inside query_similar_by_embedding 20 times = 40
+        assert mock_coll.count.call_count == 40
+        assert mock_coll.query.call_count == 20
+        assert mock_coll.upsert.call_count == 20
+
+
+def test_atomic_transaction_delete_and_commit_order():
+    """
+    Verifies that delete_and_commit deletes from ChromaDB BEFORE committing SQLite session,
+    and rolls back SQLite if ChromaDB delete raises.
+    """
+    from repositories.atomic_transaction import CompensatingTransactionManager
+
+    mock_db = MagicMock()
+    mock_vector_repo = MagicMock()
+
+    call_order = []
+    mock_vector_repo.delete.side_effect = lambda ids: call_order.append("chroma_delete")
+    mock_db.commit.side_effect = lambda: call_order.append("sqlite_commit")
+
+    mgr = CompensatingTransactionManager(db_session=mock_db, vector_repo=mock_vector_repo)
+    success = mgr.delete_and_commit(["id_123"])
+
+    assert success is True
+    assert call_order == ["chroma_delete", "sqlite_commit"]
+    assert not mock_db.rollback.called
+
+    # If ChromaDB delete raises, SQLite commit must NOT be called and rollback must happen
+    mock_vector_repo.delete.side_effect = RuntimeError("ChromaDB I/O failure")
+    mock_db.reset_mock()
+    call_order.clear()
+
+    with pytest.raises(RuntimeError, match="ChromaDB I/O failure"):
+        mgr.delete_and_commit(["id_123"])
+
+    assert "sqlite_commit" not in call_order
+    assert mock_db.rollback.called
+
+
+@pytest.mark.asyncio
+async def test_search_service_non_blocking():
+    """
+    Verifies that SearchService.search_photos offloads DB operations to worker threads
+    without blocking the main async event loop.
+    """
+    from services.search_service import SearchService
+    import schemas
+
+    mock_db = MagicMock()
+    service = SearchService(mock_db)
+
+    service.photo_repo.search_by_text = MagicMock(return_value=["id1", "id2"])
+    service.photo_repo.filter_and_paginate = MagicMock(return_value=[MagicMock()])
+    service.vector_repo.query_similar_by_embedding = MagicMock(return_value=["id1", "id3"])
+
+    with patch("services.search_service.get_siglip_adapter") as mock_siglip:
+        mock_siglip.return_value.get_text_embedding.return_value = [0.1, 0.2]
+
+        req = schemas.SearchRequest(query="sunset in mountains", limit=10, offset=0)
+        res = await service.search_photos(req)
+
+        assert len(res) == 1
+        assert service.photo_repo.search_by_text.called
+        assert service.photo_repo.filter_and_paginate.called
+
+
+@pytest.mark.asyncio
+async def test_chat_service_non_blocking_calls():
+    """
+    Verifies that ChatService.generate_photo_critique uses asyncio.to_thread
+    for unipercept unload_model and database persistence.
+    """
+    import schemas
+    from services.chat_service import ChatService
+
+    req = schemas.CritiqueRequest(photo_id="test_photo_123", engine="unipercept")
+
+    with patch("services.chat_service._get_photo_and_metadata", return_value=("/path/to/test.jpg", {})) as mock_get_meta, \
+         patch("services.chat_service.get_gemma_adapter") as mock_gemma, \
+         patch("services.chat_service._save_critique_to_db") as mock_save, \
+         patch("services.unipercept_adapter.get_unipercept_adapter") as mock_unipercept:
+
+        mock_uni_inst = MagicMock()
+        mock_uni_inst.generate_full_ensemble_critique.return_value = {
+            "critique": "Aesthetic composition.",
+            "scores": {"overall": 85, "iaa": 85, "iqa": 85, "ista": 85},
+            "quality_score": 85
+        }
+        mock_unipercept.return_value = mock_uni_inst
+
+        mock_gemma.return_value.translate_and_format_critique.return_value = "훌륭한 구도입니다."
+
+        res = await ChatService.generate_photo_critique(req)
+
+        assert res["status"] == "completed"
+        assert mock_uni_inst.unload_model.called
+        assert mock_save.called
+
+
+def test_decode_raw_to_pil_min_dimension():
+    """
+    Verifies that decode_raw_to_pil skips low-resolution embedded thumbnails
+    when min_dimension is specified, falling back to raw.postprocess.
+    """
+    from utils.image import decode_raw_to_pil
+    from PIL import Image
+    import numpy as np
+
+    with patch("rawpy.imread") as mock_imread:
+        mock_raw = MagicMock()
+        mock_imread.return_value.__enter__.return_value = mock_raw
+
+        # Simulate low-resolution thumbnail (160x120)
+        mock_thumb = MagicMock()
+        import rawpy
+        mock_thumb.format = rawpy.ThumbFormat.BITMAP
+        mock_thumb.data = np.zeros((120, 160, 3), dtype=np.uint8)
+        mock_raw.extract_thumb.return_value = mock_thumb
+
+        # Full postprocess returns high-resolution image (1920x1080)
+        mock_raw.postprocess.return_value = np.zeros((1080, 1920, 3), dtype=np.uint8)
+
+        # 1. When min_dimension is 100, low-res 160x120 is accepted
+        img_low = decode_raw_to_pil("dummy.arw", min_dimension=100)
+        assert img_low.size == (160, 120)
+        assert not mock_raw.postprocess.called
+
+        # 2. When min_dimension is 1080, low-res 160x120 is rejected, fallback to postprocess
+        mock_raw.reset_mock()
+        mock_raw.extract_thumb.return_value = mock_thumb
+        mock_raw.postprocess.return_value = np.zeros((1080, 1920, 3), dtype=np.uint8)
+
+        img_high = decode_raw_to_pil("dummy.arw", min_dimension=1080)
+        assert img_high.size == (1920, 1080)
+        assert mock_raw.postprocess.called
+
+
+def test_indexing_service_deletion_order():
+    """
+    Verifies that remove_folder_data and cleanup_zombie_records delete from
+    ChromaDB before committing SQLite deletions, ensuring Rule 2.2 integrity.
+    """
+    from services.indexing_service import remove_folder_data, cleanup_zombie_records
+    import models
+
+    # 1. Test remove_folder_data
+    call_order = []
+    mock_db = MagicMock()
+    mock_db.query.return_value.filter.return_value.all.return_value = [MagicMock(id="img_1")]
+    mock_db.query.return_value.all.return_value = []
+    mock_db.commit.side_effect = lambda: call_order.append("sqlite_commit")
+
+    with patch("services.indexing_service.vector_repo") as mock_vector:
+        mock_vector.delete.side_effect = lambda ids: call_order.append("chroma_delete")
+
+        remove_folder_data("/fake/folder", db=mock_db)
+
+        assert call_order == ["chroma_delete", "sqlite_commit"]
+
+    # 2. Test cleanup_zombie_records
+    call_order.clear()
+    mock_db.reset_mock()
+    mock_db.query.return_value.all.side_effect = [
+        [],  # indexed_folders
+        [("img_zombie", "/nonexistent/path/z.jpg", "/nonexistent/path")]  # all_images
+    ]
+    mock_db.commit.side_effect = lambda: call_order.append("sqlite_commit")
+
+    with patch("services.indexing_service.vector_repo") as mock_vector, \
+         patch("os.path.exists", return_value=False):
+        mock_vector.delete.side_effect = lambda ids: call_order.append("chroma_delete")
+
+        cleanup_zombie_records(db=mock_db)
+
+        assert call_order == ["chroma_delete", "sqlite_commit"]
+
+

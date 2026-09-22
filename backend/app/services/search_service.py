@@ -22,7 +22,7 @@ class SearchService:
         if request.query and request.query.strip():
             query_str = request.query.strip()
             # 1. Text Search in SQLite (AIAnalysis)
-            text_search_ids = self.photo_repo.search_by_text(query_str)
+            text_search_ids = await asyncio.to_thread(self.photo_repo.search_by_text, query_str)
 
             # 2. Get query embedding (CPU bound)
             siglip = get_siglip_adapter()
@@ -48,8 +48,9 @@ class SearchService:
                 return []
             photo_ids_from_chroma = combined_ids
             
-        # Execute query using PhotoRepository
-        return self.photo_repo.filter_and_paginate(
+        # Execute query using PhotoRepository via worker thread
+        return await asyncio.to_thread(
+            self.photo_repo.filter_and_paginate,
             photo_ids_from_chroma,
             request.filters,
             request.offset,
@@ -80,7 +81,8 @@ class SearchService:
             
         photo_ids_from_chroma = [pid for pid in chroma_ids if pid != request.photo_id]
         
-        return self.photo_repo.filter_and_paginate(
+        return await asyncio.to_thread(
+            self.photo_repo.filter_and_paginate,
             photo_ids_from_chroma,
             request.filters,
             request.offset,

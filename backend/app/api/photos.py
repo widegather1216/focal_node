@@ -14,7 +14,13 @@ import schemas
 from repositories.photo_repository import PhotoRepository
 
 MAX_CONCURRENT_DECODES = 3
-decode_semaphore = asyncio.Semaphore(MAX_CONCURRENT_DECODES)
+_decode_semaphore: Optional[asyncio.Semaphore] = None
+
+def get_decode_semaphore() -> asyncio.Semaphore:
+    global _decode_semaphore
+    if _decode_semaphore is None:
+        _decode_semaphore = asyncio.Semaphore(MAX_CONCURRENT_DECODES)
+    return _decode_semaphore
 
 def _parse_ai_tags(ai_model) -> tuple[list[str], list[str]]:
     tags_list = models._parse_json_list(ai_model.tags if ai_model and hasattr(ai_model, "tags") else None)
@@ -63,7 +69,7 @@ async def get_photo_thumbnail(id: str, db: Session = Depends(get_db)):
             except Exception:
                 pass
                 
-        async with decode_semaphore:
+        async with get_decode_semaphore():
             thumb_bytes = await asyncio.to_thread(
                 photo_service.generate_and_cache_thumbnail, 
                 db_image.file_path, 
@@ -88,7 +94,7 @@ async def get_photo_original(id: str, db: Session = Depends(get_db)):
     try:
         from utils.image import is_raw_image
         if is_raw_image(db_image.file_path):
-            async with decode_semaphore:
+            async with get_decode_semaphore():
                 original_bytes, content_type = await asyncio.to_thread(photo_service.get_original_image_bytes, db_image)
             return Response(content=original_bytes, media_type=content_type)
         else:

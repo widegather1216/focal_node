@@ -78,17 +78,20 @@ def scan_directory(folder_paths: List[str]) -> List[str]:
 
 
 # --- Database & Cache Cleanup Routines ---
-# --- Database & Cache Cleanup Routines ---
 def delete_photo_atomic_sync(db: Session, image_id: str):
     """
     Atomically removes database records of an image from SQLite and ChromaDB,
     and purges its cached thumbnail from disk.
+    Uses CompensatingTransactionManager to ensure atomic multi-database consistency.
     """
+    from repositories.atomic_transaction import CompensatingTransactionManager
+    
     db_image = db.query(DBImage).filter(DBImage.id == image_id).first()
     if db_image:
         db.delete(db_image)
-    db.commit()
-    vector_repo.delete([image_id])
+        
+    tx_manager = CompensatingTransactionManager(db, vector_repo)
+    tx_manager.delete_and_commit([image_id])
     
     # Clean up cached thumbnail
     t_path = get_thumbnail_path(image_id)
@@ -163,8 +166,8 @@ def cleanup_zombie_records(db: Session = None):
                             os.remove(t_path)
                         except Exception:
                             pass
-            db.commit()
             vector_repo.delete(zombie_ids)
+            db.commit()
         else:
             print("[Indexer] No SQLite zombie/unindexed records found.", flush=True)
 
@@ -231,10 +234,10 @@ def remove_folder_data(folder_path: str, db: Session = None):
             ):
                 db.delete(f_rec)
 
-        db.commit()
-        
         if image_ids:
             vector_repo.delete(image_ids)
+
+        db.commit()
     except Exception as e:
         db.rollback()
         print(f"[Indexer] Error removing folder data: {e}", flush=True)
@@ -487,16 +490,22 @@ async def run_indexing_background(folder_paths: list[str]):
                         print(f"[Indexer] In-batch duplicate found. Skipping: {item['image_data']['file_path']}", flush=True)
 
                 def _save_batch():
-                    db_batch = SessionLocal()
-                    try:
-                        from services.photo import register_photos_batch_atomic
-                        register_photos_batch_atomic(db_batch, batch_data)
-                    except Exception as e:
-                        import traceback
-                        print(f"[Indexer] Batch DB Upsert Failed for {len(batch_data)} items: {e}", flush=True)
-                        traceback.print_exc()
-                    finally:
-                        db_batch.close()
+                    import time
+                    from services.photo import register_photos_batch_atomic
+                    for attempt in range(3):
+                        db_batch = SessionLocal()
+                        try:
+                            register_photos_batch_atomic(db_batch, batch_data)
+                            return
+                        except Exception as e:
+                            print(f"[Indexer] Batch DB Upsert attempt {attempt+1}/3 failed for {len(batch_data)} items: {e}", flush=True)
+                            if attempt < 2:
+                                time.sleep(0.3 * (attempt + 1))
+                            else:
+                                import traceback
+                                traceback.print_exc()
+                        finally:
+                            db_batch.close()
                 await asyncio.to_thread(_save_batch)
             
             await asyncio.sleep(0.01)
