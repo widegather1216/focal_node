@@ -150,16 +150,61 @@ def patch_photo_metadata(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update metadata: {str(e)}")
 
+def _resolve_unique_dest_path(dest_folder: str, file_name: str) -> tuple[str, str]:
+    base, ext = os.path.splitext(file_name)
+    final_name = file_name
+    counter = 1
+    target_path = os.path.join(dest_folder, final_name)
+    while os.path.exists(target_path):
+        final_name = f"{base} ({counter}){ext}"
+        target_path = os.path.join(dest_folder, final_name)
+        counter += 1
+    return target_path, final_name
+
+def _copy_export_file_sync(item_dict: dict, dest_folder: str) -> tuple[bool, str, Optional[str]]:
+    src_path = item_dict["file_path"]
+    src_name = item_dict["file_name"]
+    if not os.path.exists(src_path):
+        return False, src_name, f"File not found: {src_path}"
+
+    target_path, final_name = _resolve_unique_dest_path(dest_folder, src_name)
+    shutil.copy2(src_path, target_path)
+    return True, final_name, None
+
+async def _stream_export_events(export_items: list, dest_folder: str):
+    errors = []
+    exported_count = 0
+    total_count = len(export_items)
+
+    yield f"event: start\ndata: {json.dumps({'total': total_count})}\n\n".encode("utf-8")
+
+    for idx, item in enumerate(export_items):
+        try:
+            success, final_name, err_msg = await asyncio.to_thread(_copy_export_file_sync, item, dest_folder)
+            if success:
+                exported_count += 1
+                yield f"event: progress\ndata: {json.dumps({'processed': idx + 1, 'total': total_count, 'file': final_name})}\n\n".encode("utf-8")
+            else:
+                errors.append(err_msg)
+        except Exception as e:
+            errors.append(f"Failed to copy {item['file_name']}: {str(e)}")
+
+    final_result = {
+        "status": "success" if exported_count > 0 else "failed",
+        "exported_count": exported_count,
+        "errors": errors if errors else None,
+    }
+    yield f"event: done\ndata: {json.dumps(final_result)}\n\n".encode("utf-8")
+
 @router.post("/export")
 async def export_photos(payload: schemas.ExportRequest):
     """
     Exports selected photos to a destination folder via streaming.
     """
     dest_folder = payload.destination_folder
-    
     if not os.path.exists(dest_folder) or not os.path.isdir(dest_folder):
         raise HTTPException(status_code=400, detail="Invalid destination folder")
-        
+
     from database import SessionLocal
     with SessionLocal() as db:
         photo_repo = PhotoRepository(db)
@@ -167,50 +212,8 @@ async def export_photos(payload: schemas.ExportRequest):
         if not images:
             raise HTTPException(status_code=404, detail="No photos found to export")
         export_items = [{"file_path": img.file_path, "file_name": img.file_name} for img in images]
-        
-    async def export_generator():
-        errors = []
-        exported_count = 0
-        total_count = len(export_items)
-        
-        yield f"event: start\ndata: {json.dumps({'total': total_count})}\n\n".encode('utf-8')
-        
-        def _copy_file_worker(item_dict: dict) -> tuple[bool, str, Optional[str]]:
-            src_path = item_dict["file_path"]
-            src_name = item_dict["file_name"]
-            if not os.path.exists(src_path):
-                return False, src_name, f"File not found: {src_path}"
-            
-            base, ext = os.path.splitext(src_name)
-            final_name = src_name
-            counter = 1
-            target_path = os.path.join(dest_folder, final_name)
-            while os.path.exists(target_path):
-                final_name = f"{base} ({counter}){ext}"
-                target_path = os.path.join(dest_folder, final_name)
-                counter += 1
-            shutil.copy2(src_path, target_path)
-            return True, final_name, None
 
-        for idx, item in enumerate(export_items):
-            try:
-                success, final_name, err_msg = await asyncio.to_thread(_copy_file_worker, item)
-                if success:
-                    exported_count += 1
-                    yield f"event: progress\ndata: {json.dumps({'processed': idx + 1, 'total': total_count, 'file': final_name})}\n\n".encode('utf-8')
-                else:
-                    errors.append(err_msg)
-            except Exception as e:
-                errors.append(f"Failed to copy {item['file_name']}: {str(e)}")
-            
-        final_result = {
-            "status": "success" if exported_count > 0 else "failed",
-            "exported_count": exported_count,
-            "errors": errors if errors else None
-        }
-        yield f"event: done\ndata: {json.dumps(final_result)}\n\n".encode('utf-8')
-        
-    return StreamingResponse(export_generator(), media_type="text/event-stream")
+    return StreamingResponse(_stream_export_events(export_items, dest_folder), media_type="text/event-stream")
 
 from services.indexing_service import reindex_single_photo_inplace
 

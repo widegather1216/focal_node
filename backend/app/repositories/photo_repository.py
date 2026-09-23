@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, List, Optional
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_, func
 import models
@@ -48,6 +48,70 @@ class PhotoRepository:
             text_search_q = text_search_q.limit(limit)
         return [r[0] for r in text_search_q.all()]
 
+    @staticmethod
+    def _has_active_filters(filters: Any) -> bool:
+        if not filters:
+            return False
+        filter_fields = (
+            "is_favorite", "camera_model", "lens_model", "iso_min", "iso_max",
+            "f_number_min", "f_number_max", "focal_length_min", "focal_length_max",
+            "date_from", "date_to"
+        )
+        return any(getattr(filters, f, None) is not None for f in filter_fields)
+
+    @staticmethod
+    def _build_chroma_id_filter(query, photo_ids: List[str]):
+        chunk_size = 900
+        if len(photo_ids) > chunk_size:
+            conditions = [
+                models.Image.id.in_(photo_ids[i : i + chunk_size])
+                for i in range(0, len(photo_ids), chunk_size)
+            ]
+            return query.filter(or_(*conditions))
+        return query.filter(models.Image.id.in_(photo_ids))
+
+    @staticmethod
+    def _apply_exif_filters(query, filters: Any):
+        if getattr(filters, "is_favorite", None) is not None:
+            query = query.filter(models.Image.is_favorite == filters.is_favorite)
+        if getattr(filters, "camera_model", None):
+            query = query.filter(models.ImageMetadata.camera_model.ilike(f"%{filters.camera_model}%"))
+        if getattr(filters, "lens_model", None):
+            query = query.filter(models.ImageMetadata.lens_model.ilike(f"%{filters.lens_model}%"))
+
+        range_mappings = [
+            ("iso_min", models.ImageMetadata.iso, lambda col, val: col >= val),
+            ("iso_max", models.ImageMetadata.iso, lambda col, val: col <= val),
+            ("f_number_min", models.ImageMetadata.f_number, lambda col, val: col >= val),
+            ("f_number_max", models.ImageMetadata.f_number, lambda col, val: col <= val),
+            ("focal_length_min", models.ImageMetadata.focal_length, lambda col, val: col >= val),
+            ("focal_length_max", models.ImageMetadata.focal_length, lambda col, val: col <= val),
+            ("date_from", models.ImageMetadata.capture_date, lambda col, val: col >= val),
+            ("date_to", models.ImageMetadata.capture_date, lambda col, val: col <= val),
+        ]
+        for field_name, col, op in range_mappings:
+            val = getattr(filters, field_name, None)
+            if val is not None:
+                query = query.filter(op(col, val))
+        return query
+
+    def _paginate_by_chroma_order(
+        self,
+        query,
+        photo_ids: List[str],
+        offset: int,
+        limit: int
+    ) -> List[models.Image]:
+        matching_id_rows = query.with_entities(models.Image.id).all()
+        matching_ids = set(r[0] for r in matching_id_rows)
+        sorted_pids = [pid for pid in photo_ids if pid in matching_ids]
+        page_pids = sorted_pids[offset : offset + limit]
+        if not page_pids:
+            return []
+        page_images = self.get_by_ids(page_pids)
+        image_map = {img.id: img for img in page_images}
+        return [image_map[pid] for pid in page_pids if pid in image_map]
+
     def filter_and_paginate(
         self,
         photo_ids_from_chroma: Optional[List[str]],
@@ -59,97 +123,33 @@ class PhotoRepository:
         Applies EXIF filters and orders/paginates results.
         Optimized with fast-path pagination when no EXIF filters are present.
         """
-        q = self.db.query(models.Image).options(joinedload(models.Image.metadata_rel)).outerjoin(models.ImageMetadata, models.Image.id == models.ImageMetadata.image_id)
-        
-        has_active_filters = False
-        if filters:
-            for field in [
-                "is_favorite", "camera_model", "lens_model", "iso_min", "iso_max",
-                "f_number_min", "f_number_max", "focal_length_min", "focal_length_max",
-                "date_from", "date_to"
-            ]:
-                if getattr(filters, field, None) is not None:
-                    has_active_filters = True
-                    break
+        query = (
+            self.db.query(models.Image)
+            .options(joinedload(models.Image.metadata_rel))
+            .outerjoin(models.ImageMetadata, models.Image.id == models.ImageMetadata.image_id)
+        )
+        has_active_filters = self._has_active_filters(filters)
 
         if photo_ids_from_chroma is not None:
             if not photo_ids_from_chroma:
                 return []
-
-            # Fast-path: When no EXIF filters are active, query only the target page IDs from DB
             if not has_active_filters:
                 page_pids = photo_ids_from_chroma[offset : offset + limit]
                 if not page_pids:
                     return []
-                images = q.filter(models.Image.id.in_(page_pids)).all()
+                images = query.filter(models.Image.id.in_(page_pids)).all()
                 image_map = {img.id: img for img in images}
                 return [image_map[pid] for pid in page_pids if pid in image_map]
-            
-            chunk_size = 900
-            if len(photo_ids_from_chroma) > chunk_size:
-                conditions = [models.Image.id.in_(photo_ids_from_chroma[i:i + chunk_size]) 
-                              for i in range(0, len(photo_ids_from_chroma), chunk_size)]
-                q = q.filter(or_(*conditions))
-            else:
-                q = q.filter(models.Image.id.in_(photo_ids_from_chroma))
-                
-        # Apply EXIF filters
+
+            query = self._build_chroma_id_filter(query, photo_ids_from_chroma)
+
         if has_active_filters:
-            exif_filters = filters
-            if getattr(exif_filters, 'is_favorite', None) is not None:
-                q = q.filter(models.Image.is_favorite == exif_filters.is_favorite)
-            if getattr(exif_filters, 'camera_model', None):
-                q = q.filter(models.ImageMetadata.camera_model.ilike(f"%{exif_filters.camera_model}%"))
-            if getattr(exif_filters, 'lens_model', None):
-                q = q.filter(models.ImageMetadata.lens_model.ilike(f"%{exif_filters.lens_model}%"))
-                
-            iso_min = getattr(exif_filters, 'iso_min', None)
-            if iso_min is not None:
-                q = q.filter(models.ImageMetadata.iso >= iso_min)
+            query = self._apply_exif_filters(query, filters)
 
-            iso_max = getattr(exif_filters, 'iso_max', None)
-            if iso_max is not None:
-                q = q.filter(models.ImageMetadata.iso <= iso_max)
-
-            f_number_min = getattr(exif_filters, 'f_number_min', None)
-            if f_number_min is not None:
-                q = q.filter(models.ImageMetadata.f_number >= f_number_min)
-
-            f_number_max = getattr(exif_filters, 'f_number_max', None)
-            if f_number_max is not None:
-                q = q.filter(models.ImageMetadata.f_number <= f_number_max)
-
-            focal_length_min = getattr(exif_filters, 'focal_length_min', None)
-            if focal_length_min is not None:
-                q = q.filter(models.ImageMetadata.focal_length >= focal_length_min)
-
-            focal_length_max = getattr(exif_filters, 'focal_length_max', None)
-            if focal_length_max is not None:
-                q = q.filter(models.ImageMetadata.focal_length <= focal_length_max)
-
-            date_from = getattr(exif_filters, 'date_from', None)
-            if date_from is not None:
-                q = q.filter(models.ImageMetadata.capture_date >= date_from)
-
-            date_to = getattr(exif_filters, 'date_to', None)
-            if date_to is not None:
-                q = q.filter(models.ImageMetadata.capture_date <= date_to)
-                
-        # Order and paginate
         if photo_ids_from_chroma is not None:
-            # Memory & speed optimization: Fetch matching IDs first, slice target page,
-            # then instantiate only the requested page's ORM models instead of full table.
-            matching_id_rows = q.with_entities(models.Image.id).all()
-            matching_ids = set(r[0] for r in matching_id_rows)
-            sorted_pids = [pid for pid in photo_ids_from_chroma if pid in matching_ids]
-            page_pids = sorted_pids[offset : offset + limit]
-            if not page_pids:
-                return []
-            page_images = self.get_by_ids(page_pids)
-            image_map = {img.id: img for img in page_images}
-            return [image_map[pid] for pid in page_pids if pid in image_map]
-        else:
-            return q.order_by(models.ImageMetadata.capture_date.desc()).offset(offset).limit(limit).all()
+            return self._paginate_by_chroma_order(query, photo_ids_from_chroma, offset, limit)
+
+        return query.order_by(models.ImageMetadata.capture_date.desc()).offset(offset).limit(limit).all()
 
     def toggle_favorite(self, photo_id: str) -> Optional[models.Image]:
         db_image = self.get_by_id(photo_id)

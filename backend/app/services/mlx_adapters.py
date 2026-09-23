@@ -3,7 +3,7 @@ import gc
 import json
 import time
 import threading
-from typing import Any
+from typing import Any, Dict, Optional, Tuple
 from PIL import Image
 
 
@@ -401,7 +401,99 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                 self.last_used_time = time.time()
                 self.active_requests -= 1
 
-    def translate_and_format_critique(self, raw_en_critique: str, scores_dict: dict = None, quality_score: int = None, photo_id: str = None) -> str:
+    def _run_translation_pass1(
+        self,
+        raw_en_critique: str,
+        scores_dict: Optional[dict],
+        quality_score: Optional[int],
+        photo_id: Optional[str]
+    ) -> Tuple[str, float]:
+        from services.ai_parser import (
+            GEMMA_TRANSLATE_STEP1_SYSTEM_PROMPT,
+            format_unipercept_translate_step1_user_prompt,
+        )
+        from services.critique_status import critique_status_manager
+        import mlx.core as mx
+        from mlx_vlm import generate
+
+        print("\n" + "-" * 60, flush=True)
+        print("[GemmaAdapter] ⏱️ [Gemma Step 1/2] 무왜곡 100% 한국어 직역 시작...", flush=True)
+        t_pass1 = time.time()
+        if photo_id:
+            critique_status_manager.update(photo_id, 3, 4, "[Gemma] 한국어 정밀 직역 중...", 85)
+
+        step1_prompt_text = format_unipercept_translate_step1_user_prompt(raw_en_critique, scores_dict, quality_score)
+        messages_step1 = [
+            {"role": "system", "content": GEMMA_TRANSLATE_STEP1_SYSTEM_PROMPT},
+            {"role": "user", "content": [{"type": "text", "text": step1_prompt_text}]}
+        ]
+
+        with GPU_LOCK:
+            if photo_id:
+                critique_status_manager.check_cancelled(photo_id)
+            mx.clear_cache()
+            gc.collect()
+            tokenizer = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
+            prompt1 = tokenizer.apply_chat_template(messages_step1, tokenize=False, add_generation_prompt=True)
+            result1 = generate(self.model, self.processor, prompt=prompt1, max_tokens=4096, verbose=False)
+            step1_output = (result1.text if hasattr(result1, "text") else str(result1)).strip()
+            elapsed_pass1 = time.time() - t_pass1
+            print(f"[GemmaAdapter] ✅ [Gemma Step 1/2] 1차 직역 완료 ({len(step1_output)}자, 소요시간: {elapsed_pass1:.2f}초)", flush=True)
+            return step1_output, elapsed_pass1
+
+    def _run_translation_pass2(
+        self,
+        step1_output: str,
+        scores_dict: Optional[dict],
+        quality_score: Optional[int],
+        photo_id: Optional[str]
+    ) -> Tuple[str, float]:
+        from services.ai_parser import (
+            GEMMA_TRANSLATE_STEP2_SYSTEM_PROMPT,
+            format_unipercept_translate_step2_user_prompt,
+        )
+        from services.critique_status import critique_status_manager, CritiqueCancelledException
+        import mlx.core as mx
+        from mlx_vlm import generate
+
+        print("[GemmaAdapter] ⏱️ [Gemma Step 2/2] 학술 감수 및 리포트 양식 정돈 시작...", flush=True)
+        t_pass2 = time.time()
+        if photo_id:
+            critique_status_manager.update(photo_id, 4, 4, "[Gemma] 학술 리포트 양식 감수 및 정돈 중...", 95)
+
+        step2_prompt_text = format_unipercept_translate_step2_user_prompt(step1_output, scores_dict, quality_score)
+        messages_step2 = [
+            {"role": "system", "content": GEMMA_TRANSLATE_STEP2_SYSTEM_PROMPT},
+            {"role": "user", "content": [{"type": "text", "text": step2_prompt_text}]}
+        ]
+
+        try:
+            with GPU_LOCK:
+                if photo_id:
+                    critique_status_manager.check_cancelled(photo_id)
+                mx.clear_cache()
+                gc.collect()
+                tokenizer = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
+                prompt2 = tokenizer.apply_chat_template(messages_step2, tokenize=False, add_generation_prompt=True)
+                result2 = generate(self.model, self.processor, prompt=prompt2, max_tokens=4096, verbose=False)
+                step2_output = (result2.text if hasattr(result2, "text") else str(result2)).strip()
+                elapsed_pass2 = time.time() - t_pass2
+                print(f"[GemmaAdapter] ✅ [Gemma Step 2/2] 2차 정제 완료 ({len(step2_output)}자, 소요시간: {elapsed_pass2:.2f}초)", flush=True)
+                return step2_output, elapsed_pass2
+        except CritiqueCancelledException:
+            raise
+        except Exception as pass2_err:
+            elapsed_pass2 = time.time() - t_pass2
+            print(f"[GemmaAdapter] ⚠️ [Gemma Step 2/2] Pass 2 정제 실패 ({pass2_err}), 1차 직역본 사용 (소요시간: {elapsed_pass2:.2f}초)", flush=True)
+            return step1_output, elapsed_pass2
+
+    def translate_and_format_critique(
+        self,
+        raw_en_critique: str,
+        scores_dict: Optional[dict] = None,
+        quality_score: Optional[int] = None,
+        photo_id: Optional[str] = None
+    ) -> str:
         with GPU_LOCK:
             with self.lock:
                 self._load_model_locked()
@@ -409,95 +501,25 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                 self.active_requests += 1
 
         try:
-            from services.ai_parser import (
-                GEMMA_TRANSLATE_STEP1_SYSTEM_PROMPT,
-                GEMMA_TRANSLATE_STEP2_SYSTEM_PROMPT,
-                format_unipercept_translate_step1_user_prompt,
-                format_unipercept_translate_step2_user_prompt,
-            )
             from services.critique_status import critique_status_manager, CritiqueCancelledException
 
-            import mlx.core as mx
+            if photo_id:
+                critique_status_manager.check_cancelled(photo_id)
+
+            step1_output, elapsed_pass1 = self._run_translation_pass1(
+                raw_en_critique, scores_dict, quality_score, photo_id
+            )
 
             if photo_id:
                 critique_status_manager.check_cancelled(photo_id)
 
-            # --- Pass 1: 1차 무왜곡 100% 직역 추론 (Direct Translation) ---
-            print("\n" + "-"*60, flush=True)
-            print("[GemmaAdapter] ⏱️ [Gemma Step 1/2] 무왜곡 100% 한국어 직역 시작...", flush=True)
-            t_pass1 = time.time()
-            if photo_id:
-                critique_status_manager.update(photo_id, 3, 4, "[Gemma] 한국어 정밀 직역 중...", 85)
-            step1_prompt_text = format_unipercept_translate_step1_user_prompt(raw_en_critique, scores_dict, quality_score)
-            messages_step1 = [
-                {
-                    "role": "system",
-                    "content": GEMMA_TRANSLATE_STEP1_SYSTEM_PROMPT
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": step1_prompt_text}
-                    ]
-                }
-            ]
+            step2_output, elapsed_pass2 = self._run_translation_pass2(
+                step1_output, scores_dict, quality_score, photo_id
+            )
 
-            with GPU_LOCK:
-                if photo_id:
-                    critique_status_manager.check_cancelled(photo_id)
-                mx.clear_cache()
-                gc.collect()
-                tokenizer = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
-                prompt1 = tokenizer.apply_chat_template(messages_step1, tokenize=False, add_generation_prompt=True)
-
-                from mlx_vlm import generate
-                result1 = generate(self.model, self.processor, prompt=prompt1, max_tokens=4096, verbose=False)
-                step1_output = (result1.text if hasattr(result1, "text") else str(result1)).strip()
-                elapsed_pass1 = time.time() - t_pass1
-                print(f"[GemmaAdapter] ✅ [Gemma Step 1/2] 1차 직역 완료 ({len(step1_output)}자, 소요시간: {elapsed_pass1:.2f}초)", flush=True)
-
-            if photo_id:
-                critique_status_manager.check_cancelled(photo_id)
-
-            # --- Pass 2: 2차 학술 감수 및 리포트 양식 정돈 (Academic Proofreading & Report Formatting) ---
-            print("[GemmaAdapter] ⏱️ [Gemma Step 2/2] 학술 감수 및 리포트 양식 정돈 시작...", flush=True)
-            t_pass2 = time.time()
-            if photo_id:
-                critique_status_manager.update(photo_id, 4, 4, "[Gemma] 학술 리포트 양식 감수 및 정돈 중...", 95)
-            step2_prompt_text = format_unipercept_translate_step2_user_prompt(step1_output, scores_dict, quality_score)
-            messages_step2 = [
-                {
-                    "role": "system",
-                    "content": GEMMA_TRANSLATE_STEP2_SYSTEM_PROMPT
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": step2_prompt_text}
-                    ]
-                }
-            ]
-
-            try:
-                with GPU_LOCK:
-                    if photo_id:
-                        critique_status_manager.check_cancelled(photo_id)
-                    mx.clear_cache()
-                    gc.collect()
-                    prompt2 = tokenizer.apply_chat_template(messages_step2, tokenize=False, add_generation_prompt=True)
-                    result2 = generate(self.model, self.processor, prompt=prompt2, max_tokens=4096, verbose=False)
-                    step2_output = (result2.text if hasattr(result2, "text") else str(result2)).strip()
-                    elapsed_pass2 = time.time() - t_pass2
-                    print(f"[GemmaAdapter] ✅ [Gemma Step 2/2] 2차 정제 완료 ({len(step2_output)}자, 소요시간: {elapsed_pass2:.2f}초)", flush=True)
-                    print(f"[GemmaAdapter] 🏁 Gemma 번역 파이프라인 전체 완료 (총 소요시간: {elapsed_pass1 + elapsed_pass2:.2f}초)", flush=True)
-                    print("-" * 60 + "\n", flush=True)
-                    return step2_output
-            except CritiqueCancelledException:
-                raise
-            except Exception as pass2_err:
-                elapsed_pass2 = time.time() - t_pass2
-                print(f"[GemmaAdapter] ⚠️ [Gemma Step 2/2] Pass 2 정제 실패 ({pass2_err}), 1차 직역본 사용 (소요시간: {elapsed_pass2:.2f}초)", flush=True)
-                return step1_output
+            print(f"[GemmaAdapter] 🏁 Gemma 번역 파이프라인 전체 완료 (총 소요시간: {elapsed_pass1 + elapsed_pass2:.2f}초)", flush=True)
+            print("-" * 60 + "\n", flush=True)
+            return step2_output
 
         except CritiqueCancelledException:
             raise

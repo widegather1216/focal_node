@@ -114,16 +114,29 @@ class UniPerceptAdapter(BaseKeepAliveModel):
 
 
 
-    def compute_official_vr_score(self, pixel_values: torch.Tensor, desc: str) -> float:
-        """
-        Computes exact continuous score (0-100) using 100% official UniPercept logic:
-        1. Query template formatting with <image> token and 101-token mapping instruction.
-        2. Single forward pass to extract last-token logits on AESTHETICS_TOKEN_LIST.
-        3. Expected value calculation: torch.softmax(logits, -1) @ weight_tensor.
-        """
-        if self.model is None or self.tokenizer is None:
-            return 70.0
+    @staticmethod
+    def _resolve_conversation_template(model) -> Optional[Any]:
+        """Dynamically loads conversation template from transformers_modules or HF snapshot cache."""
+        template_name = getattr(model.config, 'template', 'internvl2_5') if hasattr(model, 'config') else 'internvl2_5'
+        try:
+            from transformers_modules.widegather.unipercept_hyphen_mirror.conversation import get_conv_template
+            return get_conv_template(template_name)
+        except Exception:
+            try:
+                import importlib.util, glob
+                cached_convs = glob.glob(os.path.expanduser("~/.cache/huggingface/hub/models--widegather--unipercept-mirror/snapshots/*/conversation.py"))
+                if cached_convs:
+                    spec = importlib.util.spec_from_file_location("conversation", cached_convs[0])
+                    conv_mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(conv_mod)
+                    return conv_mod.get_conv_template(template_name)
+            except Exception:
+                pass
+        return None
 
+    @classmethod
+    def _build_vr_score_query(cls, desc: str, template: Any, model: Any, num_patches: int) -> str:
+        """Formats the official UniPercept VR question and applies template and image tokens."""
         question = (
             f"<image>Rate the {desc} score of the image in 0-100. "
             f"In the output format, numbers are replaced by 2 corresponding letters, and the mapping relationship is: "
@@ -134,47 +147,38 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             f"The answer only outputs 2 corresponding letters."
         )
 
-        IMG_START_TOKEN = '<img>'
-        IMG_END_TOKEN = '</img>'
-        IMG_CONTEXT_TOKEN = '<IMG_CONTEXT>'
-
-        # Load conversation template
-        template_name = getattr(self.model.config, 'template', 'internvl2_5') if hasattr(self.model, 'config') else 'internvl2_5'
-        try:
-            from transformers_modules.widegather.unipercept_hyphen_mirror.conversation import get_conv_template
-            template = get_conv_template(template_name)
-        except Exception:
-            try:
-                # Fallback to local snapshot file if dynamic module path differs
-                import importlib.util
-                import glob
-                cached_convs = glob.glob(os.path.expanduser("~/.cache/huggingface/hub/models--widegather--unipercept-mirror/snapshots/*/conversation.py"))
-                if cached_convs:
-                    spec = importlib.util.spec_from_file_location("conversation", cached_convs[0])
-                    conv_mod = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(conv_mod)
-                    get_conv_template = conv_mod.get_conv_template
-                    template = get_conv_template(template_name)
-                else:
-                    template = None
-            except Exception:
-                template = None
-
         if template is not None:
-            template.system_message = getattr(self.model.config, 'system_message', '') if hasattr(self.model, 'config') else ''
+            template.system_message = getattr(model.config, 'system_message', '') if hasattr(model, 'config') else ''
             template.append_message(template.roles[0], question)
             template.append_message(template.roles[1], None)
             query = template.get_prompt()
         else:
             query = f"<image>\n{question}"
 
-        img_context_token_id = self.tokenizer.convert_tokens_to_ids(IMG_CONTEXT_TOKEN)
-        num_patches = pixel_values.shape[0] if pixel_values is not None else 1
-        num_image_token = getattr(self.model, 'num_image_token', 256)
+        IMG_START_TOKEN = '<img>'
+        IMG_END_TOKEN = '</img>'
+        IMG_CONTEXT_TOKEN = '<IMG_CONTEXT>'
+        num_image_token = getattr(model, 'num_image_token', 256)
         image_tokens = IMG_START_TOKEN + IMG_CONTEXT_TOKEN * num_image_token * num_patches + IMG_END_TOKEN
-        query = query.replace('<image>', image_tokens, 1)
+        return query.replace('<image>', image_tokens, 1)
 
+    def compute_official_vr_score(self, pixel_values: torch.Tensor, desc: str) -> float:
+        """
+        Computes exact continuous score (0-100) using 100% official UniPercept logic:
+        1. Query template formatting with <image> token and 101-token mapping instruction.
+        2. Single forward pass to extract last-token logits on AESTHETICS_TOKEN_LIST.
+        3. Expected value calculation: torch.softmax(logits, -1) @ weight_tensor.
+        """
+        if self.model is None or self.tokenizer is None:
+            return 70.0
+
+        num_patches = pixel_values.shape[0] if pixel_values is not None else 1
+        template = self._resolve_conversation_template(self.model)
+        query = self._build_vr_score_query(desc, template, self.model, num_patches)
+
+        img_context_token_id = self.tokenizer.convert_tokens_to_ids('<IMG_CONTEXT>')
         model_inputs = self.tokenizer(query, return_tensors='pt')
+
         with GPU_LOCK:
             input_ids = model_inputs['input_ids'].to(self.device)
             attention_mask = model_inputs['attention_mask'].to(self.device)
@@ -346,6 +350,53 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                 self.last_used_time = time.time()
                 self.active_requests -= 1
 
+    @staticmethod
+    def _format_score_guidance_desc(scores_context: Optional[Dict[str, Any]]) -> str:
+        if not scores_context or not isinstance(scores_context, dict):
+            return ""
+        ov = scores_context.get("overall")
+        iaa = scores_context.get("iaa")
+        iqa = scores_context.get("iqa")
+        ista = scores_context.get("ista")
+        return (
+            f"[Target Perceptual Metric Scores]\n"
+            f"- Overall Photo Rating: {ov}/100\n"
+            f"- Aesthetics & Composition (IAA): {iaa}/100\n"
+            f"- Technical Quality & Clarity (IQA): {iqa}/100\n"
+            f"- Structure & Textural Details (ISTA): {ista}/100\n"
+            f"Instruction: Analyze this photo reflecting these exact scores. If any score is under 70, strictly focus on identifying the specific visual defects, noise, blur, lighting imbalance, or compositional flaws. Do NOT use inflated praise words like 'masterpiece', 'flawless', or 'impeccable' unless scores exceed 90.\n\n"
+        )
+
+    def _run_single_vqa_domain_inference(
+        self,
+        prompt_text: str,
+        pixel_values: torch.Tensor,
+        pil_img,
+        generation_config: dict
+    ) -> str:
+        with GPU_LOCK:
+            try:
+                with torch.inference_mode():
+                    if hasattr(self.model, "chat"):
+                        txt = self.model.chat(
+                            self.tokenizer,
+                            pixel_values,
+                            prompt_text,
+                            generation_config=generation_config
+                        )
+                    else:
+                        inputs = self.processor(images=pil_img, text=prompt_text, return_tensors="pt").to(self.device, dtype=self.torch_dtype)
+                        outputs = self.model.generate(**inputs, max_new_tokens=1024)
+                        txt = self.processor.decode(outputs[0], skip_special_tokens=True)
+                        del inputs, outputs
+                return txt.strip()
+            finally:
+                if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+                    try:
+                        torch.mps.empty_cache()
+                    except Exception:
+                        pass
+
     def generate_vqa_critiques_3way(
         self,
         image_path: str,
@@ -365,7 +416,6 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                 self.active_requests += 1
 
         try:
-
             if (not os.path.exists(image_path) and not hasattr(self.model, "chat")) or self.model is None:
                 return {
                     "iaa": "이미지를 분석할 수 없습니다.",
@@ -380,22 +430,7 @@ class UniPerceptAdapter(BaseKeepAliveModel):
 
             pil_img = self._load_pil_image(image_path)
             exif_desc = self._format_exif_desc(metadata)
-
-            score_desc = ""
-            if scores_context and isinstance(scores_context, dict):
-                ov = scores_context.get("overall")
-                iaa = scores_context.get("iaa")
-                iqa = scores_context.get("iqa")
-                ista = scores_context.get("ista")
-                score_desc = (
-                    f"[Target Perceptual Metric Scores]\n"
-                    f"- Overall Photo Rating: {ov}/100\n"
-                    f"- Aesthetics & Composition (IAA): {iaa}/100\n"
-                    f"- Technical Quality & Clarity (IQA): {iqa}/100\n"
-                    f"- Structure & Textural Details (ISTA): {ista}/100\n"
-                    f"Instruction: Analyze this photo reflecting these exact scores. If any score is under 70, strictly focus on identifying the specific visual defects, noise, blur, lighting imbalance, or compositional flaws. Do NOT use inflated praise words like 'masterpiece', 'flawless', or 'impeccable' unless scores exceed 90.\n\n"
-                )
-
+            score_desc = self._format_score_guidance_desc(scores_context)
             pixel_values = self._prepare_pixel_values(pil_img)
 
             from services.ai_parser import (
@@ -403,22 +438,14 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                 UNIPERCEPT_VQA_IQA_PROMPT,
                 UNIPERCEPT_VQA_ISTA_PROMPT
             )
-
             vqa_steps = [
                 ("iaa", UNIPERCEPT_VQA_IAA_PROMPT, "미학·구도 비평 (IAA)", 4, 45),
                 ("iqa", UNIPERCEPT_VQA_IQA_PROMPT, "화질·왜곡 비평 (IQA)", 5, 60),
                 ("ista", UNIPERCEPT_VQA_ISTA_PROMPT, "구조·재질 비평 (ISTA)", 6, 75),
             ]
+            generation_config = dict(max_new_tokens=1024, do_sample=False, num_beams=1, repetition_penalty=1.2)
 
-            generation_config = dict(
-                max_new_tokens=1024,
-                do_sample=False,
-                num_beams=1,
-                repetition_penalty=1.2
-            )
-
-            critiques = {}
-            timings = {}
+            critiques, timings = {}, {}
             for domain_key, base_prompt, label, step_idx, prog in vqa_steps:
                 if photo_id:
                     from services.critique_status import critique_status_manager
@@ -431,38 +458,17 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                 step_t0 = time.time()
                 prompt_text = f"{exif_desc}{score_desc}{base_prompt}"
 
-                with GPU_LOCK:
-                    try:
-                        with torch.inference_mode():
-                            if hasattr(self.model, "chat"):
-                                txt = self.model.chat(
-                                    self.tokenizer,
-                                    pixel_values,
-                                    prompt_text,
-                                    generation_config=generation_config
-                                )
-                            else:
-                                inputs = self.processor(images=pil_img, text=prompt_text, return_tensors="pt").to(self.device, dtype=self.torch_dtype)
-                                outputs = self.model.generate(**inputs, max_new_tokens=1024)
-                                txt = self.processor.decode(outputs[0], skip_special_tokens=True)
-                                del inputs, outputs
-                        critiques[domain_key] = txt.strip()
-                        elapsed = time.time() - step_t0
-                        timings[domain_key] = elapsed
-                        print(f"[UniPercept] ✅ [VQA Step {step_idx-3}/3] {label} 완료 ➔ {len(txt)}자 생성 (소요시간: {elapsed:.2f}초)", flush=True)
-                    except Exception as eval_err:
-                        elapsed = time.time() - step_t0
-                        print(f"[UniPercept] ❌ [VQA Step {step_idx-3}/3] {label} 오류 ({eval_err}) (소요시간: {elapsed:.2f}초)", flush=True)
-                        critiques[domain_key] = f"분석 오류: {eval_err}"
-                    finally:
-                        # Clear MPS activation buffers after each domain VQA generation
-                        if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
-                            try:
-                                torch.mps.empty_cache()
-                            except Exception:
-                                pass
+                try:
+                    txt = self._run_single_vqa_domain_inference(prompt_text, pixel_values, pil_img, generation_config)
+                    critiques[domain_key] = txt
+                    elapsed = time.time() - step_t0
+                    timings[domain_key] = elapsed
+                    print(f"[UniPercept] ✅ [VQA Step {step_idx-3}/3] {label} 완료 ➔ {len(txt)}자 생성 (소요시간: {elapsed:.2f}초)", flush=True)
+                except Exception as eval_err:
+                    elapsed = time.time() - step_t0
+                    print(f"[UniPercept] ❌ [VQA Step {step_idx-3}/3] {label} 오류 ({eval_err}) (소요시간: {elapsed:.2f}초)", flush=True)
+                    critiques[domain_key] = f"분석 오류: {eval_err}"
 
-            # Clean up pixel_values after completing all 3 VQA domains
             del pixel_values
             if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
                 try:
