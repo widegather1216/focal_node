@@ -8,7 +8,7 @@ atomic cleaning routines, and background photo indexing pipelines.
 import os
 import hashlib
 import asyncio
-from typing import List, Tuple, Dict, Any, Union
+from typing import List, Tuple, Dict, Any, Union, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
 
@@ -314,100 +314,191 @@ def index_single_file_sync(file_path: str) -> Union[dict, str]:
         return "error"
 
 
+# --- Single Photo Reindexing Helpers ---
+def _validate_photo_for_reindex(photo_id: str) -> str:
+    """Verifies photo exists in DB and on disk before re-indexing."""
+    db = SessionLocal()
+    try:
+        db_img = db.query(DBImage).filter(DBImage.id == photo_id).first()
+        if not db_img:
+            raise ValueError(f"Photo ID {photo_id} not found in database.")
+        file_path = db_img.file_path
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File {file_path} no longer exists.")
+        return file_path
+    finally:
+        db.close()
+
+
+def _update_orm_photo_models(db: Session, photo_id: str, metadata: dict, ai_result: dict) -> None:
+    """Updates ImageMetadata and AIAnalysis ORM entities with newly extracted values."""
+    import json
+    db_meta = db.query(DBImageMetadata).filter(DBImageMetadata.image_id == photo_id).first()
+    if not db_meta:
+        db_meta = DBImageMetadata(image_id=photo_id)
+        db.add(db_meta)
+
+    for field in [
+        "width", "height", "color_space", "camera_model", "lens_model",
+        "f_number", "focal_length", "focal_length_35mm", "crop_factor",
+        "sensor_format", "shutter_speed", "iso", "capture_date"
+    ]:
+        setattr(db_meta, field, metadata.get(field))
+
+    db_ai = db.query(DBAIAnalysis).filter(DBAIAnalysis.image_id == photo_id).first()
+    if not db_ai:
+        db_ai = DBAIAnalysis(image_id=photo_id)
+        db.add(db_ai)
+
+    db_ai.caption = ai_result.get("caption", "")
+    db_ai.tags = json.dumps(ai_result.get("tags", []))
+    db_ai.aesthetic_tags = json.dumps(ai_result.get("aesthetic_tags", []))
+    db_ai.is_user_edited = False
+
+
+def _rollback_chroma_embedding(photo_id: str, old_embedding: Optional[list[float]], chroma_meta: dict, err: Exception) -> None:
+    """Restores previous ChromaDB embedding or deletes it if previously absent."""
+    try:
+        if old_embedding:
+            vector_repo.upsert(ids=[photo_id], embeddings=[old_embedding], metadatas=[chroma_meta])
+        else:
+            vector_repo.delete([photo_id])
+        print(f"[CompensatingTx] Successfully reverted ChromaDB after SQLite failure: {err}", flush=True)
+    except Exception as comp_err:
+        print(f"[CompensatingTx] Failed to execute compensating ChromaDB rollback: {comp_err}", flush=True)
+
+
+def _commit_reindex_with_compensation(
+    photo_id: str,
+    metadata: dict,
+    embedding: list[float],
+    old_embedding: Optional[list[float]],
+    db: Session,
+    db_img: DBImage
+) -> dict:
+    """Upserts ChromaDB embedding, commits SQLite, and rolls back ChromaDB if commit fails."""
+    chroma_meta = _prepare_chroma_metadata(metadata)
+    vector_repo.upsert(
+        ids=[photo_id],
+        embeddings=[embedding],
+        metadatas=[chroma_meta]
+    )
+    try:
+        db.commit()
+        db.refresh(db_img)
+        return db_img.to_detail_dict()
+    except Exception as commit_err:
+        db.rollback()
+        _rollback_chroma_embedding(photo_id, old_embedding, chroma_meta, commit_err)
+        raise commit_err
+
+
 async def reindex_single_photo_inplace(photo_id: str) -> dict:
     """
     Re-runs metadata, embedding, and caption inference for an existing photo,
     updating the database in-place without deleting the core Image record.
     """
-    import json
-    
-    db: Session = SessionLocal()
-    try:
-        db_img = db.query(DBImage).filter(DBImage.id == photo_id).first()
-        if not db_img:
-            raise ValueError(f"Photo ID {photo_id} not found in database.")
-            
-        file_path = db_img.file_path
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File {file_path} no longer exists.")
-    finally:
-        db.close()
-            
+    file_path = await asyncio.to_thread(_validate_photo_for_reindex, photo_id)
     metadata, embedding, ai_result = await asyncio.to_thread(run_ai_pipeline_sync, file_path)
-    
-    db = SessionLocal()
-    try:
-        db_img = db.query(DBImage).filter(DBImage.id == photo_id).first()
-        if not db_img:
-             raise ValueError(f"Photo ID {photo_id} was deleted during re-indexing.")
-             
-        db_meta = db.query(DBImageMetadata).filter(DBImageMetadata.image_id == photo_id).first()
-        if not db_meta:
-            db_meta = DBImageMetadata(image_id=photo_id)
-            db.add(db_meta)
-        
-        db_meta.width = metadata.get("width")
-        db_meta.height = metadata.get("height")
-        db_meta.color_space = metadata.get("color_space")
-        db_meta.camera_model = metadata.get("camera_model")
-        db_meta.lens_model = metadata.get("lens_model")
-        db_meta.f_number = metadata.get("f_number")
-        db_meta.focal_length = metadata.get("focal_length")
-        db_meta.focal_length_35mm = metadata.get("focal_length_35mm")
-        db_meta.crop_factor = metadata.get("crop_factor")
-        db_meta.sensor_format = metadata.get("sensor_format")
-        db_meta.shutter_speed = metadata.get("shutter_speed")
-        db_meta.iso = metadata.get("iso")
-        db_meta.capture_date = metadata.get("capture_date")
-        
-        db_ai = db.query(DBAIAnalysis).filter(DBAIAnalysis.image_id == photo_id).first()
-        if not db_ai:
-            db_ai = DBAIAnalysis(image_id=photo_id)
-            db.add(db_ai)
-            
-        db_ai.caption = ai_result.get("caption", "")
-        db_ai.tags = json.dumps(ai_result.get("tags", []))
-        db_ai.aesthetic_tags = json.dumps(ai_result.get("aesthetic_tags", []))
-        db_ai.is_user_edited = False
-        
-        chroma_meta = _prepare_chroma_metadata(metadata)
-        
-        # Backup existing Chroma embedding in case SQLite commit fails
-        old_embedding = await asyncio.to_thread(vector_repo.get_embedding_by_id, photo_id)
-        
-        await asyncio.to_thread(
-            vector_repo.upsert,
-            ids=[photo_id],
-            embeddings=[embedding],
-            metadatas=[chroma_meta]
-        )
-        
+    old_embedding = await asyncio.to_thread(vector_repo.get_embedding_by_id, photo_id)
+
+    def _sync_db_update() -> dict:
+        db = SessionLocal()
         try:
-            db.commit()
-            db.refresh(db_img)
-            return db_img.to_detail_dict()
-        except Exception as commit_err:
-            db.rollback()
-            try:
-                if old_embedding:
-                    await asyncio.to_thread(
-                        vector_repo.upsert,
-                        ids=[photo_id],
-                        embeddings=[old_embedding],
-                        metadatas=[chroma_meta]
-                    )
-                else:
-                    await asyncio.to_thread(vector_repo.delete, [photo_id])
-                print(f"[CompensatingTx] Successfully reverted ChromaDB after SQLite failure: {commit_err}", flush=True)
-            except Exception as comp_err:
-                print(f"[CompensatingTx] Failed to execute compensating ChromaDB rollback: {comp_err}", flush=True)
-            raise commit_err
-    except Exception as e:
-        db.rollback()
-        print(f"[Indexer] Re-index failed for {photo_id}: {e}", flush=True)
-        raise e
-    finally:
-        db.close()
+            db_img = db.query(DBImage).filter(DBImage.id == photo_id).first()
+            if not db_img:
+                raise ValueError(f"Photo ID {photo_id} was deleted during re-indexing.")
+            _update_orm_photo_models(db, photo_id, metadata, ai_result)
+            return _commit_reindex_with_compensation(photo_id, metadata, embedding, old_embedding, db, db_img)
+        finally:
+            db.close()
+
+    return await asyncio.to_thread(_sync_db_update)
+
+
+# --- Background Indexing Scheduler Helpers ---
+def _deduplicate_batch_items(raw_items: list[dict]) -> list[dict]:
+    """Filters duplicate photo records within a single chunk batch."""
+    batch_data = []
+    seen_ids = set()
+    for item in raw_items:
+        img_id = item["image_data"]["id"]
+        if img_id not in seen_ids:
+            seen_ids.add(img_id)
+            batch_data.append(item)
+        else:
+            print(f"[Indexer] In-batch duplicate found. Skipping: {item['image_data']['file_path']}", flush=True)
+    return batch_data
+
+
+def _commit_batch_with_retry(batch_data: list[dict], max_attempts: int = 3) -> None:
+    """Saves indexed photos batch to SQLite and ChromaDB with exponential backoff retry."""
+    import time
+    from services.photo import register_photos_batch_atomic
+    for attempt in range(max_attempts):
+        db_batch = SessionLocal()
+        try:
+            register_photos_batch_atomic(db_batch, batch_data)
+            return
+        except Exception as e:
+            print(f"[Indexer] Batch DB Upsert attempt {attempt+1}/{max_attempts} failed for {len(batch_data)} items: {e}", flush=True)
+            if attempt < max_attempts - 1:
+                time.sleep(0.3 * (attempt + 1))
+            else:
+                import traceback
+                traceback.print_exc()
+        finally:
+            db_batch.close()
+
+
+def _log_indexing_progress(f_path: str, res: Any, count: int, total: int) -> None:
+    """Formats and prints progress log for indexed file."""
+    if isinstance(res, dict):
+        status_str = "Indexed with AI"
+    elif res == "skipped_duplicate_hash":
+        status_str = "Skipped (Duplicate Hash)"
+    elif res == "skipped":
+        status_str = "Skipped (Already Indexed)"
+    else:
+        status_str = f"Status: {res}"
+    print(f"[Indexing] Progress: {count}/{total} - {f_path} ({status_str})", flush=True)
+
+
+async def _process_single_indexing_file(
+    f_path: str,
+    semaphore: asyncio.Semaphore,
+    total_files: int,
+    counter: list[int]
+) -> Any:
+    """Handles concurrency, pause/cancel checking, and progress updates for a single file."""
+    if indexing_state_manager.cancel_requested:
+        return "cancelled"
+
+    async with semaphore:
+        if indexing_state_manager.cancel_requested:
+            return "cancelled"
+        if not indexing_state_manager.pause_event.is_set():
+            await indexing_state_manager.pause_event.wait()
+        if indexing_state_manager.cancel_requested:
+            return "cancelled"
+
+        res = await asyncio.to_thread(index_single_file_sync, f_path)
+        counter[0] += 1
+        indexing_state_manager.update_progress(counter[0], total_files, f_path)
+        _log_indexing_progress(f_path, res, counter[0], total_files)
+        return res
+
+
+def _finalize_indexing_status() -> None:
+    """Sets final indexing status and emits completion log."""
+    if indexing_state_manager.cancel_requested:
+        indexing_state_manager.status = "cancelled"
+        print("[Indexer] Background indexing cancelled.", flush=True)
+    else:
+        indexing_state_manager.status = "idle"
+        indexing_state_manager.update_progress(0, 0, "")
+        print("[Indexer] Background indexing completed.", flush=True)
+        print("[Indexer] Sync completed.", flush=True)
 
 
 async def run_indexing_background(folder_paths: list[str]):
@@ -417,51 +508,22 @@ async def run_indexing_background(folder_paths: list[str]):
     """
     indexing_state_manager.reset_status()
     indexing_state_manager.status = "processing"
-    
+
     try:
         files = await asyncio.to_thread(scan_directory, folder_paths)
         total_files = len(files)
         indexing_state_manager.update_progress(0, total_files, "")
         print(f"[Indexer] Starting background indexing. Found {total_files} files.", flush=True)
-        
+
         await asyncio.to_thread(cleanup_zombie_records)
-        
         if not files:
             print("[Indexer] No files found for indexing.", flush=True)
             return
-            
+
         semaphore = asyncio.Semaphore(4)
-        processed_count = 0
-        
-        async def process_file(f_path):
-            nonlocal processed_count
-            if indexing_state_manager.cancel_requested:
-                return "cancelled"
-            async with semaphore:
-                if indexing_state_manager.cancel_requested:
-                    return "cancelled"
-                if not indexing_state_manager.pause_event.is_set():
-                    await indexing_state_manager.pause_event.wait()
-                if indexing_state_manager.cancel_requested:
-                    return "cancelled"
-
-                res = await asyncio.to_thread(index_single_file_sync, f_path)
-                processed_count += 1
-                indexing_state_manager.update_progress(processed_count, total_files, f_path)
-                
-                if isinstance(res, dict):
-                    status_str = "Indexed with AI"
-                elif res == "skipped_duplicate_hash":
-                    status_str = "Skipped (Duplicate Hash)"
-                elif res == "skipped":
-                    status_str = "Skipped (Already Indexed)"
-                else:
-                    status_str = f"Status: {res}"
-                    
-                print(f"[Indexing] Progress: {processed_count}/{total_files} - {f_path} ({status_str})", flush=True)
-                return res
-
+        counter = [0]
         chunk_size = 100
+
         for i in range(0, len(files), chunk_size):
             if indexing_state_manager.cancel_requested:
                 break
@@ -473,54 +535,20 @@ async def run_indexing_background(folder_paths: list[str]):
                     break
 
             chunk_files = files[i:i+chunk_size]
-            tasks = [asyncio.create_task(process_file(f)) for f in chunk_files]
+            tasks = [_process_single_indexing_file(f, semaphore, total_files, counter) for f in chunk_files]
             results = await asyncio.gather(*tasks)
-            
-            raw_batch_data = [res for res in results if isinstance(res, dict)]
-            
-            if raw_batch_data:
-                batch_data = []
-                seen_ids = set()
-                for item in raw_batch_data:
-                    img_id = item["image_data"]["id"]
-                    if img_id not in seen_ids:
-                        seen_ids.add(img_id)
-                        batch_data.append(item)
-                    else:
-                        print(f"[Indexer] In-batch duplicate found. Skipping: {item['image_data']['file_path']}", flush=True)
 
-                def _save_batch():
-                    import time
-                    from services.photo import register_photos_batch_atomic
-                    for attempt in range(3):
-                        db_batch = SessionLocal()
-                        try:
-                            register_photos_batch_atomic(db_batch, batch_data)
-                            return
-                        except Exception as e:
-                            print(f"[Indexer] Batch DB Upsert attempt {attempt+1}/3 failed for {len(batch_data)} items: {e}", flush=True)
-                            if attempt < 2:
-                                time.sleep(0.3 * (attempt + 1))
-                            else:
-                                import traceback
-                                traceback.print_exc()
-                        finally:
-                            db_batch.close()
-                await asyncio.to_thread(_save_batch)
-            
+            raw_batch_data = [res for res in results if isinstance(res, dict)]
+            if raw_batch_data:
+                batch_data = _deduplicate_batch_items(raw_batch_data)
+                await asyncio.to_thread(_commit_batch_with_retry, batch_data)
+
             await asyncio.sleep(0.01)
 
     except Exception as e:
         print(f"[Indexer] Background task error: {e}", flush=True)
     finally:
-        if indexing_state_manager.cancel_requested:
-            indexing_state_manager.status = "cancelled"
-            print("[Indexer] Background indexing cancelled.", flush=True)
-        else:
-            indexing_state_manager.status = "idle"
-            indexing_state_manager.update_progress(0, 0, "")
-            print("[Indexer] Background indexing completed.", flush=True)
-            print("[Indexer] Sync completed.", flush=True)
+        _finalize_indexing_status()
 
 
 __all__ = [

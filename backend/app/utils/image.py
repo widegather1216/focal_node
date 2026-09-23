@@ -185,15 +185,107 @@ def _determine_sensor_format(
         return "Full Frame"
     return f"Crop {crop_factor}x"
 
+def _extract_image_dimensions(file_path: str) -> tuple[Optional[int], Optional[int], str]:
+    """Reads image dimensions and color space for RAW or standard image formats."""
+    width, height, color_space = None, None, "sRGB"
+    if is_raw_image(file_path):
+        try:
+            with rawpy.imread(file_path) as raw:
+                width, height = raw.sizes.width, raw.sizes.height
+        except Exception as e:
+            print(f"[extract_metadata] Warning: Failed to read RAW dimensions for {file_path}: {e}")
+    else:
+        try:
+            with Image.open(file_path) as img:
+                width, height = img.size[0], img.size[1]
+                icc = img.info.get("icc_profile")
+                if icc and b"Adobe" in icc:
+                    color_space = "Adobe RGB"
+        except Exception as e:
+            print(f"[extract_metadata] Warning: Failed to read image dimensions for {file_path}: {e}")
+    return width, height, color_space
+
+
+def _parse_exif_tags_dict(file_path: str) -> dict:
+    """Reads and parses core EXIF tags from image file."""
+    parsed = {}
+    try:
+        with open(file_path, "rb") as f:
+            tags = exifread.process_file(f, details=False)
+
+            model = _get_tag_val(tags, "Image Model")
+            if model:
+                parsed["camera_model"] = str(model).strip()
+
+            lens = _get_tag_val(tags, ["EXIF LensModel", "Image LensModel", "EXIF LensModelName"])
+            if lens:
+                parsed["lens_model"] = str(lens).strip()
+
+            f_val = _get_tag_val(tags, "EXIF FNumber")
+            if f_val is not None:
+                parsed_f = _parse_ratio(f_val)
+                if parsed_f is not None:
+                    parsed["f_number"] = round(parsed_f, 2)
+
+            fl_val = _get_tag_val(tags, "EXIF FocalLength")
+            if fl_val is not None:
+                parsed["focal_length"] = _parse_ratio(fl_val)
+
+            fl35_val = _get_tag_val(tags, ["EXIF FocalLengthIn35mmFilm", "EXIF FocalLengthIn35mmFormat"])
+            if fl35_val is not None:
+                try:
+                    parsed_35 = float(fl35_val)
+                    if parsed_35 > 0:
+                        parsed["focal_length_35mm"] = parsed_35
+                except ValueError:
+                    pass
+
+            shutter_val = _get_tag_val(tags, "EXIF ExposureTime")
+            if shutter_val is not None:
+                parsed["shutter_speed"] = _parse_shutter_speed(shutter_val)
+
+            iso_val = _get_tag_val(tags, ["EXIF ISOSpeedRatings", "EXIF ISOSpeed"])
+            if iso_val is not None:
+                try:
+                    parsed["iso"] = int(iso_val)
+                except ValueError:
+                    pass
+
+            date_val = _get_tag_val(tags, ["EXIF DateTimeOriginal", "Image DateTime"])
+            if date_val is not None:
+                parsed["capture_date"] = _parse_date(str(date_val))
+    except Exception as e:
+        print(f"[extract_metadata] Warning: EXIF reading failed for {file_path}: {e}")
+    return parsed
+
+
+def _derive_sensor_and_crop(metadata: dict) -> None:
+    """Calculates crop factor, 35mm equivalent, and sensor format based on camera/lens EXIF."""
+    fl = metadata.get("focal_length")
+    fl35 = metadata.get("focal_length_35mm")
+    camera = (metadata.get("camera_model") or "").upper()
+    lens = (metadata.get("lens_model") or "").upper()
+    is_smartphone = any(k in camera for k in ["IPHONE", "GALAXY", "SM-", "PIXEL", "XIAOMI", "REDMI", "POCO", "ONEPLUS", "HUAWEI", "OPPO", "VIVO"]) or \
+                    any(k in lens for k in ["IPHONE", "GALAXY", "SM-", "PIXEL"])
+
+    crop_factor = _determine_crop_factor(fl, fl35, camera, lens, is_smartphone)
+    if crop_factor:
+        metadata["crop_factor"] = crop_factor
+        if fl and not metadata.get("focal_length_35mm"):
+            metadata["focal_length_35mm"] = round(fl * crop_factor, 1)
+        metadata["sensor_format"] = _determine_sensor_format(crop_factor, fl, is_smartphone)
+
+
 def extract_metadata(file_path: str) -> dict:
     """
     Extracts EXIF and basic image dimensions from standard or RAW images,
     including 35mm focal length equivalent and sensor crop factor detection.
     """
+    width, height, color_space = _extract_image_dimensions(file_path)
     metadata = {
-        "width": None,
-        "height": None,
-        "color_space": "sRGB",
+        "width": width,
+        "height": height,
+        "color_space": color_space,
         "camera_model": None,
         "lens_model": None,
         "f_number": None,
@@ -207,91 +299,11 @@ def extract_metadata(file_path: str) -> dict:
         "mime_type": get_mime_type(file_path)
     }
 
-    # 1. Fetch width & height (using rawpy sizes for speed, avoid full loading)
-    if is_raw_image(file_path):
-        try:
-            with rawpy.imread(file_path) as raw:
-                metadata["width"] = raw.sizes.width
-                metadata["height"] = raw.sizes.height
-        except Exception as e:
-            print(f"[extract_metadata] Warning: Failed to read RAW dimensions for {file_path}: {e}")
-    else:
-        try:
-            with Image.open(file_path) as img:
-                metadata["width"] = img.size[0]
-                metadata["height"] = img.size[1]
-                icc = img.info.get("icc_profile")
-                if icc:
-                    metadata["color_space"] = "Adobe RGB" if b"Adobe" in icc else "sRGB"
-        except Exception as e:
-            print(f"[extract_metadata] Warning: Failed to read image dimensions for {file_path}: {e}")
+    exif_data = _parse_exif_tags_dict(file_path)
+    metadata.update(exif_data)
 
-    # 2. Extract EXIF details using exifread
-    try:
-        with open(file_path, "rb") as f:
-            tags = exifread.process_file(f, details=False)
+    _derive_sensor_and_crop(metadata)
 
-            model = _get_tag_val(tags, "Image Model")
-            if model:
-                metadata["camera_model"] = str(model).strip()
-
-            lens = _get_tag_val(tags, ["EXIF LensModel", "Image LensModel", "EXIF LensModelName"])
-            if lens:
-                metadata["lens_model"] = str(lens).strip()
-
-            f_val = _get_tag_val(tags, "EXIF FNumber")
-            if f_val is not None:
-                parsed_f = _parse_ratio(f_val)
-                if parsed_f is not None:
-                    metadata["f_number"] = round(parsed_f, 2)
-
-            fl_val = _get_tag_val(tags, "EXIF FocalLength")
-            if fl_val is not None:
-                metadata["focal_length"] = _parse_ratio(fl_val)
-
-            fl35_val = _get_tag_val(tags, ["EXIF FocalLengthIn35mmFilm", "EXIF FocalLengthIn35mmFormat"])
-            if fl35_val is not None:
-                try:
-                    parsed_35 = float(fl35_val)
-                    if parsed_35 > 0:
-                        metadata["focal_length_35mm"] = parsed_35
-                except ValueError:
-                    pass
-
-            shutter_val = _get_tag_val(tags, "EXIF ExposureTime")
-            if shutter_val is not None:
-                metadata["shutter_speed"] = _parse_shutter_speed(shutter_val)
-
-            iso_val = _get_tag_val(tags, ["EXIF ISOSpeedRatings", "EXIF ISOSpeed"])
-            if iso_val is not None:
-                try:
-                    metadata["iso"] = int(iso_val)
-                except ValueError:
-                    pass
-
-            date_val = _get_tag_val(tags, ["EXIF DateTimeOriginal", "Image DateTime"])
-            if date_val is not None:
-                metadata["capture_date"] = _parse_date(str(date_val))
-    except Exception as e:
-        print(f"[extract_metadata] Warning: EXIF reading failed for {file_path}: {e}")
-
-    # 3. Derive 35mm focal length equivalent & Crop Factor
-    fl = metadata["focal_length"]
-    fl35 = metadata["focal_length_35mm"]
-    camera = (metadata.get("camera_model") or "").upper()
-    lens = (metadata.get("lens_model") or "").upper()
-    is_smartphone = any(k in camera for k in ["IPHONE", "GALAXY", "SM-", "PIXEL", "XIAOMI", "REDMI", "POCO", "ONEPLUS", "HUAWEI", "OPPO", "VIVO"]) or \
-                    any(k in lens for k in ["IPHONE", "GALAXY", "SM-", "PIXEL"])
-
-    crop_factor = _determine_crop_factor(fl, fl35, camera, lens, is_smartphone)
-
-    if crop_factor:
-        metadata["crop_factor"] = crop_factor
-        if fl and not metadata["focal_length_35mm"]:
-            metadata["focal_length_35mm"] = round(fl * crop_factor, 1)
-        metadata["sensor_format"] = _determine_sensor_format(crop_factor, fl, is_smartphone)
-
-    # Fallback to file system mtime if capture date was not in EXIF
     if metadata["capture_date"] is None:
         try:
             mtime = os.path.getmtime(file_path)
