@@ -102,6 +102,50 @@ def delete_photo_atomic_sync(db: Session, image_id: str):
             pass
 
 
+def _purge_photo_records_batch(db: Session, photo_ids: List[str]) -> None:
+    """
+    Deletes photo records from SQLite and ChromaDB, and removes cached thumbnails.
+    Enforces ChromaDB deletion before SQLite commit (Rule 2.2).
+    """
+    if not photo_ids:
+        return
+    for i in range(0, len(photo_ids), 900):
+        chunk = photo_ids[i : i + 900]
+        db.query(DBImage).filter(DBImage.id.in_(chunk)).delete(synchronize_session=False)
+        for pid in chunk:
+            t_path = get_thumbnail_path(pid)
+            if os.path.exists(t_path):
+                try:
+                    os.remove(t_path)
+                except Exception:
+                    pass
+    vector_repo.delete(photo_ids)
+
+
+def _identify_zombie_photo_ids(db: Session, normalized_folder_prefixes: list) -> List[str]:
+    def belongs_to_any_folder(file_path: str, parent_dir: str) -> bool:
+        if not normalized_folder_prefixes:
+            return False
+        try:
+            real_parent = os.path.realpath(parent_dir).lower()
+            real_file = os.path.realpath(file_path).lower()
+        except Exception:
+            real_parent = os.path.normpath(parent_dir).lower()
+            real_file = os.path.normpath(file_path).lower()
+
+        for real_f, f_prefix in normalized_folder_prefixes:
+            if real_parent == real_f or real_parent.startswith(f_prefix) or real_file.startswith(f_prefix):
+                return True
+        return False
+
+    all_images = db.query(DBImage.id, DBImage.file_path, DBImage.parent_dir).all()
+    zombie_ids = []
+    for img_id, file_path, parent_dir in all_images:
+        if not os.path.exists(file_path) or not belongs_to_any_folder(file_path, parent_dir):
+            zombie_ids.append(img_id)
+    return zombie_ids
+
+
 def cleanup_zombie_records(db: Session = None):
     """
     Checks all indexed images and batch deletes records if:
@@ -113,60 +157,22 @@ def cleanup_zombie_records(db: Session = None):
     if db is None:
         db = SessionLocal()
         close_db = True
-        
+
     try:
         indexed_folders = db.query(IndexedFolder.path).all()
-        folder_paths = [f.path for f in indexed_folders]
-        
-        # Precompute normalized prefixes once to avoid redundant filesystem calls in loop
         normalized_folder_prefixes = []
-        for f_path in folder_paths:
+        for f in indexed_folders:
             try:
-                real_f = os.path.realpath(f_path).lower()
+                real_f = os.path.realpath(f.path).lower()
             except Exception:
-                real_f = os.path.normpath(f_path).lower()
+                real_f = os.path.normpath(f.path).lower()
             f_prefix = real_f if real_f.endswith(os.sep) else real_f + os.sep
             normalized_folder_prefixes.append((real_f, f_prefix))
 
-        def belongs_to_any_folder(file_path: str, parent_dir: str) -> bool:
-            if not normalized_folder_prefixes:
-                return False
-            try:
-                real_parent = os.path.realpath(parent_dir).lower()
-                real_file = os.path.realpath(file_path).lower()
-            except Exception:
-                real_parent = os.path.normpath(parent_dir).lower()
-                real_file = os.path.normpath(file_path).lower()
-
-            for real_f, f_prefix in normalized_folder_prefixes:
-                if real_parent == real_f or real_parent.startswith(f_prefix) or real_file.startswith(f_prefix):
-                    return True
-            return False
-
-        all_images = db.query(DBImage.id, DBImage.file_path, DBImage.parent_dir).all()
-        sqlite_ids = set()
-        zombie_ids = []
-        
-        for img_id, file_path, parent_dir in all_images:
-            if not os.path.exists(file_path) or not belongs_to_any_folder(file_path, parent_dir):
-                zombie_ids.append(img_id)
-            else:
-                sqlite_ids.add(img_id)
-                
-        # 1. SQLite Zombie Cleanup & Direct ChromaDB / Thumbnail Purge
+        zombie_ids = _identify_zombie_photo_ids(db, normalized_folder_prefixes)
         if zombie_ids:
             print(f"[Indexer] Found {len(zombie_ids)} unindexed/zombie records in SQLite. Cleaning up...", flush=True)
-            for i in range(0, len(zombie_ids), 900):
-                chunk = zombie_ids[i:i+900]
-                db.query(DBImage).filter(DBImage.id.in_(chunk)).delete(synchronize_session=False)
-                for zid in chunk:
-                    t_path = get_thumbnail_path(zid)
-                    if os.path.exists(t_path):
-                        try:
-                            os.remove(t_path)
-                        except Exception:
-                            pass
-            vector_repo.delete(zombie_ids)
+            _purge_photo_records_batch(db, zombie_ids)
             db.commit()
         else:
             print("[Indexer] No SQLite zombie/unindexed records found.", flush=True)
@@ -190,7 +196,7 @@ def remove_folder_data(folder_path: str, db: Session = None):
         real_target = os.path.realpath(folder_path)
         search_prefix = real_target if real_target.endswith(os.sep) else real_target + os.sep
         path_without_sep = real_target.rstrip(os.sep)
-        
+
         target_lower = real_target.lower()
         prefix_lower = search_prefix.lower()
         without_sep_lower = path_without_sep.lower()
@@ -213,16 +219,7 @@ def remove_folder_data(folder_path: str, db: Session = None):
 
         if image_ids:
             print(f"[Indexer] Removing {len(image_ids)} images for folder {folder_path}", flush=True)
-            for i in range(0, len(image_ids), 900):
-                chunk = image_ids[i:i+900]
-                db.query(DBImage).filter(DBImage.id.in_(chunk)).delete(synchronize_session=False)
-                for img_id in chunk:
-                    t_path = get_thumbnail_path(img_id)
-                    if os.path.exists(t_path):
-                        try:
-                            os.remove(t_path)
-                        except Exception:
-                            pass
+            _purge_photo_records_batch(db, image_ids)
 
         all_indexed = db.query(IndexedFolder).all()
         for f_rec in all_indexed:
@@ -233,9 +230,6 @@ def remove_folder_data(folder_path: str, db: Session = None):
                 or f_real.startswith(prefix_lower)
             ):
                 db.delete(f_rec)
-
-        if image_ids:
-            vector_repo.delete(image_ids)
 
         db.commit()
     except Exception as e:

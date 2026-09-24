@@ -91,6 +91,86 @@ def _fetch_critiques_from_db(photo_ids: Optional[List[str]]) -> List[Dict[str, A
         return critiques_list
 
 
+def _build_scoreboard_header(scores_dict: dict) -> str:
+    if not scores_dict:
+        return ""
+    return (
+        f"[6-Way 앙상블 비평 스코어보드]\n"
+        f"- 최종 종합 평점: {scores_dict.get('overall')}점 / 100점\n"
+        f"- 미학 및 구도 (IAA): {scores_dict.get('iaa')}점\n"
+        f"- 화질 및 선명도 (IQA): {scores_dict.get('iqa')}점\n"
+        f"- 구조 및 질감 (ISTA): {scores_dict.get('ista')}점\n\n"
+    )
+
+async def _execute_unipercept_critique_pipeline(file_path: str, meta_data: dict, photo_id: str) -> str:
+    from services.unipercept_adapter import get_unipercept_adapter
+    from services.critique_status import critique_status_manager, CritiqueCancelledException
+
+    res_dict = await asyncio.to_thread(
+        get_unipercept_adapter().generate_full_ensemble_critique,
+        file_path,
+        meta_data,
+        photo_id
+    )
+    critique_status_manager.check_cancelled(photo_id)
+
+    raw_en = res_dict.get("critique", "")
+    scores_dict = res_dict.get("scores", {})
+    quality_score = res_dict.get("quality_score")
+
+    await asyncio.to_thread(get_unipercept_adapter().unload_model)
+    print("[ChatService] UniPercept ensemble completed. Starting Gemma 4 translation...", flush=True)
+
+    try:
+        critique_status_manager.check_cancelled(photo_id)
+        critique_text = await asyncio.to_thread(
+            get_gemma_adapter().translate_and_format_critique,
+            raw_en,
+            scores_dict,
+            quality_score,
+            photo_id
+        )
+        critique_status_manager.check_cancelled(photo_id)
+        if scores_dict and "앙상블 비평 스코어보드" not in critique_text:
+            critique_text = f"{_build_scoreboard_header(scores_dict)}{critique_text}"
+        return critique_text
+    except CritiqueCancelledException:
+        raise
+    except Exception as tr_err:
+        print(f"[ChatService] Gemma 4 translation fallback: {tr_err}", flush=True)
+        return raw_en
+
+async def _execute_gemma_critique_pipeline(file_path: str, meta_data: dict, photo_id: str) -> str:
+    from services.critique_status import critique_status_manager, CritiqueCancelledException
+
+    print("[ChatService] Starting Gemma 4 VLM direct critique generation...", flush=True)
+    critique_status_manager.update(photo_id, 2, 4, "비평 작성 중", 50)
+    critique_text = await asyncio.to_thread(
+        get_gemma_adapter().generate_deep_critique,
+        file_path,
+        meta_data,
+        photo_id
+    )
+    critique_status_manager.check_cancelled(photo_id)
+
+    print("[ChatService] Starting Gemma document structuring pass...", flush=True)
+    critique_status_manager.update(photo_id, 3, 4, "[Gemma] 리포트 문서 양식 다듬는 중...", 75)
+    try:
+        critique_text = await asyncio.to_thread(
+            get_gemma_adapter().format_and_structure_critique,
+            critique_text,
+            meta_data,
+            photo_id
+        )
+        critique_status_manager.check_cancelled(photo_id)
+        return critique_text
+    except CritiqueCancelledException:
+        raise
+    except Exception as fmt_err:
+        print(f"[ChatService] Document structuring fallback to draft: {fmt_err}", flush=True)
+        return critique_text
+
+
 class ChatService:
     @staticmethod
     async def generate_photo_critique(payload: schemas.CritiqueRequest) -> Dict[str, Any]:
@@ -98,10 +178,8 @@ class ChatService:
         Generates deep photo critique using VLM (Gemma / UniPercept) and saves it to DB.
         """
         file_path, meta_data = await asyncio.to_thread(_get_photo_and_metadata, payload.photo_id)
-
         from services.critique_status import critique_status_manager, CritiqueCancelledException
 
-        # Reset previous cancellation flag and initialize status
         critique_status_manager.reset(payload.photo_id)
         critique_status_manager.update(payload.photo_id, 1, 4, "점수 산출 중", 15)
         print(f"[ChatService] Generating photo critique for {payload.photo_id} (Engine: {payload.engine})...", flush=True)
@@ -110,73 +188,10 @@ class ChatService:
             critique_status_manager.check_cancelled(payload.photo_id)
 
             if payload.engine == "unipercept":
-                from services.unipercept_adapter import get_unipercept_adapter
-                res_dict = await asyncio.to_thread(
-                    get_unipercept_adapter().generate_full_ensemble_critique,
-                    file_path,
-                    meta_data,
-                    payload.photo_id
-                )
-                critique_status_manager.check_cancelled(payload.photo_id)
-
-                raw_en = res_dict.get("critique", "")
-                scores_dict = res_dict.get("scores", {})
-                quality_score = res_dict.get("quality_score")
-                
-                await asyncio.to_thread(get_unipercept_adapter().unload_model)
-                print("[ChatService] UniPercept ensemble completed. Starting Gemma 4 translation...", flush=True)
-                
-                try:
-                    critique_status_manager.check_cancelled(payload.photo_id)
-                    critique_text = await asyncio.to_thread(
-                        get_gemma_adapter().translate_and_format_critique,
-                        raw_en,
-                        scores_dict,
-                        quality_score,
-                        payload.photo_id
-                    )
-                    critique_status_manager.check_cancelled(payload.photo_id)
-                    if scores_dict and "앙상블 비평 스코어보드" not in critique_text:
-                        sb_header = (
-                            f"[6-Way 앙상블 비평 스코어보드]\n"
-                            f"- 최종 종합 평점: {scores_dict.get('overall')}점 / 100점\n"
-                            f"- 미학 및 구도 (IAA): {scores_dict.get('iaa')}점\n"
-                            f"- 화질 및 선명도 (IQA): {scores_dict.get('iqa')}점\n"
-                            f"- 구조 및 질감 (ISTA): {scores_dict.get('ista')}점\n\n"
-                        )
-                        critique_text = f"{sb_header}{critique_text}"
-                except CritiqueCancelledException:
-                    raise
-                except Exception as tr_err:
-                    print(f"[ChatService] Gemma 4 translation fallback: {tr_err}", flush=True)
-                    critique_text = raw_en
+                critique_text = await _execute_unipercept_critique_pipeline(file_path, meta_data, payload.photo_id)
             else:
-                print("[ChatService] Starting Gemma 4 VLM direct critique generation...", flush=True)
-                critique_status_manager.update(payload.photo_id, 2, 4, "비평 작성 중", 50)
-                critique_text = await asyncio.to_thread(
-                    get_gemma_adapter().generate_deep_critique, 
-                    file_path, 
-                    meta_data,
-                    payload.photo_id
-                )
-                critique_status_manager.check_cancelled(payload.photo_id)
+                critique_text = await _execute_gemma_critique_pipeline(file_path, meta_data, payload.photo_id)
 
-                # Pass 2: Gemma Document Structuring Pass (Polish & Formatting) - Only for Gemma direct critique
-                print("[ChatService] Starting Gemma document structuring pass...", flush=True)
-                critique_status_manager.update(payload.photo_id, 3, 4, "[Gemma] 리포트 문서 양식 다듬는 중...", 75)
-                try:
-                    critique_text = await asyncio.to_thread(
-                        get_gemma_adapter().format_and_structure_critique,
-                        critique_text,
-                        meta_data,
-                        payload.photo_id
-                    )
-                    critique_status_manager.check_cancelled(payload.photo_id)
-                except CritiqueCancelledException:
-                    raise
-                except Exception as fmt_err:
-                    print(f"[ChatService] Document structuring fallback to draft: {fmt_err}", flush=True)
-            
             critique_status_manager.check_cancelled(payload.photo_id)
 
             now_utc = models.utcnow()
@@ -193,7 +208,6 @@ class ChatService:
         except CritiqueCancelledException:
             print(f"[ChatService] 🛑 Photo critique generation cancelled for {payload.photo_id}", flush=True)
             critique_status_manager.update(payload.photo_id, 0, 4, "비평 생성이 사용자에 의해 중단되었습니다.", 0, status="cancelled")
-            # Clear device caches safely in worker thread
             await asyncio.to_thread(_clear_device_caches)
             return {
                 "critique": "",

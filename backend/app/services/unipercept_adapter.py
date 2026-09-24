@@ -252,6 +252,38 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         with GPU_LOCK:
             return transformed.to(self.device)
 
+    @staticmethod
+    def _calculate_overall_vr_score(iaa: float, iqa: float, ista: float) -> int:
+        overall = round((0.4 * iaa) + (0.3 * iqa) + (0.3 * ista))
+        return min(100, max(0, overall))
+
+    def _compute_single_vr_domain_score(
+        self,
+        pixel_values: torch.Tensor,
+        desc: str,
+        label: str,
+        step_idx: int,
+        prog: int,
+        photo_id: Optional[str]
+    ) -> tuple[float, float]:
+        if photo_id:
+            from services.critique_status import critique_status_manager
+            critique_status_manager.check_cancelled(photo_id)
+            critique_status_manager.update(photo_id, 1, 4, f"[{step_idx}/6] {label} 계산 중...", prog)
+
+        print(f"[UniPercept] ⏱️ [VR Step {step_idx}/3] {label} 계산 시작...", flush=True)
+        step_t0 = time.time()
+        try:
+            sc = self.compute_official_vr_score(pixel_values, desc)
+            score_val = round(sc, 2)
+        except Exception as vr_err:
+            print(f"[UniPercept] ⚠️ [VR Step {step_idx}/3] {label} 오류 ({vr_err}), 70.0 폴백", flush=True)
+            score_val = 70.0
+
+        elapsed = time.time() - step_t0
+        print(f"[UniPercept] ✅ [VR Step {step_idx}/3] {label} 완료 ➔ {score_val}점 (소요시간: {elapsed:.2f}초)", flush=True)
+        return score_val, elapsed
+
     def generate_vr_scores(
         self,
         image_path: str,
@@ -272,59 +304,38 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                 self.active_requests += 1
 
         try:
-
             if (not os.path.exists(image_path) and not hasattr(self.model, "chat")) or self.model is None:
                 return {"overall": 70, "iaa": 70, "iqa": 70, "ista": 70, "raw_vr_text": ""}
 
             vr_start_time = time.time()
-            print("\n" + "="*70, flush=True)
+            print("\n" + "=" * 70, flush=True)
             print("[UniPercept] 🚀 [VR 모드 시작] 3단계 정밀 지각 점수 산출 파이프라인 가동...", flush=True)
-            print("="*70, flush=True)
+            print("=" * 70, flush=True)
 
             pil_img = self._load_pil_image(image_path)
             pixel_values = self._prepare_pixel_values(pil_img)
 
-            # 3 Official Perceptual Domains
             domains = [
                 ("iaa", "aesthetics", "미학 점수 (IAA)", 1, 10),
                 ("iqa", "quality", "화질 점수 (IQA)", 2, 20),
                 ("ista", "structure and texture richness", "텍스처 점수 (ISTA)", 3, 30),
             ]
 
-            scores = {}
-            timings = {}
+            scores, timings = {}, {}
             for key, desc, label, step_idx, prog in domains:
-                if photo_id:
-                    from services.critique_status import critique_status_manager
-                    critique_status_manager.check_cancelled(photo_id)
-                    critique_status_manager.update(
-                        photo_id, 1, 4, f"[{step_idx}/6] {label} 계산 중...", prog
-                    )
-
-                print(f"[UniPercept] ⏱️ [VR Step {step_idx}/3] {label} 계산 시작...", flush=True)
-                step_t0 = time.time()
-                try:
-                    sc = self.compute_official_vr_score(pixel_values, desc)
-                    scores[key] = round(sc, 2)
-                except Exception as vr_err:
-                    print(f"[UniPercept] ⚠️ [VR Step {step_idx}/3] {label} 오류 ({vr_err}), 70.0 폴백", flush=True)
-                    scores[key] = 70.0
-
-                elapsed = time.time() - step_t0
+                score_val, elapsed = self._compute_single_vr_domain_score(pixel_values, desc, label, step_idx, prog, photo_id)
+                scores[key] = score_val
                 timings[key] = elapsed
-                print(f"[UniPercept] ✅ [VR Step {step_idx}/3] {label} 완료 ➔ {scores[key]}점 (소요시간: {elapsed:.2f}초)", flush=True)
 
             iaa_val = scores.get("iaa", 70.0)
             iqa_val = scores.get("iqa", 70.0)
             ista_val = scores.get("ista", 70.0)
-
-            overall_val = round((0.4 * iaa_val) + (0.3 * iqa_val) + (0.3 * ista_val))
-            overall_val = min(100, max(0, overall_val))
+            overall_val = self._calculate_overall_vr_score(iaa_val, iqa_val, ista_val)
 
             vr_total_elapsed = time.time() - vr_start_time
             print(f"[UniPercept] 📊 [VR 모드 종료] 3개 점수 산출 완료 (총 소요시간: {vr_total_elapsed:.2f}초)", flush=True)
             print(f"            - IAA: {iaa_val}점 ({timings.get('iaa', 0):.2f}s) | IQA: {iqa_val}점 ({timings.get('iqa', 0):.2f}s) | ISTA: {ista_val}점 ({timings.get('ista', 0):.2f}s) ➔ 종합: {overall_val}점", flush=True)
-            print("="*70 + "\n", flush=True)
+            print("=" * 70 + "\n", flush=True)
 
             raw_vr_summary = f"IAA: {iaa_val}, IQA: {iqa_val}, ISTA: {ista_val} -> Overall: {overall_val}"
 

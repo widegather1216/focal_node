@@ -20,52 +20,32 @@ def get_thumbnail_path(image_id: str) -> str:
     """
     return os.path.join(THUMBNAIL_CACHE_DIR, f"{image_id}.jpg")
 
-def generate_and_cache_thumbnail(file_path: str, image_id: str) -> bytes:
-    """
-    Generates a thumbnail (width: 360px, aspect ratio preserved),
-    saves it to the Hidden cache folder, and returns the JPEG bytes.
-    """
-    if not os.path.exists(file_path):
-        raise FileNotFoundError(f"Source file not found: {file_path}")
-
-    cache_path = get_thumbnail_path(image_id)
-    
-    # 1. Load image (decode RAW or standard dynamically)
-    try:
-        img = load_pil_image(file_path)
-    except Exception as e:
-        print(f"[Photo Service] Corrupt image detected: {file_path}. Error: {e}", flush=True)
-        raise HTTPException(status_code=422, detail="Unprocessable image file")
-            
-    # 2. Calculate aspect ratio dimensions (width 360px)
+def _resize_image_to_jpeg_bytes(img: Image.Image, target_width: int = 360) -> bytes:
     width, height = img.size
     if width <= 0 or height <= 0:
         raise HTTPException(status_code=422, detail="Invalid image dimensions")
-    new_width = 360
-    new_height = max(1, int((new_width / width) * height))
-    
-    # 3. Resize using high-quality filter
+
+    new_height = max(1, int((target_width / width) * height))
     resample_filter = getattr(Image, "Resampling", Image).LANCZOS
-    img_thumb = img.resize((new_width, new_height), resample=resample_filter)
-    
-    # 4. Save to JPEG buffer once in-memory
+    img_thumb = img.resize((target_width, new_height), resample=resample_filter)
+
     buf = io.BytesIO()
     img_thumb.save(buf, format="JPEG", quality=85)
-    jpeg_bytes = buf.getvalue()
+    return buf.getvalue()
 
-    # 5. Save to Cache folder atomically to prevent concurrent write corruption
-    temp_path = f"{cache_path}.{uuid.uuid4().hex}.tmp"
+
+def _atomic_write_cache_file(target_path: str, data: bytes, image_id: str, max_retries: int = 3) -> None:
+    temp_path = f"{target_path}.{uuid.uuid4().hex}.tmp"
     try:
         with open(temp_path, "wb") as f:
-            f.write(jpeg_bytes)
-        
-        # I/O Lock defense: Retry replacement up to 3 times
-        for attempt in range(3):
+            f.write(data)
+
+        for attempt in range(max_retries):
             try:
-                os.replace(temp_path, cache_path)
+                os.replace(temp_path, target_path)
                 break
             except OSError as e:
-                if attempt == 2:
+                if attempt == max_retries - 1:
                     print(f"[Photo Service] Cache write failed after retries for {image_id}: {e}", flush=True)
                 else:
                     time.sleep(0.05)
@@ -75,7 +55,25 @@ def generate_and_cache_thumbnail(file_path: str, image_id: str) -> bytes:
                 os.remove(temp_path)
             except Exception:
                 pass
-    
+
+
+def generate_and_cache_thumbnail(file_path: str, image_id: str) -> bytes:
+    """
+    Generates a thumbnail (width: 360px, aspect ratio preserved),
+    saves it to the Hidden cache folder, and returns the JPEG bytes.
+    """
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"Source file not found: {file_path}")
+
+    cache_path = get_thumbnail_path(image_id)
+    try:
+        img = load_pil_image(file_path)
+    except Exception as e:
+        print(f"[Photo Service] Corrupt image detected: {file_path}. Error: {e}", flush=True)
+        raise HTTPException(status_code=422, detail="Unprocessable image file")
+
+    jpeg_bytes = _resize_image_to_jpeg_bytes(img, target_width=360)
+    _atomic_write_cache_file(cache_path, jpeg_bytes, image_id)
     return jpeg_bytes
 
 def get_thumbnail_bytes(db_image: DBImage) -> bytes:

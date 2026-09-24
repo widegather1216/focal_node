@@ -235,12 +235,7 @@ def clear_stale_hf_locks(repo_id: str):
                 except Exception:
                     pass
 
-def download_with_retry(repo_id: str, label: str, max_retries: int = 3, **kwargs) -> bool:
-    clear_stale_hf_locks(repo_id)
-    tracker = get_model_download_tracker()
-    ignore_patterns = ["*.pth", "*.pt", "*.h5", "*.msgpack", "*.onnx", "*.ot"]
-    
-    # Check if already cached with valid weight files
+def _is_model_cached(repo_id: str, label: str, ignore_patterns: list, tracker, **kwargs) -> bool:
     try:
         local_path = download_hf_smart(
             repo_id=repo_id,
@@ -254,53 +249,64 @@ def download_with_retry(repo_id: str, label: str, max_retries: int = 3, **kwargs
             return True
     except Exception:
         pass
-        
+    return False
+
+
+def _download_snapshot_and_shards(repo_id: str, label: str, ignore_patterns: list, tracker, **kwargs) -> bool:
+    local_path = download_hf_smart(
+        repo_id=repo_id,
+        ignore_patterns=ignore_patterns,
+        max_workers=8,
+        etag_timeout=30,
+        **kwargs
+    )
+    ensure_nested_safetensors_linked(local_path)
+
+    missing_shards = get_missing_sharded_files(local_path)
+    if missing_shards:
+        for m_file in missing_shards:
+            print(f"[Downloader] Explicitly downloading missing shard: {m_file} for {repo_id}...", flush=True)
+            download_hf_smart(
+                repo_id=repo_id,
+                filename=m_file,
+                ignore_patterns=ignore_patterns,
+                **kwargs
+            )
+        ensure_nested_safetensors_linked(local_path)
+
+    if not is_snapshot_weights_valid(local_path):
+        raise RuntimeError(f"Snapshot weights incomplete for {repo_id}")
+
+    tracker.update_status(repo_id, label, status="completed")
+    print(f"[Downloader] Successfully downloaded {label}.", flush=True)
+    return True
+
+
+def download_with_retry(repo_id: str, label: str, max_retries: int = 3, **kwargs) -> bool:
+    clear_stale_hf_locks(repo_id)
+    tracker = get_model_download_tracker()
+    ignore_patterns = ["*.pth", "*.pt", "*.h5", "*.msgpack", "*.onnx", "*.ot"]
+
+    if _is_model_cached(repo_id, label, ignore_patterns, tracker, **kwargs):
+        return True
+
     tracker.update_status(repo_id, label, status="downloading")
     print(f"[Downloader] Downloading {label} ({repo_id})...", flush=True)
 
     try:
         for attempt in range(max_retries):
             try:
-                local_path = download_hf_smart(
-                    repo_id=repo_id,
-                    ignore_patterns=ignore_patterns,
-                    max_workers=8,
-                    etag_timeout=30,
-                    **kwargs
-                )
-                ensure_nested_safetensors_linked(local_path)
-
-                # Check if HF snapshot_download skipped missing sharded files
-                missing_shards = get_missing_sharded_files(local_path)
-                if missing_shards:
-                    for m_file in missing_shards:
-                        print(f"[Downloader] Explicitly downloading missing shard: {m_file} for {repo_id}...", flush=True)
-                        download_hf_smart(
-                            repo_id=repo_id,
-                            filename=m_file,
-                            ignore_patterns=ignore_patterns,
-                            **kwargs
-                        )
-                    ensure_nested_safetensors_linked(local_path)
-
-                if is_snapshot_weights_valid(local_path):
-                    tracker.update_status(repo_id, label, status="completed")
-                    print(f"[Downloader] Successfully downloaded {label}.", flush=True)
-                    return True
-                else:
-                    raise RuntimeError(f"Snapshot weights incomplete for {repo_id}")
+                return _download_snapshot_and_shards(repo_id, label, ignore_patterns, tracker, **kwargs)
             except Exception as e:
                 err_str = str(e)
-                if "401 Client Error" in err_str or "restricted" in err_str or "gated repo" in err_str:
+                if any(x in err_str for x in ("401 Client Error", "restricted", "gated repo")):
                     print(f"[Downloader] Note: {repo_id}는 Hugging Face Gated 모델입니다. HF_TOKEN이 설정되거나 로컬 파일이 있을 때 활성화됩니다.", flush=True)
                     tracker.update_status(repo_id, label, status="error", error_message="Gated repository access required")
                     return False
-                    
-                print(f"[Downloader] Error on attempt {attempt+1} for {repo_id}: {e}", flush=True)
-                
 
+                print(f"[Downloader] Error on attempt {attempt+1} for {repo_id}: {e}", flush=True)
                 if attempt < max_retries - 1:
-                    backoff_delay = 5 * (2 ** attempt)  # Exponential backoff: 5s, 10s, 20s
+                    backoff_delay = 5 * (2 ** attempt)
                     print(f"[Downloader] Retrying {repo_id} in {backoff_delay} seconds...", flush=True)
                     time.sleep(backoff_delay)
                 else:
