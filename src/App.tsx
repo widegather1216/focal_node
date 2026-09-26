@@ -57,7 +57,7 @@ function App() {
       <ErrorBoundary fallbackTitle="비평 문서 뷰어 로딩 중 오류가 발생했습니다">
         <div style={{ width: '100vw', height: '100vh', backgroundColor: '#09090b', overflow: 'hidden' }}>
           <Suspense fallback={<LoadingSpinner fullScreen message="비평 문서를 불러오는 중..." />}>
-            <CritiqueDocumentModal />
+            <CritiqueDocumentModal isStandalone={true} />
           </Suspense>
         </div>
       </ErrorBoundary>

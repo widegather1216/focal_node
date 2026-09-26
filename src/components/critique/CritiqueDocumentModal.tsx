@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, 
@@ -6,6 +6,9 @@ import {
   Check, 
   Printer, 
   ExternalLink, 
+  Download,
+  Maximize2,
+  Minimize2,
   ZoomIn, 
   ZoomOut, 
   RotateCcw, 
@@ -20,17 +23,209 @@ import { useAppStore } from '../../store/useAppStore';
 import { usePhotoDetailQuery } from '../../hooks/usePhotoDetailQuery';
 import { api } from '../../services/api';
 import { CritiqueContentRenderer } from './CritiqueContentRenderer';
+import { PhotoDetail } from '../../hooks/usePhotoDetail';
 
-export const CritiqueDocumentModal: React.FC = () => {
+interface CritiqueDocumentModalProps {
+  isStandalone?: boolean;
+}
+
+/**
+ * Builds a clean, professional A4 print HTML document with photo, EXIF, and critique.
+ */
+function generatePrintHtml(
+  photo: PhotoDetail | null | undefined,
+  critiqueContentHtml: string,
+  imageUrl: string,
+  formattedDate: string | null
+): string {
+  const meta = photo?.metadata;
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>AI 사진 비평 리포트 - ${photo?.file_name || 'Focal Node'}</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 15mm;
+    }
+    * {
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+      color: #1f2937;
+      background: #ffffff;
+      margin: 0;
+      padding: 0;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .report-container {
+      max-width: 100%;
+      margin: 0 auto;
+    }
+    .report-header {
+      border-bottom: 2px solid #9333ea;
+      padding-bottom: 12px;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    .brand-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: #9333ea;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    .report-title {
+      font-size: 22px;
+      font-weight: 800;
+      color: #111827;
+      margin: 0;
+    }
+    .report-date {
+      font-size: 12px;
+      color: #6b7280;
+    }
+    .photo-summary-card {
+      display: flex;
+      gap: 20px;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 24px;
+      page-break-inside: avoid;
+    }
+    .photo-img {
+      max-width: 240px;
+      max-height: 180px;
+      object-fit: contain;
+      border-radius: 6px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      background: #111;
+    }
+    .meta-details {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 6px;
+    }
+    .meta-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12.5px;
+    }
+    .meta-label {
+      color: #6b7280;
+      font-weight: 500;
+      min-width: 60px;
+    }
+    .meta-value {
+      color: #111827;
+      font-weight: 600;
+    }
+    .caption-box {
+      margin-top: 8px;
+      padding: 8px 12px;
+      background: #f3e8ff;
+      border-left: 3px solid #9333ea;
+      border-radius: 4px;
+      font-style: italic;
+      color: #4c1d95;
+      font-size: 12px;
+    }
+    .critique-body {
+      color: #374151;
+      font-size: 13.5px;
+      line-height: 1.7;
+    }
+    .critique-body h1, .critique-body h2, .critique-body h3, .critique-body h4 {
+      color: #111827 !important;
+      page-break-after: avoid;
+    }
+    .critique-body section, .critique-body div {
+      page-break-inside: avoid;
+    }
+    .report-footer {
+      margin-top: 36px;
+      padding-top: 14px;
+      border-top: 1px solid #e5e7eb;
+      display: flex;
+      justify-content: space-between;
+      color: #9ca3af;
+      font-size: 11px;
+      page-break-inside: avoid;
+    }
+  </style>
+</head>
+<body>
+  <div class="report-container">
+    <div class="report-header">
+      <div>
+        <div class="brand-title">Focal Node · AI Photo Critique Report</div>
+        <h1 class="report-title">${photo?.file_name || '사진'} 심층 미학 평론</h1>
+      </div>
+      <div class="report-date">${formattedDate ? `분석일: ${formattedDate}` : ''}</div>
+    </div>
+
+    <div class="photo-summary-card">
+      <img src="${imageUrl}" class="photo-img" alt="${photo?.file_name || ''}" />
+      <div class="meta-details">
+        ${meta?.camera_model ? `<div class="meta-row"><span class="meta-label">카메라</span><span class="meta-value">${meta.camera_model}</span></div>` : ''}
+        ${meta?.lens_model ? `<div class="meta-row"><span class="meta-label">렌즈</span><span class="meta-value">${meta.lens_model}</span></div>` : ''}
+        <div class="meta-row">
+          <span class="meta-label">촬영 정보</span>
+          <span class="meta-value">
+            ${[
+              meta?.focal_length ? `${meta.focal_length}mm` : null,
+              meta?.f_number ? `f/${meta.f_number}` : null,
+              meta?.shutter_speed ? `${meta.shutter_speed}s` : null,
+              meta?.iso ? `ISO ${meta.iso}` : null
+            ].filter(Boolean).join('  ·  ') || '메타데이터 없음'}
+          </span>
+        </div>
+        ${photo?.ai_analysis?.caption ? `<div class="caption-box">"${photo.ai_analysis.caption}"</div>` : ''}
+      </div>
+    </div>
+
+    <div class="critique-body">
+      ${critiqueContentHtml}
+    </div>
+
+    <div class="report-footer">
+      <span>On-device AI Local Photo Search & Aesthetic Curator</span>
+      <span>Focal Node</span>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ isStandalone = false }) => {
   const { critiqueDocumentPhotoId, closeCritiqueDocument } = useAppStore();
   const { data: photo, isLoading } = usePhotoDetailQuery(critiqueDocumentPhotoId);
 
   const [copied, setCopied] = useState(false);
+  const [exported, setExported] = useState(false);
+  const [isMaximized, setIsMaximized] = useState(false);
   const [scale, setScale] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [imgError, setImgError] = useState(false);
+
+  // Check if current page is opened in dedicated popout window
+  const urlParams = new URLSearchParams(window.location.search);
+  const isPopout = isStandalone || urlParams.get('popout') === 'critique';
 
   // Reset zoom & pan when photo changes
   useEffect(() => {
@@ -39,19 +234,34 @@ export const CritiqueDocumentModal: React.FC = () => {
     setImgError(false);
   }, [critiqueDocumentPhotoId]);
 
+  // Window or Modal close handler
+  const handleClose = useCallback(async () => {
+    if (isPopout) {
+      try {
+        const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow');
+        const currentWin = getCurrentWebviewWindow();
+        await currentWin.close();
+      } catch {
+        window.close();
+      }
+    } else {
+      closeCritiqueDocument();
+    }
+  }, [isPopout, closeCritiqueDocument]);
+
   // Keyboard shortcut: ESC to close
   useEffect(() => {
-    if (!critiqueDocumentPhotoId) return;
+    if (!critiqueDocumentPhotoId && !isPopout) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        closeCritiqueDocument();
+        handleClose();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [critiqueDocumentPhotoId, closeCritiqueDocument]);
+  }, [critiqueDocumentPhotoId, isPopout, handleClose]);
 
   if (!critiqueDocumentPhotoId) return null;
 
@@ -114,43 +324,161 @@ export const CritiqueDocumentModal: React.FC = () => {
     setPosition({ x: 0, y: 0 });
   };
 
-  const handleCopyText = () => {
+  // 1. Text copy handler with fallback
+  const handleCopyText = async () => {
     if (!critiqueText) return;
-    navigator.clipboard.writeText(critiqueText);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(critiqueText);
+      } else {
+        const textArea = document.createElement("textarea");
+        textArea.value = critiqueText;
+        textArea.style.position = "fixed";
+        textArea.style.opacity = "0";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.warn("Clipboard copy failed, using fallback:", err);
+      const textArea = document.createElement("textarea");
+      textArea.value = critiqueText;
+      textArea.style.position = "fixed";
+      textArea.style.opacity = "0";
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
+  // 2. Export markdown document (.md)
+  const handleExportMarkdown = () => {
+    if (!critiqueText) return;
+    const baseName = photo?.file_name ? photo.file_name.replace(/\.[^/.]+$/, "") : "photo";
+    const fileName = `${baseName}_AI비평.md`;
+
+    const exposureParts = [
+      meta?.focal_length ? `${meta.focal_length}mm` : null,
+      meta?.f_number ? `f/${meta.f_number}` : null,
+      meta?.shutter_speed ? `${meta.shutter_speed}s` : null,
+      meta?.iso ? `ISO ${meta.iso}` : null
+    ].filter(Boolean).join(' | ');
+
+    const markdownDocument = [
+      `# ${photo?.file_name || '사진'} 심층 미학 평론`,
+      ``,
+      `> **Focal Node · AI Photo Critique Report**  `,
+      formattedDate ? `> **분석 일시:** ${formattedDate}  ` : '',
+      meta?.camera_model ? `> **카메라:** ${meta.camera_model}  ` : '',
+      meta?.lens_model ? `> **렌즈:** ${meta.lens_model}  ` : '',
+      exposureParts ? `> **노출 설정:** ${exposureParts}  ` : '',
+      photo?.ai_analysis?.caption ? `> **캡션:** *"${photo.ai_analysis.caption}"*  ` : '',
+      ``,
+      `---`,
+      ``,
+      critiqueText
+    ].filter(line => line !== null).join('\n');
+
+    const blob = new Blob([markdownDocument], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    setExported(true);
+    setTimeout(() => setExported(false), 2000);
+  };
+
+  // 3. Print / PDF report handler
   const handlePrint = () => {
-    window.print();
+    const paperElem = document.getElementById('critique-rendered-body');
+    const contentHtml = paperElem ? paperElem.innerHTML : critiqueText;
+    const printHtml = generatePrintHtml(photo, contentHtml, imageUrl, formattedDate);
+
+    let iframe = document.getElementById('critique-print-frame') as HTMLIFrameElement;
+    if (!iframe) {
+      iframe = document.createElement('iframe');
+      iframe.id = 'critique-print-frame';
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = 'none';
+      document.body.appendChild(iframe);
+    }
+
+    const doc = iframe.contentWindow?.document || iframe.contentDocument;
+    if (doc) {
+      doc.open();
+      doc.write(printHtml);
+      doc.close();
+
+      setTimeout(() => {
+        try {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+        } catch {
+          window.print();
+        }
+      }, 250);
+    } else {
+      window.print();
+    }
   };
 
+  // 4. Popout into dedicated standalone window
   const handlePopout = async () => {
     try {
-      // Attempt Tauri v2 WebviewWindow pop-out
       const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
       const winLabel = `critique-doc-${critiqueDocumentPhotoId.slice(0, 8)}`;
       const existing = await WebviewWindow.getByLabel(winLabel);
       if (existing) {
         await existing.setFocus();
+        closeCritiqueDocument();
         return;
       }
 
-      new WebviewWindow(winLabel, {
+      const webview = new WebviewWindow(winLabel, {
         url: `/?popout=critique&photoId=${critiqueDocumentPhotoId}`,
         title: `AI 사진 비평 - ${photo?.file_name || '문서 뷰'}`,
-        width: 1200,
-        height: 840,
+        width: 1280,
+        height: 860,
         resizable: true,
         decorations: true
       });
+
+      webview.once('tauri://created', () => {
+        closeCritiqueDocument();
+      });
+      webview.once('tauri://error', (e) => {
+        console.warn('WebviewWindow creation failed, falling back to window.open:', e);
+        window.open(
+          `/?popout=critique&photoId=${critiqueDocumentPhotoId}`,
+          '_blank',
+          'width=1280,height=860,resizable=yes,scrollbars=yes'
+        );
+        closeCritiqueDocument();
+      });
     } catch {
-      // Fallback: browser popup window
       window.open(
         `/?popout=critique&photoId=${critiqueDocumentPhotoId}`,
         '_blank',
-        'width=1200,height=840,resizable=yes,scrollbars=yes'
+        'width=1280,height=860,resizable=yes,scrollbars=yes'
       );
+      closeCritiqueDocument();
     }
   };
 
@@ -159,39 +487,37 @@ export const CritiqueDocumentModal: React.FC = () => {
       <div
         id="critique-document-modal"
         style={{
-          position: 'fixed',
+          position: isPopout ? 'relative' : 'fixed',
           inset: 0,
           zIndex: 999,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: 'rgba(4, 4, 6, 0.85)',
-          backdropFilter: 'blur(16px)',
-          padding: '24px',
+          backgroundColor: isPopout ? '#0e0e11' : 'rgba(4, 4, 6, 0.85)',
+          backdropFilter: isPopout ? 'none' : 'blur(16px)',
+          padding: isPopout || isMaximized ? 0 : '24px',
+          width: '100vw',
+          height: '100vh',
           boxSizing: 'border-box'
         }}
         onClick={(e) => {
-          if (e.target === e.currentTarget) closeCritiqueDocument();
+          if (!isPopout && e.target === e.currentTarget) handleClose();
         }}
       >
-        {/* Print Stylesheet */}
+        {/* Print Stylesheet for Direct Print Fallback */}
         <style>{`
           @media print {
-            body * {
-              visibility: hidden;
-            }
-            #critique-document-modal,
-            #critique-document-modal * {
-              visibility: visible;
-            }
-            #critique-document-modal {
-              position: absolute !important;
-              inset: 0 !important;
+            body {
               background: #fff !important;
-              padding: 0 !important;
+              color: #111 !important;
             }
             .no-print {
               display: none !important;
+            }
+            #critique-document-modal {
+              position: static !important;
+              padding: 0 !important;
+              background: #fff !important;
             }
             .print-paper {
               background: #fff !important;
@@ -199,29 +525,24 @@ export const CritiqueDocumentModal: React.FC = () => {
               box-shadow: none !important;
               border: none !important;
             }
-            .print-paper * {
-              color: #111 !important;
-              background: transparent !important;
-              border-color: #ddd !important;
-            }
           }
         `}</style>
 
         {/* Modal Window Container */}
         <motion.div
-          initial={{ opacity: 0, scale: 0.96, y: 15 }}
+          initial={{ opacity: 0, scale: isPopout ? 1 : 0.96, y: isPopout ? 0 : 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.96, y: 15 }}
-          transition={{ duration: 0.25, ease: 'easeOut' }}
+          exit={{ opacity: 0, scale: isPopout ? 1 : 0.96, y: isPopout ? 0 : 15 }}
+          transition={{ duration: 0.22, ease: 'easeOut' }}
           style={{
             width: '100%',
-            maxWidth: '1600px',
-            height: '92vh',
-            maxHeight: '1000px',
+            maxWidth: isPopout || isMaximized ? '100%' : '1600px',
+            height: isPopout || isMaximized ? '100%' : '92vh',
+            maxHeight: isPopout || isMaximized ? '100vh' : '1000px',
             backgroundColor: '#0e0e11',
-            borderRadius: '20px',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            boxShadow: '0 25px 60px -15px rgba(0, 0, 0, 0.7), 0 0 40px rgba(168, 85, 247, 0.12)',
+            borderRadius: isPopout || isMaximized ? 0 : '20px',
+            border: isPopout || isMaximized ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
+            boxShadow: isPopout || isMaximized ? 'none' : '0 25px 60px -15px rgba(0, 0, 0, 0.7), 0 0 40px rgba(168, 85, 247, 0.12)',
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden'
@@ -278,7 +599,7 @@ export const CritiqueDocumentModal: React.FC = () => {
                     border: '1px solid rgba(168, 85, 247, 0.3)',
                     flexShrink: 0
                   }}>
-                    리포트 뷰
+                    {isPopout ? '독립 리포트 윈도우' : '리포트 뷰'}
                   </span>
                 </div>
                 {formattedDate && (
@@ -291,6 +612,7 @@ export const CritiqueDocumentModal: React.FC = () => {
 
             {/* Right Action Tools */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {/* Copy Text Button */}
               <button
                 onClick={handleCopyText}
                 disabled={!critiqueText}
@@ -308,12 +630,37 @@ export const CritiqueDocumentModal: React.FC = () => {
                   gap: '6px',
                   transition: 'all 0.2s ease'
                 }}
-                title="비평 전문 클립보드 복사"
+                title="비평 본문 클립보드 복사"
               >
                 {copied ? <Check size={14} /> : <Copy size={14} />}
                 <span>{copied ? '복사 완료!' : '텍스트 복사'}</span>
               </button>
 
+              {/* Export Markdown (.md) Button */}
+              <button
+                onClick={handleExportMarkdown}
+                disabled={!critiqueText}
+                style={{
+                  background: exported ? 'rgba(168, 85, 247, 0.2)' : 'rgba(255, 255, 255, 0.06)',
+                  border: `1px solid ${exported ? '#c084fc' : 'rgba(255, 255, 255, 0.12)'}`,
+                  color: exported ? '#c084fc' : '#d4d4d8',
+                  padding: '7px 12px',
+                  borderRadius: '8px',
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  cursor: critiqueText ? 'pointer' : 'not-allowed',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s ease'
+                }}
+                title="마크다운 리포트 파일(.md)로 다운로드 저장"
+              >
+                {exported ? <Check size={14} /> : <Download size={14} />}
+                <span>{exported ? '저장 완료!' : 'MD 저장'}</span>
+              </button>
+
+              {/* Print / PDF Button */}
               <button
                 onClick={handlePrint}
                 style={{
@@ -327,39 +674,68 @@ export const CritiqueDocumentModal: React.FC = () => {
                   cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px'
+                  gap: '6px',
+                  transition: 'all 0.2s ease'
                 }}
-                title="인쇄 또는 PDF 저장"
+                title="사진과 EXIF가 포함된 완성형 A4 인쇄 또는 PDF 저장"
               >
                 <Printer size={14} />
                 <span>인쇄 / PDF</span>
               </button>
 
-              <button
-                onClick={handlePopout}
-                style={{
-                  background: 'rgba(255, 255, 255, 0.06)',
-                  border: '1px solid rgba(255, 255, 255, 0.12)',
-                  color: '#d4d4d8',
-                  padding: '7px 12px',
-                  borderRadius: '8px',
-                  fontSize: '12px',
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px'
-                }}
-                title="별도 독립 윈도우로 분리"
-              >
-                <ExternalLink size={14} />
-                <span>새 창으로 분리</span>
-              </button>
+              {/* Popout Button (Only in modal mode) */}
+              {!isPopout && (
+                <button
+                  onClick={handlePopout}
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.06)',
+                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                    color: '#d4d4d8',
+                    padding: '7px 12px',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'all 0.2s ease'
+                  }}
+                  title="별도 독립 데스크탑 윈도우로 분리"
+                >
+                  <ExternalLink size={14} />
+                  <span>새 창으로 분리</span>
+                </button>
+              )}
+
+              {/* Maximize / Restore Toggle (Only in modal mode) */}
+              {!isPopout && (
+                <button
+                  onClick={() => setIsMaximized((prev) => !prev)}
+                  style={{
+                    background: isMaximized ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255, 255, 255, 0.06)',
+                    border: `1px solid ${isMaximized ? 'rgba(168, 85, 247, 0.4)' : 'rgba(255, 255, 255, 0.12)'}`,
+                    color: isMaximized ? '#c084fc' : '#d4d4d8',
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease'
+                  }}
+                  title={isMaximized ? '원래 창 크기로 복원' : '화면 전체로 크게 보기'}
+                >
+                  {isMaximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+                </button>
+              )}
 
               <div style={{ width: '1px', height: '20px', backgroundColor: 'rgba(255, 255, 255, 0.1)', margin: '0 4px' }} />
 
+              {/* Close Button */}
               <button
-                onClick={closeCritiqueDocument}
+                onClick={handleClose}
                 style={{
                   background: 'rgba(255, 255, 255, 0.06)',
                   border: '1px solid rgba(255, 255, 255, 0.12)',
@@ -373,7 +749,7 @@ export const CritiqueDocumentModal: React.FC = () => {
                   cursor: 'pointer',
                   transition: 'background 0.2s ease, color 0.2s ease'
                 }}
-                title="닫기 (ESC)"
+                title={isPopout ? '창 닫기 (ESC)' : '모달 닫기 (ESC)'}
               >
                 <X size={16} />
               </button>
@@ -586,7 +962,9 @@ export const CritiqueDocumentModal: React.FC = () => {
                     <p style={{ margin: 0, fontSize: '14px' }}>비평 데이터를 불러오는 중입니다...</p>
                   </div>
                 ) : critiqueText ? (
-                  <CritiqueContentRenderer content={critiqueText} mode="document" />
+                  <div id="critique-rendered-body">
+                    <CritiqueContentRenderer content={critiqueText} mode="document" />
+                  </div>
                 ) : (
                   <div style={{
                     padding: '60px 20px',
