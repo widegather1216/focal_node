@@ -46,10 +46,14 @@
    * 백엔드(FastAPI), 데스크탑 호스트(Tauri/Rust), 프론트엔드(React/TS 서브컴포넌트/훅/타입) 파일별 함수 및 API 명세
    * 백엔드 및 프론트엔드 소스 코드 추상화(Abstraction) 및 모듈화 달성 현황
 
-9. 🗺️ **[전체 개발 로드맵 (ROADMAP.md)](./ROADMAP.md)**
-   * Phase 1~19 마일스톤 완료 및 백엔드/프론트엔드 모듈화 리팩토링 현황
+9. 🎨 **[디자인 시스템 및 UI/UX 테마 가이드](./10_design_system_theme.md)**
+   * 「The Neutral Dark Studio」 디자인 철학 및 핵심 원칙
+   * 모노크롬 다크 팔레트, 듀얼 폰트(산세리프 + 모노스페이스 EXIF), 컴포넌트 규격 및 CSS 변수
 
-10. 🔬 **연구 및 기술 분석 자료 (Research)**
+10. 🗺️ **[전체 개발 로드맵 (ROADMAP.md)](./ROADMAP.md)**
+    * Phase 1~19 마일스톤 완료 및 백엔드/프론트엔드 모듈화 리팩토링 현황
+
+11. 🔬 **연구 및 기술 분석 자료 (Research)**
     * **[UniPercept RAM 30GB 점유 원인 분석 및 최적화 리포트](./research/UniPercept_Memory_Analysis.md)**
     * **[UniPercept 논문 한국어 완역본](./research/UniPercept_Paper_Korean.md)**
 
