@@ -148,14 +148,16 @@ export function FullscreenViewer() {
                     display: 'flex',
                     alignItems: 'center',
                     borderRadius: '10px',
-                    padding: '4px'
+                    padding: '4px',
+                    flexShrink: 0
                   }}>
                     <button
                       onClick={() => setFitMode('fit-height')}
                       style={{
-                        background: fitMode === 'fit-height' ? '#3f3f46' : 'none',
-                        border: 'none', color: fitMode === 'fit-height' ? '#fff' : '#a1a1aa',
-                        padding: '6px 10px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 500
+                        background: fitMode === 'fit-height' ? 'var(--bg-elevated)' : 'none',
+                        border: 'none', color: fitMode === 'fit-height' ? '#fff' : 'var(--text-secondary)',
+                        padding: '6px 10px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 500,
+                        whiteSpace: 'nowrap', flexShrink: 0
                       }}
                       title="높이 맞춤"
                     >
@@ -164,9 +166,10 @@ export function FullscreenViewer() {
                     <button
                       onClick={() => setFitMode('contain')}
                       style={{
-                        background: fitMode === 'contain' ? '#3f3f46' : 'none',
-                        border: 'none', color: fitMode === 'contain' ? '#fff' : '#a1a1aa',
-                        padding: '6px 10px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 500
+                        background: fitMode === 'contain' ? 'var(--bg-elevated)' : 'none',
+                        border: 'none', color: fitMode === 'contain' ? '#fff' : 'var(--text-secondary)',
+                        padding: '6px 10px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 500,
+                        whiteSpace: 'nowrap', flexShrink: 0
                       }}
                       title="전체 맞춤"
                     >
@@ -182,12 +185,14 @@ export function FullscreenViewer() {
                     className="glass-button"
                     style={{
                       padding: '8px 12px',
-                      fontSize: '13px',
-                      fontWeight: 500
+                      fontSize: '12px',
+                      fontWeight: 500,
+                      whiteSpace: 'nowrap',
+                      flexShrink: 0
                     }}
                     title="몰입 모드 (F)"
                   >
-                    <Eye size={16} /> Zen Mode
+                    <Eye size={15} style={{ flexShrink: 0 }} /> 몰입 모드
                   </motion.button>
 
                   {/* EXIF Info Toggle */}
@@ -197,15 +202,17 @@ export function FullscreenViewer() {
                     onClick={() => setShowMetadata(prev => !prev)}
                     className="glass-button"
                     style={{
-                      borderColor: showMetadata ? '#38bdf8' : undefined,
-                      color: showMetadata ? '#38bdf8' : undefined,
+                      borderColor: showMetadata ? 'var(--accent-focal)' : undefined,
+                      color: showMetadata ? 'var(--accent-focal)' : undefined,
                       padding: '8px 12px',
-                      fontSize: '13px',
-                      fontWeight: 500
+                      fontSize: '12px',
+                      fontWeight: 500,
+                      whiteSpace: 'nowrap',
+                      flexShrink: 0
                     }}
                     title="메타데이터 오버레이 토글 (I)"
                   >
-                    <Info size={16} /> EXIF 오버레이
+                    <Info size={15} style={{ flexShrink: 0 }} /> EXIF 오버레이
                   </motion.button>
 
                   {/* Close Button */}
@@ -408,8 +415,8 @@ export function FullscreenViewer() {
                   zIndex: 10,
                   border: '1px solid rgba(255, 255, 255, 0.1)',
                 }}>
-                  <Loader2 size={13} className="spin" color="#38bdf8" />
-                  <span>원본 고해상도 디코딩 중...</span>
+                  <Loader2 size={13} className="spin" color="var(--accent-focal)" style={{ flexShrink: 0 }} />
+                  <span style={{ whiteSpace: 'nowrap' }}>고해상도 디코딩 중...</span>
                 </div>
               )}
             </motion.div>

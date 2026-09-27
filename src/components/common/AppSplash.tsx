@@ -13,35 +13,51 @@ export const AppSplash: React.FC<AppSplashProps> = ({
   isDownloadingModel
 }) => {
   return (
-    <main className="container" style={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", height: "100vh", backgroundColor: '#111', color: '#fff', position: 'relative' }}>
-      <style>
-        {`
-          @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-          }
-        `}
-      </style>
-      
-      <h1 style={{ marginBottom: '8px', fontSize: '32px' }}>Focal Node</h1>
+    <main style={{
+      display: "flex",
+      flexDirection: "column",
+      justifyContent: "center",
+      alignItems: "center",
+      height: "100vh",
+      backgroundColor: 'var(--bg-canvas)',
+      color: 'var(--text-primary)',
+      position: 'relative',
+      userSelect: 'none'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+        <div style={{
+          width: '10px',
+          height: '10px',
+          borderRadius: '50%',
+          backgroundColor: 'var(--accent-focal)',
+          boxShadow: '0 0 12px rgba(225, 29, 72, 0.8)'
+        }} />
+        <h1 style={{ margin: 0, fontSize: '28px', fontWeight: 700, letterSpacing: '-0.02em' }}>
+          Focal Node
+        </h1>
+      </div>
       
       {!backendError && !isDownloadingModel && (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '32px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '28px' }}>
           <div style={{ 
-            width: '40px', height: '40px', 
-            border: '4px solid rgba(255, 255, 255, 0.1)', 
-            borderTopColor: '#4ade80', 
+            width: '36px',
+            height: '36px', 
+            border: '3px solid rgba(255, 255, 255, 0.1)', 
+            borderTopColor: 'var(--accent-focal)', 
             borderRadius: '50%', 
-            animation: 'spin 1s linear infinite',
             marginBottom: '16px'
-          }} />
-          <h2 style={{ fontSize: '20px', marginBottom: '8px' }}>앱 환경을 준비하고 있습니다...</h2>
-          <p style={{ color: '#aaa', fontSize: '14px' }}>{backendStatus || "초기 설정 중..."}</p>
+          }} className="spin" />
+          <h2 style={{ fontSize: '16px', fontWeight: 600, margin: '0 0 6px 0', whiteSpace: 'nowrap' }}>
+            앱 환경을 준비하고 있습니다...
+          </h2>
+          <p style={{ color: 'var(--text-muted)', fontSize: '13px', margin: 0, whiteSpace: 'nowrap' }}>
+            {backendStatus || "초기 설정 중..."}
+          </p>
         </div>
       )}
 
       {backendError && (
-        <p className="loading-text" style={{ color: '#ff8888', marginTop: '20px', maxWidth: '80%', textAlign: 'center', lineHeight: '1.5' }}>
+        <p style={{ color: '#f87171', marginTop: '20px', maxWidth: '80%', textAlign: 'center', lineHeight: '1.5', wordBreak: 'keep-all', fontSize: '13px' }}>
           에러 발생: {backendError}
         </p>
       )}

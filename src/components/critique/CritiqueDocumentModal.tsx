@@ -628,12 +628,14 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
                   transition: 'all 0.2s ease'
                 }}
                 title="비평 본문 클립보드 복사"
               >
-                {copied ? <Check size={14} /> : <Copy size={14} />}
-                <span>{copied ? '복사 완료!' : '텍스트 복사'}</span>
+                {copied ? <Check size={14} style={{ flexShrink: 0 }} /> : <Copy size={14} style={{ flexShrink: 0 }} />}
+                <span style={{ whiteSpace: 'nowrap' }}>{copied ? '복사 완료!' : '텍스트 복사'}</span>
               </button>
 
               {/* Export Markdown (.md) Button */}
@@ -652,12 +654,14 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
                   transition: 'all 0.2s ease'
                 }}
                 title="마크다운 리포트 파일(.md)로 다운로드 저장"
               >
-                {exported ? <Check size={14} /> : <Download size={14} />}
-                <span>{exported ? '저장 완료!' : 'MD 저장'}</span>
+                {exported ? <Check size={14} style={{ flexShrink: 0 }} /> : <Download size={14} style={{ flexShrink: 0 }} />}
+                <span style={{ whiteSpace: 'nowrap' }}>{exported ? '저장 완료!' : 'MD 저장'}</span>
               </button>
 
               {/* Print / PDF Button */}
@@ -675,12 +679,14 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
                   transition: 'all 0.2s ease'
                 }}
                 title="사진과 EXIF가 포함된 완성형 A4 인쇄 또는 PDF 저장"
               >
-                <Printer size={14} />
-                <span>인쇄 / PDF</span>
+                <Printer size={14} style={{ flexShrink: 0 }} />
+                <span style={{ whiteSpace: 'nowrap' }}>인쇄 / PDF</span>
               </button>
 
               {/* Popout Button (Only in modal mode) */}
@@ -699,12 +705,14 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                     display: 'flex',
                     alignItems: 'center',
                     gap: '6px',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0,
                     transition: 'all 0.2s ease'
                   }}
                   title="별도 독립 데스크탑 윈도우로 분리"
                 >
-                  <ExternalLink size={14} />
-                  <span>새 창으로 분리</span>
+                  <ExternalLink size={14} style={{ flexShrink: 0 }} />
+                  <span style={{ whiteSpace: 'nowrap' }}>새 창으로 분리</span>
                 </button>
               )}
 

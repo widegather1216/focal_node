@@ -93,7 +93,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   apiPort: null,
   setApiPort: (port) => set({ apiPort: port }),
 
-  backendStatus: "Loading...",
+  backendStatus: "로컬 엔진 준비 중...",
   setBackendStatus: (status) => set({ backendStatus: status }),
 
   backendError: null,

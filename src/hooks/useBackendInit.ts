@@ -16,26 +16,26 @@ export function useBackendInit() {
   useEffect(() => {
     async function initBackend() {
       try {
-        setBackendStatus("Waiting for Backend Port...");
+        setBackendStatus("로컬 백엔드 포트 확인 중...");
         const port = await invoke<number>("get_api_port");
         setApiPort(port);
-        setBackendStatus(`Port acquired: ${port}. Checking API health...`);
+        setBackendStatus("로컬 엔진 상태 점검 중...");
 
         const response = await fetch(`http://127.0.0.1:${port}/api/health`);
         if (response.ok) {
           const data = await response.json();
           if (data.status === "ok") {
-            setBackendStatus("Backend API Online ✅");
+            setBackendStatus("로컬 엔진 준비 완료");
           } else {
-            setBackendStatus("Backend API response abnormal ⚠️");
+            setBackendStatus("로컬 엔진 응답 비정상");
           }
         } else {
-          setBackendStatus(`Backend API returned error code ${response.status} ❌`);
+          setBackendStatus(`로컬 엔진 오류 (코드: ${response.status})`);
         }
       } catch (err: any) {
         console.error("Failed to initialize backend:", err);
         setBackendError(err.toString());
-        setBackendStatus("Backend connection failed ❌");
+        setBackendStatus("로컬 엔진 연결 실패");
       } finally {
         setLoading(false);
       }

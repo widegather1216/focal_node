@@ -20,44 +20,44 @@ export const IndexingProgressCard: React.FC<IndexingProgressCardProps> = ({
   const processed = indexingProgress?.processed || 0;
   const progressPct = total > 0 ? Math.min(100, Math.round((processed / total) * 100)) : 0;
   
-  const rawPath = indexingProgress?.filePath || 'Preparing indexing...';
+  const rawPath = indexingProgress?.filePath || '인덱싱 준비 중...';
   const currentFileName = rawPath.includes('/') || rawPath.includes('\\') 
     ? rawPath.split(/[/\\]/).pop() 
     : rawPath;
 
   const statusTitle = isPaused
-    ? 'Indexing Paused'
+    ? '인덱싱 일시정지'
     : total > 0
-      ? 'Indexing Photos'
-      : 'Scanning Folders...';
+      ? `사진 인덱싱 중 (${progressPct}%)`
+      : '폴더 스캔 중...';
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 10 }}
-      transition={{ duration: 0.25 }}
+      transition={{ duration: 0.2 }}
       style={{
-          marginTop: 'auto',
-          padding: '14px',
-          backgroundColor: isPaused ? 'rgba(234, 179, 8, 0.12)' : 'rgba(0, 0, 0, 0.35)',
-          borderRadius: '8px',
-          border: isPaused ? '1px solid rgba(234, 179, 8, 0.3)' : '1px solid rgba(255, 255, 255, 0.1)',
-        }}
-      >
+        marginTop: 'auto',
+        padding: '12px',
+        backgroundColor: 'var(--bg-card)',
+        borderRadius: '6px',
+        border: isPaused ? '1px solid var(--accent-amber)' : '1px solid var(--border-subtle)',
+      }}
+    >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           {isPaused ? (
-            <span style={{ fontSize: '12px' }}>⏸️</span>
+            <Pause size={13} color="var(--accent-amber)" style={{ flexShrink: 0 }} />
           ) : (
-            <Loader2 size={14} className="spin" color="#4ade80" />
+            <Loader2 size={13} className="spin" color="var(--accent-focal)" style={{ flexShrink: 0 }} />
           )}
-          <span style={{ fontSize: '12px', fontWeight: '600', color: isPaused ? '#fde047' : '#fff' }}>
+          <span style={{ fontSize: '11px', fontWeight: 600, color: isPaused ? 'var(--accent-amber)' : 'var(--text-primary)' }}>
             {statusTitle}
           </span>
         </div>
         
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           {indexingState === 'processing' ? (
             <button
               onClick={async () => {
@@ -67,10 +67,10 @@ export const IndexingProgressCard: React.FC<IndexingProgressCardProps> = ({
                   console.error("Pause error:", e);
                 }
               }}
-              style={{ background: 'none', border: 'none', color: '#fbbf24', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
-              title="Pause Indexing"
+              style={{ background: 'none', border: 'none', color: 'var(--accent-amber)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+              title="일시정지"
             >
-              <Pause size={14} />
+              <Pause size={13} />
             </button>
           ) : (
             <button
@@ -81,10 +81,10 @@ export const IndexingProgressCard: React.FC<IndexingProgressCardProps> = ({
                   console.error("Resume error:", e);
                 }
               }}
-              style={{ background: 'none', border: 'none', color: '#4ade80', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
-              title="Resume Indexing"
+              style={{ background: 'none', border: 'none', color: 'var(--accent-emerald)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+              title="계속 진행"
             >
-              <Play size={14} />
+              <Play size={13} />
             </button>
           )}
           
@@ -96,33 +96,34 @@ export const IndexingProgressCard: React.FC<IndexingProgressCardProps> = ({
                 console.error("Cancel error:", e);
               }
             }}
-            style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
-            title="Cancel Indexing"
+            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+            title="취소"
           >
-            <Square size={12} fill="#ef4444" />
+            <Square size={11} fill="currentColor" />
           </button>
         </div>
       </div>
 
       <div style={{
         width: '100%',
-        height: '4px',
-        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        height: '3px',
+        backgroundColor: 'rgba(255, 255, 255, 0.08)',
         borderRadius: '2px',
-        marginBottom: '8px',
+        marginBottom: '6px',
         overflow: 'hidden'
       }}>
         <div style={{
           width: `${progressPct}%`,
           height: '100%',
-          backgroundColor: isPaused ? '#facc15' : '#4ade80',
-          transition: 'width 0.3s ease'
+          backgroundColor: isPaused ? 'var(--accent-amber)' : 'var(--accent-focal)',
+          transition: 'width 0.25s ease'
         }} />
       </div>
-      <div style={{ fontSize: '11px', color: '#aaa', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
-        <span>{total > 0 ? `${processed} / ${total}` : 'Scanning...'}</span>
+
+      <div style={{ fontSize: '10px', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', gap: '8px' }}>
+        <span className="font-mono">{total > 0 ? `${processed} / ${total}` : 'Scanning...'}</span>
         <span 
-          style={{ maxWidth: '110px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} 
+          style={{ maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} 
           title={rawPath}
         >
           {currentFileName}

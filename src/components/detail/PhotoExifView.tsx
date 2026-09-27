@@ -7,49 +7,76 @@ export const PhotoExifView: React.FC<{ metadata: PhotoDetail['metadata'] }> = ({
   if (!metadata) return null;
 
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
       {metadata.camera_model && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#333', padding: '6px 12px', borderRadius: '4px', fontSize: '12px' }}>
-          <Camera size={14} />
-          {metadata.camera_model}
+        <div style={chipStyle} title={metadata.camera_model}>
+          <Camera size={13} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+          <span style={textTruncateStyle}>{metadata.camera_model}</span>
         </div>
       )}
       {metadata.lens_model && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#333', padding: '6px 12px', borderRadius: '4px', fontSize: '12px' }}>
-          <Focus size={14} />
-          {metadata.lens_model}
+        <div style={chipStyle} title={metadata.lens_model}>
+          <Focus size={13} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+          <span style={textTruncateStyle}>{metadata.lens_model}</span>
         </div>
       )}
       {metadata.sensor_format && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)', padding: '6px 12px', borderRadius: '4px', fontSize: '12px', fontWeight: 600 }}>
-          <Camera size={14} />
-          {metadata.sensor_format}
+        <div style={{ ...chipStyle, borderColor: 'var(--border-active)' }}>
+          <span style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+            {metadata.sensor_format}
+          </span>
         </div>
       )}
       {metadata.f_number && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#333', padding: '6px 12px', borderRadius: '4px', fontSize: '12px' }}>
-          <Aperture size={14} />
-          {formatAperture(metadata.f_number)}
+        <div className="font-mono" style={chipStyle}>
+          <Aperture size={13} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+          <span style={{ color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{formatAperture(metadata.f_number)}</span>
         </div>
       )}
       {metadata.focal_length && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#333', padding: '6px 12px', borderRadius: '4px', fontSize: '12px' }}>
-          <Focus size={14} />
-          {formatFocalLength(metadata.focal_length, metadata.focal_length_35mm)}
+        <div className="font-mono" style={chipStyle}>
+          <Focus size={13} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+          <span style={{ color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+            {formatFocalLength(metadata.focal_length, metadata.focal_length_35mm)}
+          </span>
         </div>
       )}
       {metadata.shutter_speed && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#333', padding: '6px 12px', borderRadius: '4px', fontSize: '12px' }}>
-          <Clock size={14} />
-          {formatShutterSpeed(metadata.shutter_speed)}
+        <div className="font-mono" style={chipStyle}>
+          <Clock size={13} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+          <span style={{ color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{formatShutterSpeed(metadata.shutter_speed)}</span>
         </div>
       )}
       {metadata.iso && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#333', padding: '6px 12px', borderRadius: '4px', fontSize: '12px' }}>
-          <Sun size={14} />
-          {formatIso(metadata.iso)}
+        <div className="font-mono" style={chipStyle}>
+          <Sun size={13} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+          <span style={{ color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{formatIso(metadata.iso)}</span>
         </div>
       )}
     </div>
   );
+};
+
+const chipStyle = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '6px',
+  backgroundColor: 'var(--bg-card)',
+  border: '1px solid var(--border-subtle)',
+  padding: '5px 10px',
+  borderRadius: '4px',
+  fontSize: '11px',
+  color: 'var(--text-secondary)',
+  letterSpacing: '-0.01em',
+  whiteSpace: 'nowrap' as const,
+  flexShrink: 0
+};
+
+const textTruncateStyle = {
+  fontWeight: 500,
+  color: 'var(--text-primary)',
+  whiteSpace: 'nowrap' as const,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+  maxWidth: '240px'
 };

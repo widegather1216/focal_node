@@ -21,23 +21,25 @@ export const ExifBarCharts: React.FC<ExifBarChartsProps> = ({
   return (
     <>
       {/* Focal Length Bar Chart */}
-      <div style={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '12px', padding: '24px', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Focus size={18} color="#818cf8" /> 화각 (Focal Length) 선호도
+      <div style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '20px', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', gap: '8px' }}>
+          <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+            <Focus size={16} color="var(--accent-focal)" style={{ flexShrink: 0 }} />
+            <span style={{ whiteSpace: 'nowrap' }}>화각 (Focal Length) 선호도</span>
           </h3>
-          <div style={{ display: 'flex', gap: '4px', background: '#09090b', padding: '3px', borderRadius: '6px', border: '1px solid #27272a' }}>
+          <div style={{ display: 'flex', gap: '2px', backgroundColor: 'var(--bg-canvas)', padding: '2px', borderRadius: '6px', border: '1px solid var(--border-subtle)', flexShrink: 0 }}>
             <button
               onClick={() => setUse35mmMode(true)}
               style={{
-                background: use35mmMode ? '#27272a' : 'transparent',
-                color: use35mmMode ? '#38bdf8' : '#a1a1aa',
+                backgroundColor: use35mmMode ? 'var(--bg-elevated)' : 'transparent',
+                color: use35mmMode ? 'var(--text-primary)' : 'var(--text-secondary)',
                 border: 'none',
                 padding: '4px 8px',
                 borderRadius: '4px',
                 fontSize: '11px',
                 fontWeight: 600,
-                cursor: 'pointer'
+                cursor: 'pointer',
+                whiteSpace: 'nowrap'
               }}
             >
               35mm 환산
@@ -45,58 +47,60 @@ export const ExifBarCharts: React.FC<ExifBarChartsProps> = ({
             <button
               onClick={() => setUse35mmMode(false)}
               style={{
-                background: !use35mmMode ? '#27272a' : 'transparent',
-                color: !use35mmMode ? '#38bdf8' : '#a1a1aa',
+                backgroundColor: !use35mmMode ? 'var(--bg-elevated)' : 'transparent',
+                color: !use35mmMode ? 'var(--text-primary)' : 'var(--text-secondary)',
                 border: 'none',
                 padding: '4px 8px',
                 borderRadius: '4px',
                 fontSize: '11px',
                 fontWeight: 600,
-                cursor: 'pointer'
+                cursor: 'pointer',
+                whiteSpace: 'nowrap'
               }}
             >
               실제 화각
             </button>
           </div>
         </div>
-        <div style={{ width: '100%', height: '280px' }}>
-          {activeFocalLengths.length > 0 ? (
+        <div style={{ width: '100%', height: '300px' }}>
+          {activeFocalLengths && activeFocalLengths.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={activeFocalLengths}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                <XAxis dataKey="name" stroke="#a1a1aa" fontSize={12} />
-                <YAxis stroke="#a1a1aa" fontSize={12} />
+              <BarChart data={activeFocalLengths} margin={{ top: 10, right: 10, bottom: 20, left: -20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                <XAxis dataKey="name" stroke="var(--text-muted)" fontSize={11} tickLine={false} />
+                <YAxis stroke="var(--text-muted)" fontSize={11} tickLine={false} />
                 <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="count" fill="#818cf8" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="count" fill="var(--accent-focal)" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <div style={{ height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#71717a' }}>
-              화각 데이터가 존재하지 않습니다.
+            <div style={{ height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+              화각 메타데이터가 존재하지 않습니다.
             </div>
           )}
         </div>
       </div>
 
       {/* Aperture Bar Chart */}
-      <div style={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '12px', padding: '24px', display: 'flex', flexDirection: 'column' }}>
-        <h3 style={{ margin: '0 0 20px 0', fontSize: '16px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Aperture size={18} color="#4ade80" /> 조리개 (Aperture) 사용 분포
+      <div style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '20px', display: 'flex', flexDirection: 'column' }}>
+        <h3 style={{ margin: '0 0 18px 0', fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+          <Aperture size={16} color="var(--accent-focal)" style={{ flexShrink: 0 }} />
+          <span style={{ whiteSpace: 'nowrap' }}>조리개 (Aperture) 사용 분포</span>
         </h3>
-        <div style={{ width: '100%', height: '280px' }}>
-          {apertures.length > 0 ? (
+        <div style={{ width: '100%', height: '300px' }}>
+          {apertures && apertures.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={apertures}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                <XAxis dataKey="name" stroke="#a1a1aa" fontSize={12} />
-                <YAxis stroke="#a1a1aa" fontSize={12} />
+              <BarChart data={apertures} margin={{ top: 10, right: 10, bottom: 20, left: -20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" vertical={false} />
+                <XAxis dataKey="name" stroke="var(--text-muted)" fontSize={11} tickLine={false} />
+                <YAxis stroke="var(--text-muted)" fontSize={11} tickLine={false} />
                 <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="count" fill="#4ade80" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="count" fill="var(--text-secondary)" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <div style={{ height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#71717a' }}>
-              조리개 데이터가 존재하지 않습니다.
+            <div style={{ height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
+              조리개 메타데이터가 존재하지 않습니다.
             </div>
           )}
         </div>

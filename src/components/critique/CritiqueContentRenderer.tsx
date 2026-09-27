@@ -368,13 +368,31 @@ export const CritiqueScoreboardCard: React.FC<{ scores: ParsedScores; isCompact?
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: isCompact ? '6px' : '10px' }}>
           {scores.iaa !== null && (
-            <ScoreBar label="🎨 미학 & 구도 (IAA)" score={scores.iaa} color="#c084fc" isCompact={isCompact} />
+            <ScoreBar 
+              icon={<Sparkles size={isCompact ? 12 : 13} color="#c084fc" style={{ flexShrink: 0 }} />}
+              label="미학 & 구도 (IAA)" 
+              score={scores.iaa} 
+              color="#c084fc" 
+              isCompact={isCompact} 
+            />
           )}
           {scores.iqa !== null && (
-            <ScoreBar label="🔍 화질 & 선명도 (IQA)" score={scores.iqa} color="#38bdf8" isCompact={isCompact} />
+            <ScoreBar 
+              icon={<Camera size={isCompact ? 12 : 13} color="#38bdf8" style={{ flexShrink: 0 }} />}
+              label="화질 & 광학 (IQA)" 
+              score={scores.iqa} 
+              color="#38bdf8" 
+              isCompact={isCompact} 
+            />
           )}
           {scores.ista !== null && (
-            <ScoreBar label="🧱 구조 & 질감 (ISTA)" score={scores.ista} color="#4ade80" isCompact={isCompact} />
+            <ScoreBar 
+              icon={<Layers size={isCompact ? 12 : 13} color="#4ade80" style={{ flexShrink: 0 }} />}
+              label="구조 & 질감 (ISTA)" 
+              score={scores.ista} 
+              color="#4ade80" 
+              isCompact={isCompact} 
+            />
           )}
         </div>
       </div>
@@ -382,17 +400,27 @@ export const CritiqueScoreboardCard: React.FC<{ scores: ParsedScores; isCompact?
   );
 };
 
-const ScoreBar: React.FC<{ label: string; score: number; color: string; isCompact: boolean }> = ({
+const ScoreBar: React.FC<{ 
+  label: string; 
+  score: number; 
+  color: string; 
+  isCompact: boolean;
+  icon?: React.ReactNode;
+}> = ({
   label,
   score,
   color,
-  isCompact
+  isCompact,
+  icon
 }) => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: isCompact ? '11px' : '12px' }}>
-        <span style={{ color: '#d4d4d8' }}>{label}</span>
-        <span style={{ color: '#fff', fontWeight: 600 }}>{score}점</span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: isCompact ? '11px' : '12px' }}>
+        <span style={{ color: '#d4d4d8', display: 'flex', alignItems: 'center', gap: '5px' }}>
+          {icon}
+          <span>{label}</span>
+        </span>
+        <span style={{ color: '#fff', fontWeight: 600 }} className="font-mono">{score}점</span>
       </div>
       <div style={{
         height: isCompact ? '4px' : '6px',

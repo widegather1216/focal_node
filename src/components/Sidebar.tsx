@@ -16,8 +16,8 @@ interface SidebarProps {
 export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
   const { 
     apiPort, 
-    activeTab,
-    setActiveTab,
+    activeTab, 
+    setActiveTab, 
     isIndexing, 
     indexingState, 
     indexingProgress, 
@@ -29,7 +29,7 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
     fetchFolders, 
     removeFolder, 
     setIsIndexing, 
-    setIndexingState,
+    setIndexingState, 
     setIndexingProgress 
   } = useAppStore();
 
@@ -72,21 +72,52 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
   };
 
   return (
-    <div className="sidebar" style={{
+    <aside className="sidebar" style={{
       width: '260px',
       height: '100vh',
-      backgroundColor: 'rgba(25, 25, 25, 0.95)',
-      borderRight: '1px solid rgba(255, 255, 255, 0.1)',
+      backgroundColor: 'var(--bg-surface)',
+      borderRight: '1px solid var(--border-subtle)',
       display: 'flex',
       flexDirection: 'column',
-      padding: '20px 10px',
-      boxSizing: 'border-box'
+      padding: '16px 12px',
+      boxSizing: 'border-box',
+      userSelect: 'none'
     }}>
-      <div style={{ padding: '0 10px', marginBottom: '16px' }}>
-        <h2 style={{ fontSize: '18px', fontWeight: '600', margin: '0 0 12px 0', color: '#fff' }}>Focal Node</h2>
+      <div style={{ padding: '0 4px', marginBottom: '14px' }}>
+        {/* Brand Header with Camera Red Dot Indicator */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+          <div style={{
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            backgroundColor: 'var(--accent-focal)',
+            boxShadow: '0 0 10px rgba(225, 29, 72, 0.7)'
+          }} />
+          <h2 style={{
+            fontSize: '15px',
+            fontWeight: 600,
+            margin: 0,
+            color: 'var(--text-primary)',
+            letterSpacing: '-0.02em',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px'
+          }}>
+            Focal Node
+            <span style={{ fontSize: '10px', fontWeight: 500, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>PRO</span>
+          </h2>
+        </div>
         
         {/* View Switcher Tabs */}
-        <div style={{ display: 'flex', gap: '4px', marginBottom: '16px', background: '#09090b', padding: '4px', borderRadius: '8px', border: '1px solid #27272a' }}>
+        <div style={{
+          display: 'flex',
+          gap: '2px',
+          marginBottom: '14px',
+          background: 'var(--bg-canvas)',
+          padding: '3px',
+          borderRadius: '8px',
+          border: '1px solid var(--border-subtle)'
+        }}>
           <button
             onClick={() => setActiveTab('gallery')}
             style={{
@@ -95,18 +126,21 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
               alignItems: 'center',
               justifyContent: 'center',
               gap: '4px',
-              background: activeTab === 'gallery' ? '#27272a' : 'transparent',
-              color: activeTab === 'gallery' ? '#fff' : '#a1a1aa',
-              border: 'none',
-              padding: '6px 4px',
+              background: activeTab === 'gallery' ? 'var(--bg-elevated)' : 'transparent',
+              color: activeTab === 'gallery' ? 'var(--text-primary)' : 'var(--text-secondary)',
+              border: activeTab === 'gallery' ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid transparent',
+              padding: '6px 2px',
               borderRadius: '6px',
               fontSize: '12px',
               fontWeight: 500,
-              cursor: 'pointer'
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              transition: 'all 0.15s ease'
             }}
           >
-            <ImageIcon size={14} />
-            <span>갤러리</span>
+            <ImageIcon size={13} style={{ flexShrink: 0 }} />
+            <span style={{ whiteSpace: 'nowrap' }}>갤러리</span>
           </button>
 
           <button
@@ -117,18 +151,21 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
               alignItems: 'center',
               justifyContent: 'center',
               gap: '4px',
-              background: activeTab === 'analytics' ? '#27272a' : 'transparent',
-              color: activeTab === 'analytics' ? '#38bdf8' : '#a1a1aa',
-              border: 'none',
-              padding: '6px 4px',
+              background: activeTab === 'analytics' ? 'var(--bg-elevated)' : 'transparent',
+              color: activeTab === 'analytics' ? 'var(--text-primary)' : 'var(--text-secondary)',
+              border: activeTab === 'analytics' ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid transparent',
+              padding: '6px 2px',
               borderRadius: '6px',
               fontSize: '12px',
               fontWeight: 500,
-              cursor: 'pointer'
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              transition: 'all 0.15s ease'
             }}
           >
-            <BarChart3 size={14} />
-            <span>분석</span>
+            <BarChart3 size={13} style={{ flexShrink: 0 }} />
+            <span style={{ whiteSpace: 'nowrap' }}>장비 분석</span>
           </button>
 
           <button
@@ -139,38 +176,41 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
               alignItems: 'center',
               justifyContent: 'center',
               gap: '4px',
-              background: activeTab === 'critique' ? '#27272a' : 'transparent',
-              color: activeTab === 'critique' ? '#c084fc' : '#a1a1aa',
-              border: 'none',
-              padding: '6px 4px',
+              background: activeTab === 'critique' ? 'var(--bg-elevated)' : 'transparent',
+              color: activeTab === 'critique' ? 'var(--text-primary)' : 'var(--text-secondary)',
+              border: activeTab === 'critique' ? '1px solid rgba(255, 255, 255, 0.08)' : '1px solid transparent',
+              padding: '6px 2px',
               borderRadius: '6px',
               fontSize: '12px',
               fontWeight: 500,
-              cursor: 'pointer'
+              cursor: 'pointer',
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+              transition: 'all 0.15s ease'
             }}
           >
-            <Sparkles size={14} />
-            <span>AI 비평</span>
+            <Sparkles size={13} style={{ flexShrink: 0 }} />
+            <span style={{ whiteSpace: 'nowrap' }}>AI 비평</span>
           </button>
         </div>
 
-        {/* Search & Filter Inputs (Only active in Gallery Tab) */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+        {/* Search & Filter Inputs (Active for Gallery) */}
+        <div style={{ display: 'flex', gap: '6px', marginBottom: '14px' }}>
           <div style={{ position: 'relative', flex: 1 }}>
-            <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#888' }} />
+            <Search size={14} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
             <input 
               type="text" 
-              placeholder="자연어/유사검색..."
+              placeholder="자연어 / 무드 검색..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{
                 width: '100%',
-                backgroundColor: '#333',
-                border: '1px solid rgba(255, 255, 255, 0.1)',
-                borderRadius: '8px',
-                padding: '8px 8px 8px 32px',
-                color: '#fff',
-                fontSize: '13px',
+                backgroundColor: 'var(--bg-card)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '6px',
+                padding: '7px 8px 7px 30px',
+                color: 'var(--text-primary)',
+                fontSize: '12px',
                 outline: 'none',
                 boxSizing: 'border-box'
               }}
@@ -187,25 +227,25 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
                 is_favorite: searchFilters.is_favorite ? undefined : true
               });
             }}
-            whileHover={{ scale: 1.08, y: -1 }}
-            whileTap={{ scale: 0.9 }}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.92 }}
             transition={{ type: "spring", stiffness: 500, damping: 15 }}
             style={{
-              backgroundColor: searchFilters.is_favorite ? 'rgba(239, 68, 68, 0.25)' : 'rgba(255, 255, 255, 0.05)',
-              border: `1px solid ${searchFilters.is_favorite ? '#ef4444' : 'rgba(255, 255, 255, 0.2)'}`,
-              boxShadow: searchFilters.is_favorite ? '0 0 10px rgba(239, 68, 68, 0.4)' : 'none',
-              borderRadius: '8px',
-              padding: '8px',
-              color: searchFilters.is_favorite ? '#ef4444' : '#aaa',
+              backgroundColor: searchFilters.is_favorite ? 'var(--accent-focal-subtle)' : 'var(--bg-card)',
+              border: `1px solid ${searchFilters.is_favorite ? 'var(--accent-focal)' : 'var(--border-subtle)'}`,
+              boxShadow: searchFilters.is_favorite ? '0 0 10px rgba(225, 29, 72, 0.35)' : 'none',
+              borderRadius: '6px',
+              padding: '7px',
+              color: searchFilters.is_favorite ? 'var(--accent-focal)' : 'var(--text-secondary)',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              height: '34px',
-              width: '34px',
+              height: '32px',
+              width: '32px',
               outline: 'none',
             }}
-            title="즐겨찾기 모아보기"
+            title="즐겨찾기 필터"
           >
             <motion.div
               key={searchFilters.is_favorite ? "fav-active" : "fav-inactive"}
@@ -215,22 +255,19 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
               <Heart 
-                size={19} 
-                fill={searchFilters.is_favorite ? '#ef4444' : 'rgba(239, 68, 68, 0.08)'} 
-                color={searchFilters.is_favorite ? '#ef4444' : 'rgba(255, 255, 255, 0.5)'} 
+                size={15} 
+                fill={searchFilters.is_favorite ? 'var(--accent-focal)' : 'none'} 
+                color={searchFilters.is_favorite ? 'var(--accent-focal)' : 'currentColor'} 
               />
             </motion.div>
           </motion.button>
         </div>
 
+        {/* Action Buttons: Add Photos & Sync */}
         <motion.button 
           onClick={handleAddFolder}
           disabled={isIndexing}
-          whileHover={isIndexing ? {} : { 
-            scale: 1.02, 
-            backgroundColor: 'rgba(255, 255, 255, 0.15)',
-            boxShadow: '0 0 12px rgba(255, 255, 255, 0.1)'
-          }}
+          whileHover={isIndexing ? {} : { scale: 1.01, backgroundColor: 'var(--bg-elevated)', borderColor: 'var(--border-active)' }}
           whileTap={isIndexing ? {} : { scale: 0.98 }}
           transition={{ type: "spring", stiffness: 400, damping: 15 }}
           style={{
@@ -239,18 +276,21 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
             alignItems: 'center',
             justifyContent: 'center',
             gap: '8px',
-            backgroundColor: 'rgba(255, 255, 255, 0.1)',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            padding: '10px',
-            borderRadius: '8px',
-            color: '#fff',
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-subtle)',
+            padding: '8px',
+            borderRadius: '6px',
+            color: 'var(--text-primary)',
+            fontSize: '12px',
+            fontWeight: 500,
             cursor: isIndexing ? 'not-allowed' : 'pointer',
             opacity: isIndexing ? 0.5 : 1,
-            marginBottom: '10px'
+            marginBottom: '8px',
+            whiteSpace: 'nowrap'
           }}
         >
-          <FolderPlus size={18} />
-          {isIndexing ? 'Indexing...' : 'Add Photos'}
+          <FolderPlus size={15} color="var(--text-secondary)" style={{ flexShrink: 0 }} />
+          <span style={{ whiteSpace: 'nowrap' }}>{isIndexing ? '인덱싱 중...' : '사진 폴더 추가'}</span>
         </motion.button>
 
         <motion.button 
@@ -269,10 +309,7 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
             }
           }}
           disabled={isIndexing}
-          whileHover={isIndexing ? {} : { 
-            scale: 1.02, 
-            backgroundColor: 'rgba(255, 255, 255, 0.08)' 
-          }}
+          whileHover={isIndexing ? {} : { scale: 1.01, backgroundColor: 'rgba(255, 255, 255, 0.03)' }}
           whileTap={isIndexing ? {} : { scale: 0.98 }}
           transition={{ type: "spring", stiffness: 400, damping: 15 }}
           style={{
@@ -280,21 +317,24 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: '8px',
+            gap: '6px',
             backgroundColor: 'transparent',
-            border: '1px solid rgba(255, 255, 255, 0.2)',
-            padding: '10px',
-            borderRadius: '8px',
-            color: '#ccc',
+            border: '1px dashed var(--border-subtle)',
+            padding: '6px',
+            borderRadius: '6px',
+            color: 'var(--text-muted)',
+            fontSize: '11px',
             cursor: isIndexing ? 'not-allowed' : 'pointer',
-            opacity: isIndexing ? 0.5 : 1
+            opacity: isIndexing ? 0.5 : 1,
+            whiteSpace: 'nowrap'
           }}
         >
-          <RefreshCw size={16} className={isIndexing ? 'spin' : ''} />
-          Sync Database
+          <RefreshCw size={13} className={isIndexing ? 'spin' : ''} style={{ flexShrink: 0 }} />
+          <span style={{ whiteSpace: 'nowrap' }}>DB 동기화</span>
         </motion.button>
       </div>
 
+      {/* Folder Tree List */}
       <FolderList
         folders={folders}
         selectedFolder={selectedFolder}
@@ -304,11 +344,12 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
         removeFolder={removeFolder}
       />
 
+      {/* Indexing Status Drawer */}
       <IndexingProgressCard
         isIndexing={isIndexing}
         indexingState={indexingState}
         indexingProgress={indexingProgress}
       />
-    </div>
+    </aside>
   );
 }

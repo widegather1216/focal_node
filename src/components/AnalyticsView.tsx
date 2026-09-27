@@ -5,9 +5,9 @@ import { AnalyticsKpiGrid } from './analytics/AnalyticsKpiGrid';
 import { GearDonutCharts } from './analytics/GearDonutCharts';
 import { ExifBarCharts } from './analytics/ExifBarCharts';
 
-const COLORS = [
-  '#38bdf8', '#818cf8', '#c084fc', '#f472b6', '#fb7185',
-  '#4ade80', '#facc15', '#fb923c', '#a7f3d0', '#93c5fd'
+const MONOCHROME_ACCENT_COLORS = [
+  '#e11d48', '#f43f5e', '#fb7185', '#e4e4e7', '#d4d4d8',
+  '#a1a1aa', '#71717a', '#52525b', '#3f3f46', '#27272a'
 ];
 
 const CustomTooltip = ({ active, payload, label }: any) => {
@@ -15,19 +15,20 @@ const CustomTooltip = ({ active, payload, label }: any) => {
     const item = payload[0];
     return (
       <div style={{
-        backgroundColor: '#18181b',
-        border: '1px solid #3f3f46',
-        borderRadius: '8px',
-        padding: '10px 14px',
-        color: '#fff',
-        boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
-        fontSize: '13px'
+        backgroundColor: 'var(--bg-surface)',
+        border: '1px solid var(--border-subtle)',
+        borderRadius: '6px',
+        padding: '8px 12px',
+        color: 'var(--text-primary)',
+        boxShadow: '0 12px 28px rgba(0,0,0,0.7)',
+        fontSize: '12px'
       }}>
-        <div style={{ fontWeight: 600, color: '#e4e4e7', marginBottom: '4px' }}>
+        <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: '3px' }}>
           {label || item.name}
         </div>
-        <div style={{ color: item.color || '#38bdf8', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span style={{ fontSize: '15px', fontWeight: 700 }}>{item.value}</span> 장의 사진
+        <div style={{ color: item.color || 'var(--accent-focal)', display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <span className="font-mono" style={{ fontSize: '13px', fontWeight: 700 }}>{item.value}</span>
+          <span style={{ color: 'var(--text-muted)' }}>장의 사진</span>
         </div>
       </div>
     );
@@ -39,12 +40,12 @@ export function AnalyticsView() {
   const { data: stats, isLoading, isError } = useAnalyticsQuery();
 
   if (isLoading) {
-    return <LoadingSpinner fullScreen message="장비 메타데이터 및 분석 통계를 계산하는 중입니다..." />;
+    return <LoadingSpinner fullScreen message="장비 메타데이터 및 분석 통계를 집계하는 중입니다..." />;
   }
 
   if (isError || !stats) {
     return (
-      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#ef4444', height: '100vh', backgroundColor: '#09090b' }}>
+      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', color: 'var(--accent-focal)', height: '100vh', backgroundColor: 'var(--bg-canvas)' }}>
         통계 데이터를 불러오는 도중 오류가 발생했습니다.
       </div>
     );
@@ -55,18 +56,18 @@ export function AnalyticsView() {
       flex: 1,
       height: '100vh',
       overflowY: 'auto',
-      backgroundColor: '#09090b',
-      color: '#f4f4f5',
-      padding: '32px 40px',
+      backgroundColor: 'var(--bg-canvas)',
+      color: 'var(--text-primary)',
+      padding: '24px 32px',
       boxSizing: 'border-box'
     }}>
       {/* Header */}
-      <div style={{ marginBottom: '32px' }}>
-        <h1 style={{ margin: '0 0 8px 0', fontSize: '26px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <BarChart3 size={28} color="#38bdf8" /> Gear Analytics & Insights
+      <div style={{ marginBottom: '24px' }}>
+        <h1 style={{ margin: '0 0 6px 0', fontSize: '20px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '10px', letterSpacing: '-0.02em' }}>
+          <BarChart3 size={22} color="var(--accent-focal)" /> 장비 사용 통계 & 인사이트
         </h1>
-        <p style={{ margin: 0, color: '#a1a1aa', fontSize: '14px' }}>
-          수집된 메타데이터를 기반으로 촬영 습관, 선호하는 카메라/렌즈 및 EXIF 세팅 분포를 시각화합니다.
+        <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '13px' }}>
+          수집된 메타데이터를 기반으로 촬영 습관, 선호하는 카메라 바디/렌즈 및 조리개·화각 분포를 시각화합니다.
         </p>
       </div>
 
@@ -74,11 +75,11 @@ export function AnalyticsView() {
       <AnalyticsKpiGrid stats={stats} />
 
       {/* Charts Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '24px', marginBottom: '40px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '20px', marginBottom: '32px' }}>
         <GearDonutCharts
           cameras={stats.cameras}
           lenses={stats.lenses}
-          colors={COLORS}
+          colors={MONOCHROME_ACCENT_COLORS}
           customTooltip={CustomTooltip}
         />
         <ExifBarCharts

@@ -18,11 +18,12 @@ export const GearDonutCharts: React.FC<GearDonutChartsProps> = ({
   return (
     <>
       {/* Camera Donut Chart */}
-      <div style={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '12px', padding: '24px', display: 'flex', flexDirection: 'column' }}>
-        <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Camera size={18} color="#38bdf8" /> 카메라 바디 사용 점유율
+      <div style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '20px', display: 'flex', flexDirection: 'column' }}>
+        <h3 style={{ margin: '0 0 16px 0', fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+          <Camera size={16} color="var(--accent-focal)" style={{ flexShrink: 0 }} />
+          <span style={{ whiteSpace: 'nowrap' }}>카메라 바디 사용 점유율</span>
         </h3>
-        <div style={{ width: '100%', height: '320px' }}>
+        <div style={{ width: '100%', height: '300px' }}>
           {cameras.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
               <PieChart margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
@@ -45,12 +46,12 @@ export const GearDonutCharts: React.FC<GearDonutChartsProps> = ({
                   verticalAlign="bottom"
                   align="center"
                   formatter={(value: string) => value.length > 18 ? `${value.substring(0, 18)}...` : value}
-                  wrapperStyle={{ fontSize: '12px', paddingTop: '16px', color: '#a1a1aa' }}
+                  wrapperStyle={{ fontSize: '11px', paddingTop: '16px', color: 'var(--text-secondary)' }}
                 />
               </PieChart>
             </ResponsiveContainer>
           ) : (
-            <div style={{ height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#71717a' }}>
+            <div style={{ height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
               카메라 메타데이터가 존재하지 않습니다.
             </div>
           )}
@@ -58,11 +59,12 @@ export const GearDonutCharts: React.FC<GearDonutChartsProps> = ({
       </div>
 
       {/* Lens Donut Chart */}
-      <div style={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '12px', padding: '24px', display: 'flex', flexDirection: 'column' }}>
-        <h3 style={{ margin: '0 0 16px 0', fontSize: '16px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Focus size={18} color="#c084fc" /> 렌즈 모델 점유율
+      <div style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '20px', display: 'flex', flexDirection: 'column' }}>
+        <h3 style={{ margin: '0 0 16px 0', fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+          <Focus size={16} color="var(--accent-focal)" style={{ flexShrink: 0 }} />
+          <span style={{ whiteSpace: 'nowrap' }}>렌즈 모델 점유율</span>
         </h3>
-        <div style={{ width: '100%', height: '320px' }}>
+        <div style={{ width: '100%', height: '300px' }}>
           {lenses.length > 0 ? (
             <ResponsiveContainer width="100%" height="100%">
               <PieChart margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
@@ -76,7 +78,7 @@ export const GearDonutCharts: React.FC<GearDonutChartsProps> = ({
                   dataKey="count"
                 >
                   {lenses.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={colors[(index + 2) % colors.length]} />
+                    <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
                   ))}
                 </Pie>
                 <Tooltip content={<CustomTooltip />} />
@@ -85,12 +87,12 @@ export const GearDonutCharts: React.FC<GearDonutChartsProps> = ({
                   verticalAlign="bottom"
                   align="center"
                   formatter={(value: string) => value.length > 18 ? `${value.substring(0, 18)}...` : value}
-                  wrapperStyle={{ fontSize: '12px', paddingTop: '16px', color: '#a1a1aa' }}
+                  wrapperStyle={{ fontSize: '11px', paddingTop: '16px', color: 'var(--text-secondary)' }}
                 />
               </PieChart>
             </ResponsiveContainer>
           ) : (
-            <div style={{ height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#71717a' }}>
+            <div style={{ height: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
               렌즈 메타데이터가 존재하지 않습니다.
             </div>
           )}

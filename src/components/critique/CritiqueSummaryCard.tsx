@@ -156,10 +156,10 @@ export const CritiqueSummaryCard: React.FC<CritiqueSummaryCardProps> = ({
       {isSummaryExpanded && (
         <div style={{ padding: '20px 24px' }}>
           {isGeneratingSummary && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: '#c084fc', padding: '12px 0' }}>
-              <Loader2 size={20} className="spin" />
-              <span style={{ fontSize: '14px', fontWeight: 500 }}>
-                Gemma VLM이 {totalCritiques}개의 사진 비평 데이터와 EXIF 정보를 종합하여 포트폴리오를 총체적으로 분석하고 있습니다...
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--accent-ai)', padding: '12px 0' }}>
+              <Loader2 size={18} className="spin" style={{ flexShrink: 0 }} />
+              <span style={{ fontSize: '13px', fontWeight: 500, wordBreak: 'keep-all', lineHeight: 1.6, color: 'var(--text-primary)' }}>
+                AI 모델이 <strong className="font-mono" style={{ color: 'var(--accent-ai)' }}>{totalCritiques}</strong>개의 사진 비평 데이터와 EXIF 정보를 종합하여 포트폴리오를 총체적으로 분석하고 있습니다...
               </span>
             </div>
           )}

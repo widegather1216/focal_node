@@ -6,7 +6,7 @@ import { api } from '../services/api';
 import { useDebounce } from '../hooks/useDebounce';
 import { PhotoCard } from './gallery/PhotoCard';
 import { LoadingSpinner } from './common/LoadingSpinner';
-import { Loader2 } from 'lucide-react';
+import { Loader2, SearchX } from 'lucide-react';
 
 interface PhotoGalleryProps {
   selectedFolder: string | null;
@@ -20,7 +20,7 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
   
   const debouncedSearchQuery = useDebounce(searchQuery, 500);
 
-  // Measure container width and compute responsive column count
+  // Measure container width and compute responsive column count (aiming for ~240px wide cards)
   useEffect(() => {
     const el = parentRef.current;
     if (!el) return;
@@ -28,8 +28,7 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
     const updateColumns = () => {
       const width = el.clientWidth;
       if (width > 0) {
-        // Compute columns such that each photo card is roughly 220px ~ 280px wide
-        const cols = Math.max(2, Math.min(8, Math.floor(width / 240)));
+        const cols = Math.max(2, Math.min(8, Math.floor(width / 230)));
         setColumnCount(cols);
       }
     };
@@ -73,7 +72,7 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
   const virtualizer = useVirtualizer({
     count: hasNextPage ? rowCount + 1 : rowCount,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 240,
+    estimateSize: () => 220,
     overscan: 3,
   });
 
@@ -118,11 +117,20 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
 
   if (status === 'pending') {
     return (
-      <div style={{ padding: '20px', color: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+      <div style={{
+        padding: '20px',
+        color: 'var(--text-primary)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100%',
+        backgroundColor: 'var(--bg-canvas)'
+      }}>
         {debouncedSearchQuery ? (
-          <LoadingSpinner message={`"${debouncedSearchQuery}" 관련 사진 검색 중...`} />
+          <LoadingSpinner message={`"${debouncedSearchQuery}" 시각 임베딩 분석 및 검색 중...`} />
         ) : (
-          <LoadingSpinner message="사진 불러오는 중..." />
+          <LoadingSpinner message="사진 라이브러리를 불러오는 중..." />
         )}
       </div>
     );
@@ -130,7 +138,15 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
 
   if (status === 'error') {
     return (
-      <div style={{ padding: '20px', color: '#ef4444', display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+      <div style={{
+        padding: '20px',
+        color: 'var(--accent-focal)',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '100%',
+        backgroundColor: 'var(--bg-canvas)'
+      }}>
         사진 목록을 불러오는 도중 오류가 발생했습니다.
       </div>
     );
@@ -138,9 +154,35 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
   
   if (allPhotos.length === 0 && !hasNextPage) {
     return (
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#aaa', flexDirection: 'column', height: '100%' }}>
-        <h2 style={{ fontSize: '22px', marginBottom: '8px', color: '#fff', fontWeight: 600 }}>표시할 사진이 없습니다</h2>
-        <p style={{ fontSize: '14px', color: '#71717a' }}>사이드바에서 사진 폴더를 추가하거나 검색 필터를 재설정해보세요.</p>
+      <div style={{
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexDirection: 'column',
+        height: '100%',
+        backgroundColor: 'var(--bg-canvas)',
+        userSelect: 'none'
+      }}>
+        <div style={{
+          width: '56px',
+          height: '56px',
+          borderRadius: '50%',
+          backgroundColor: 'var(--bg-card)',
+          border: '1px solid var(--border-subtle)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginBottom: '16px'
+        }}>
+          <SearchX size={24} color="var(--text-muted)" />
+        </div>
+        <h2 style={{ fontSize: '16px', marginBottom: '6px', color: 'var(--text-primary)', fontWeight: 600 }}>
+          일치하는 사진이 없습니다
+        </h2>
+        <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: 0 }}>
+          자연어 검색어 또는 EXIF 필터 조건을 변경하거나, 새 사진 폴더를 추가해 보세요.
+        </p>
       </div>
     );
   }
@@ -151,8 +193,8 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
       style={{
         flex: 1,
         overflow: 'auto',
-        backgroundColor: '#111',
-        padding: '20px',
+        backgroundColor: 'var(--bg-canvas)',
+        padding: '10px',
         height: '100%',
         boxSizing: 'border-box'
       }}
@@ -181,16 +223,16 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
                 height: `${virtualRow.size}px`,
                 transform: `translateY(${virtualRow.start}px)`,
                 display: 'flex',
-                gap: '16px',
-                paddingBottom: '16px',
+                gap: '8px',
+                paddingBottom: '8px',
                 boxSizing: 'border-box'
               }}
             >
               {isLoaderRow ? (
                 hasNextPage ? (
-                  <div style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', color: '#a1a1aa', fontSize: '13px' }}>
-                    <Loader2 size={15} className="spin" color="#c084fc" />
-                    <span>사진 추가 로딩 중...</span>
+                  <div style={{ width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '12px' }}>
+                    <Loader2 size={14} className="spin" color="var(--accent-focal)" />
+                    <span>추가 사진 불러오는 중...</span>
                   </div>
                 ) : null
               ) : (

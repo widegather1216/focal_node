@@ -35,22 +35,22 @@ export const PhotoAiAnalysisView: React.FC<PhotoAiAnalysisViewProps> = ({
   handleTagClick
 }) => {
   return (
-    <div style={{ marginBottom: '20px', backgroundColor: '#18181b', borderRadius: '8px' }}>
+    <div style={{ marginBottom: '20px', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '16px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-        <h4 style={{ margin: 0, fontSize: '13px', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>AI 메타데이터 묘사</h4>
+        <h4 style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>AI 장면 묘사</h4>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button
             onClick={handleReindex}
             disabled={reindexing}
-            style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}
+            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}
             title="AI 분석 다시 실행"
           >
-            <RefreshCw size={12} className={reindexing ? 'spin' : ''} /> Re-index
+            <RefreshCw size={12} className={reindexing ? 'spin' : ''} /> 재분석
           </button>
           {!editing ? (
             <button
               onClick={() => setEditing(true)}
-              style={{ background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', fontSize: '12px' }}
+              style={{ background: 'none', border: 'none', color: 'var(--accent-focal)', cursor: 'pointer', fontSize: '12px', fontWeight: 500 }}
             >
               편집
             </button>
@@ -58,7 +58,7 @@ export const PhotoAiAnalysisView: React.FC<PhotoAiAnalysisViewProps> = ({
             <button
               onClick={handleSave}
               disabled={saving}
-              style={{ background: '#38bdf8', border: 'none', color: '#000', cursor: 'pointer', fontSize: '12px', padding: '2px 8px', borderRadius: '4px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}
+              style={{ background: 'var(--accent-focal)', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '12px', padding: '3px 10px', borderRadius: '4px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}
             >
               <Save size={12} /> {saving ? '저장 중...' : '저장'}
             </button>
@@ -68,7 +68,7 @@ export const PhotoAiAnalysisView: React.FC<PhotoAiAnalysisViewProps> = ({
 
       {!editing ? (
         <div>
-          <p style={{ fontSize: '13px', color: '#d4d4d8', lineHeight: 1.5, margin: '0 0 12px 0', background: '#09090b', padding: '10px 12px', borderRadius: '6px' }}>
+          <p style={{ fontSize: '13px', color: '#d4d4d8', lineHeight: 1.6, margin: '0 0 12px 0', background: 'var(--bg-canvas)', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border-subtle)', wordBreak: 'keep-all' }}>
             {aiAnalysis.caption || "생성된 캡션이 없습니다."}
           </p>
           
@@ -78,7 +78,7 @@ export const PhotoAiAnalysisView: React.FC<PhotoAiAnalysisViewProps> = ({
               <span
                 key={idx}
                 onClick={() => handleTagClick(tag)}
-                style={{ background: '#27272a', color: '#e4e4e7', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', cursor: 'pointer' }}
+                style={{ background: 'var(--bg-card)', color: 'var(--text-secondary)', border: '1px solid var(--border-subtle)', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', cursor: 'pointer', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center' }}
               >
                 #{tag}
               </span>
@@ -91,7 +91,7 @@ export const PhotoAiAnalysisView: React.FC<PhotoAiAnalysisViewProps> = ({
               {aiAnalysis.aesthetic_tags.map((tag, idx) => (
                 <span
                   key={idx}
-                  style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', border: '1px solid rgba(168, 85, 247, 0.3)', padding: '3px 8px', borderRadius: '4px', fontSize: '11px' }}
+                  style={{ background: 'var(--accent-ai-subtle)', color: 'var(--accent-ai)', border: '1px solid rgba(139, 92, 246, 0.3)', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center' }}
                 >
                   {tag}
                 </span>

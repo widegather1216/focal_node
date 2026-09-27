@@ -13,60 +13,101 @@ interface AnalyticsKpiGridProps {
 
 export const AnalyticsKpiGrid: React.FC<AnalyticsKpiGridProps> = ({ stats }) => {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '16px', marginBottom: '32px' }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px', marginBottom: '28px' }}>
       <motion.div
         whileHover={{ y: -2 }}
-        style={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '12px', padding: '20px', display: 'flex', alignItems: 'center', gap: '16px' }}
+        style={kpiCardStyle}
       >
-        <div style={{ background: 'rgba(56, 189, 248, 0.15)', padding: '12px', borderRadius: '10px', color: '#38bdf8' }}>
-          <ImageIcon size={24} />
+        <div style={iconBoxStyle}>
+          <ImageIcon size={18} color="var(--accent-focal)" style={{ flexShrink: 0 }} />
         </div>
-        <div>
-          <div style={{ fontSize: '12px', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>총 수집 사진</div>
-          <div style={{ fontSize: '24px', fontWeight: 700, marginTop: '2px' }}>{stats.total_photos.toLocaleString()}</div>
+        <div style={{ minWidth: 0, overflow: 'hidden' }}>
+          <div style={kpiLabelStyle}>총 사진 수</div>
+          <div className="font-mono" style={kpiValueStyle}>{stats.total_photos.toLocaleString()}</div>
         </div>
       </motion.div>
 
       <motion.div
         whileHover={{ y: -2 }}
-        style={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '12px', padding: '20px', display: 'flex', alignItems: 'center', gap: '16px' }}
+        style={kpiCardStyle}
       >
-        <div style={{ background: 'rgba(129, 140, 248, 0.15)', padding: '12px', borderRadius: '10px', color: '#818cf8' }}>
-          <Camera size={24} />
+        <div style={iconBoxStyle}>
+          <Camera size={18} color="var(--text-secondary)" style={{ flexShrink: 0 }} />
         </div>
-        <div>
-          <div style={{ fontSize: '12px', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>사용 카메라 바디</div>
-          <div style={{ fontSize: '24px', fontWeight: 700, marginTop: '2px' }}>{stats.cameras.length}종</div>
+        <div style={{ minWidth: 0, overflow: 'hidden' }}>
+          <div style={kpiLabelStyle}>카메라 기종</div>
+          <div className="font-mono" style={kpiValueStyle}>{stats.cameras.length}종</div>
         </div>
       </motion.div>
 
       <motion.div
         whileHover={{ y: -2 }}
-        style={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '12px', padding: '20px', display: 'flex', alignItems: 'center', gap: '16px' }}
+        style={kpiCardStyle}
       >
-        <div style={{ background: 'rgba(192, 132, 252, 0.15)', padding: '12px', borderRadius: '10px', color: '#c084fc' }}>
-          <Focus size={24} />
+        <div style={iconBoxStyle}>
+          <Focus size={18} color="var(--text-secondary)" style={{ flexShrink: 0 }} />
         </div>
-        <div>
-          <div style={{ fontSize: '12px', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>사용 렌즈 라인업</div>
-          <div style={{ fontSize: '24px', fontWeight: 700, marginTop: '2px' }}>{stats.lenses.length}종</div>
+        <div style={{ minWidth: 0, overflow: 'hidden' }}>
+          <div style={kpiLabelStyle}>렌즈 라인업</div>
+          <div className="font-mono" style={kpiValueStyle}>{stats.lenses.length}종</div>
         </div>
       </motion.div>
 
       <motion.div
         whileHover={{ y: -2 }}
-        style={{ background: '#18181b', border: '1px solid #27272a', borderRadius: '12px', padding: '20px', display: 'flex', alignItems: 'center', gap: '16px' }}
+        style={kpiCardStyle}
       >
-        <div style={{ background: 'rgba(74, 222, 128, 0.15)', padding: '12px', borderRadius: '10px', color: '#4ade80' }}>
-          <Aperture size={24} />
+        <div style={iconBoxStyle}>
+          <Aperture size={18} color="var(--accent-focal)" style={{ flexShrink: 0 }} />
         </div>
-        <div>
-          <div style={{ fontSize: '12px', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>최다 활용 조리개</div>
-          <div style={{ fontSize: '20px', fontWeight: 700, marginTop: '2px' }}>
+        <div style={{ minWidth: 0, overflow: 'hidden' }}>
+          <div style={kpiLabelStyle}>최다 활용 조리개</div>
+          <div className="font-mono" style={{ ...kpiValueStyle, fontSize: '18px' }}>
             {stats.apertures[0]?.name || 'N/A'}
           </div>
         </div>
       </motion.div>
     </div>
   );
+};
+
+const kpiCardStyle = {
+  backgroundColor: 'var(--bg-card)',
+  border: '1px solid var(--border-subtle)',
+  borderRadius: '8px',
+  padding: '14px 16px',
+  display: 'flex',
+  alignItems: 'center',
+  gap: '12px',
+  transition: 'border-color 0.15s ease'
+};
+
+const iconBoxStyle = {
+  backgroundColor: 'var(--bg-surface)',
+  border: '1px solid var(--border-subtle)',
+  padding: '9px',
+  borderRadius: '6px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  flexShrink: 0
+};
+
+const kpiLabelStyle = {
+  fontSize: '11px',
+  color: 'var(--text-muted)',
+  textTransform: 'uppercase' as const,
+  letterSpacing: '0.04em',
+  fontWeight: 600,
+  whiteSpace: 'nowrap' as const,
+  overflow: 'hidden',
+  textOverflow: 'ellipsis'
+};
+
+const kpiValueStyle = {
+  fontSize: '18px',
+  fontWeight: 700,
+  marginTop: '2px',
+  color: 'var(--text-primary)',
+  whiteSpace: 'nowrap' as const
 };

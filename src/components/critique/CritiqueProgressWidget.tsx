@@ -10,74 +10,86 @@ interface CritiqueProgressWidgetProps {
 }
 
 const STEPS = [
-  { id: 1, label: 'VR 점수 (3종)', icon: BarChart3 },
-  { id: 2, label: 'VQA 비평 (3종)', icon: FileText },
-  { id: 3, label: '한국어 직역', icon: Languages },
-  { id: 4, label: '사진학 정제', icon: Sparkles },
+  { id: 1, label: '시각 채점', icon: BarChart3 },
+  { id: 2, label: '심층 비평', icon: FileText },
+  { id: 3, label: '한국어 번역', icon: Languages },
+  { id: 4, label: '평론 완성', icon: Sparkles },
 ];
 
 export const CritiqueProgressWidget: React.FC<CritiqueProgressWidgetProps> = ({ status, onCancel }) => {
   const currentStep = status?.step || 1;
   const progress = status?.progress || 15;
-  const currentMessage = status?.message || '점수 산출 중';
+  const currentMessage = status?.message || '시각 점수 산출 중';
 
   return (
     <div style={{
-      background: 'linear-gradient(145deg, rgba(24, 24, 27, 0.95) 0%, rgba(18, 18, 22, 0.98) 100%)',
-      border: '1px solid rgba(168, 85, 247, 0.25)',
-      borderRadius: '12px',
-      padding: '18px 20px',
-      boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05)',
-      color: '#f4f4f5',
-      marginBottom: '16px',
+      backgroundColor: 'var(--bg-surface)',
+      border: '1px solid var(--border-subtle)',
+      borderRadius: '8px',
+      padding: '14px 16px',
+      boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
+      color: 'var(--text-primary)',
+      marginBottom: '14px',
       position: 'relative',
-      overflow: 'hidden'
+      overflow: 'hidden',
+      userSelect: 'none'
     }}>
-      {/* Glow background effect */}
-      <div style={{
-        position: 'absolute',
-        top: '-40px',
-        right: '-40px',
-        width: '120px',
-        height: '120px',
-        background: 'radial-gradient(circle, rgba(168, 85, 247, 0.15) 0%, rgba(0, 0, 0, 0) 70%)',
-        pointerEvents: 'none'
-      }} />
-
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
           <div style={{
-            width: '28px',
-            height: '28px',
-            borderRadius: '8px',
-            background: 'rgba(168, 85, 247, 0.15)',
-            border: '1px solid rgba(168, 85, 247, 0.35)',
+            width: '26px',
+            height: '26px',
+            borderRadius: '6px',
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-subtle)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: '0 0 12px rgba(168, 85, 247, 0.25)'
+            flexShrink: 0
           }}>
-            <Loader2 size={16} color="#c084fc" className="spin" />
+            <Loader2 size={14} color="var(--accent-ai)" className="spin" />
           </div>
-          <div>
-            <h4 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: '#fff', letterSpacing: '-0.01em' }}>
+          <div style={{ minWidth: 0, flex: 1, overflow: 'hidden' }}>
+            <h4 style={{
+              margin: 0,
+              fontSize: '13px',
+              fontWeight: 600,
+              color: 'var(--text-primary)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis'
+            }}>
               {currentMessage}
             </h4>
-            <span style={{ fontSize: '11px', color: '#a1a1aa' }}>
-              AI 모델 추론 진행 중... ({progress}%)
-            </span>
+            <div style={{
+              fontSize: '11px',
+              color: 'var(--text-muted)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              marginTop: '1px'
+            }}>
+              <span>AI 모델 추론 진행 중</span>
+              <span className="font-mono" style={{ color: 'var(--text-secondary)' }}>({progress}%)</span>
+            </div>
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{
-            fontSize: '12px',
-            fontWeight: 700,
-            color: '#c084fc',
-            background: 'rgba(168, 85, 247, 0.1)',
-            padding: '3px 10px',
-            borderRadius: '12px',
-            border: '1px solid rgba(168, 85, 247, 0.2)'
+
+        {/* Right Controls */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+          <span className="font-mono" style={{
+            fontSize: '11px',
+            fontWeight: 600,
+            color: 'var(--accent-ai)',
+            backgroundColor: 'var(--bg-card)',
+            padding: '2px 8px',
+            borderRadius: '4px',
+            border: '1px solid var(--border-subtle)',
+            whiteSpace: 'nowrap'
           }}>
             {currentStep} / {STEPS.length}
           </span>
@@ -88,20 +100,21 @@ export const CritiqueProgressWidget: React.FC<CritiqueProgressWidgetProps> = ({ 
                 background: 'rgba(239, 68, 68, 0.12)',
                 border: '1px solid rgba(239, 68, 68, 0.3)',
                 color: '#f87171',
-                borderRadius: '8px',
-                padding: '3px 8px',
+                borderRadius: '4px',
+                padding: '3px 7px',
                 fontSize: '11px',
                 fontWeight: 600,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '4px',
-                transition: 'all 0.2s ease'
+                whiteSpace: 'nowrap',
+                flexShrink: 0
               }}
               title="비평 생성 중단"
             >
-              <Square size={10} fill="#f87171" />
-              중단
+              <Square size={9} fill="#f87171" style={{ flexShrink: 0 }} />
+              <span>중단</span>
             </button>
           )}
         </div>
@@ -109,30 +122,29 @@ export const CritiqueProgressWidget: React.FC<CritiqueProgressWidgetProps> = ({ 
 
       {/* Progress Bar */}
       <div style={{
-        height: '6px',
+        height: '4px',
         backgroundColor: 'rgba(255, 255, 255, 0.08)',
-        borderRadius: '3px',
+        borderRadius: '2px',
         overflow: 'hidden',
-        marginBottom: '16px'
+        marginBottom: '12px'
       }}>
         <motion.div
           initial={{ width: '0%' }}
           animate={{ width: `${progress}%` }}
-          transition={{ duration: 0.5, ease: 'easeOut' }}
+          transition={{ duration: 0.4, ease: 'easeOut' }}
           style={{
             height: '100%',
-            background: 'linear-gradient(90deg, #a855f7 0%, #6366f1 100%)',
-            borderRadius: '3px',
-            boxShadow: '0 0 10px rgba(168, 85, 247, 0.5)'
+            backgroundColor: 'var(--accent-ai)',
+            borderRadius: '2px'
           }}
         />
       </div>
 
-      {/* Step Indicators */}
+      {/* Step Indicators (Compact 4-column grid with no awkward text wrap) */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'repeat(4, 1fr)',
-        gap: '8px'
+        gap: '4px'
       }}>
         {STEPS.map((step) => {
           const Icon = step.icon;
@@ -146,51 +158,53 @@ export const CritiqueProgressWidget: React.FC<CritiqueProgressWidgetProps> = ({ 
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: '6px',
-                padding: '8px 4px',
-                borderRadius: '8px',
-                backgroundColor: isCurrent ? 'rgba(168, 85, 247, 0.12)' : 'transparent',
-                border: isCurrent ? '1px solid rgba(168, 85, 247, 0.3)' : '1px solid transparent',
-                transition: 'all 0.3s ease'
+                gap: '5px',
+                padding: '6px 2px',
+                borderRadius: '6px',
+                backgroundColor: isCurrent ? 'var(--bg-card)' : 'transparent',
+                border: isCurrent ? '1px solid var(--border-active)' : '1px solid transparent',
+                transition: 'all 0.2s ease',
+                overflow: 'hidden'
               }}
             >
               <div
-                className={isCurrent ? 'pulse-glow' : ''}
                 style={{
-                  width: '24px',
-                  height: '24px',
+                  width: '22px',
+                  height: '22px',
                   borderRadius: '50%',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   backgroundColor: isDone
-                    ? '#a855f7'
+                    ? 'var(--accent-ai)'
                     : isCurrent
-                    ? 'rgba(168, 85, 247, 0.25)'
+                    ? 'var(--accent-ai-subtle)'
                     : 'rgba(255, 255, 255, 0.05)',
                   border: isCurrent
-                    ? '1px solid rgba(192, 132, 252, 0.6)'
+                    ? '1px solid var(--accent-ai)'
                     : isDone
-                    ? '1px solid rgba(168, 85, 247, 0.8)'
-                    : '1px solid rgba(255, 255, 255, 0.08)',
-                  color: isDone ? '#fff' : isCurrent ? '#c084fc' : '#71717a',
-                  transition: 'all 0.3s ease'
+                    ? '1px solid var(--accent-ai)'
+                    : '1px solid var(--border-subtle)',
+                  color: isDone ? '#fff' : isCurrent ? 'var(--accent-ai)' : 'var(--text-muted)',
+                  flexShrink: 0
                 }}
               >
                 {isDone ? (
-                  <CheckCircle2 size={14} />
+                  <CheckCircle2 size={13} />
                 ) : isCurrent ? (
-                  <Loader2 size={13} className="spin" />
+                  <Loader2 size={12} className="spin" />
                 ) : (
-                  <Icon size={13} />
+                  <Icon size={12} />
                 )}
               </div>
               <span style={{
-                fontSize: '11px',
+                fontSize: '10.5px',
                 fontWeight: isCurrent ? 600 : 400,
-                color: isDone ? '#e4e4e7' : isCurrent ? '#c084fc' : '#71717a',
+                color: isDone ? 'var(--text-primary)' : isCurrent ? 'var(--accent-ai)' : 'var(--text-muted)',
                 textAlign: 'center',
-                whiteSpace: 'nowrap'
+                whiteSpace: 'nowrap',
+                letterSpacing: '-0.02em',
+                lineHeight: 1.2
               }}>
                 {step.label}
               </span>

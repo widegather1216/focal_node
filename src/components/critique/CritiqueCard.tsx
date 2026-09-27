@@ -20,14 +20,16 @@ const cardBtnStyle: React.CSSProperties = {
   background: 'rgba(255, 255, 255, 0.06)',
   border: '1px solid rgba(255, 255, 255, 0.1)',
   color: '#f4f4f5',
-  padding: '5px 11px',
+  padding: '5px 10px',
   borderRadius: '6px',
   fontSize: '12px',
   fontWeight: 500,
   cursor: 'pointer',
-  display: 'flex',
+  display: 'inline-flex',
   alignItems: 'center',
-  gap: '5px'
+  gap: '5px',
+  whiteSpace: 'nowrap',
+  flexShrink: 0
 };
 
 export const CritiqueCard: React.FC<CritiqueCardProps> = ({
@@ -155,9 +157,9 @@ export const CritiqueCard: React.FC<CritiqueCardProps> = ({
               )}
 
               {(item.f_number || item.shutter_speed || item.iso) && (
-                <div style={{ display: 'flex', gap: '8px', color: '#71717a' }}>
+                <div className="font-mono" style={{ display: 'flex', gap: '8px', color: '#71717a', whiteSpace: 'nowrap' }}>
                   {item.f_number && <span>f/{item.f_number}</span>}
-                  {item.shutter_speed && <span>{item.shutter_speed}s</span>}
+                  {item.shutter_speed && <span>{item.shutter_speed}</span>}
                   {item.iso && <span>ISO {item.iso}</span>}
                 </div>
               )}

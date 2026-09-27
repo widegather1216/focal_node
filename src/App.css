@@ -1,28 +1,57 @@
-.logo.vite:hover {
-  filter: drop-shadow(0 0 2em #747bff);
-}
+/* ==========================================================================
+   Focal Node: The Neutral Dark Studio Design System
+   Core CSS Variables & Foundations (Doc 10 Reference)
+   ========================================================================== */
 
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafb);
-}
 :root {
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 400;
+  /* Canvas & Surface Colors */
+  --bg-canvas: #09090b;          /* Main App Canvas / Deep Obsidian */
+  --bg-surface: #121215;         /* Sidebar, Global Headers, Popouts */
+  --bg-card: #18181b;            /* Photo Card, Panel Containers */
+  --bg-elevated: #27272a;        /* Modals, Hover States, Tooltips */
+  --bg-hover: rgba(255, 255, 255, 0.05);
 
-  color: #0f0f0f;
-  background-color: #f6f6f6;
+  /* Borders & Dividers */
+  --border-subtle: #27272a;      /* 1px Structural Boundaries */
+  --border-active: #3f3f46;      /* Focused inputs, interactive borders */
+  --border-focus: #e11d48;       /* Focal Red Focus Ring */
 
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  -webkit-text-size-adjust: 100%;
+  /* Accent Colors (Single Primary Accent + Functional Accents) */
+  --accent-focal: #e11d48;       /* Leica / Lens Red (Primary Accent) */
+  --accent-focal-hover: #f43f5e;
+  --accent-focal-subtle: rgba(225, 29, 72, 0.15);
+  --accent-ai: #8b5cf6;          /* Gemma VLM & SigLIP AI Sparkle */
+  --accent-ai-subtle: rgba(139, 92, 246, 0.15);
+  --accent-amber: #f59e0b;       /* Exposure Warning, Indexing */
+  --accent-emerald: #10b981;     /* Success / Complete */
+
+  /* Text Hierarchy */
+  --text-primary: #f4f4f5;       /* Crisp Off-White */
+  --text-secondary: #a1a1aa;     /* Neutral Muted Gray */
+  --text-muted: #71717a;         /* Hardware Sub-labels / Timestamps */
+
+  /* Typography Stacks */
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", "Segoe UI", Roboto, sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", "Roboto Mono", Menlo, Monaco, Consolas, monospace;
+
+  /* Standard Transitions */
+  --transition-fast: 150ms ease-out;
+  --transition-normal: 250ms ease-out;
+}
+
+/* ==========================================================================
+   Global Resets & Canvas Setup
+   ========================================================================== */
+
+* {
+  box-sizing: border-box;
 }
 
 html, body, #root {
-  background-color: #09090b !important;
+  background-color: var(--bg-canvas) !important;
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  word-break: keep-all;
   overscroll-behavior: none !important;
   overscroll-behavior-x: none !important;
   overscroll-behavior-y: none !important;
@@ -30,147 +59,156 @@ html, body, #root {
   inset: 0;
   width: 100vw;
   height: 100vh;
-  overflow: hidden;
-}
-
-.container {
   margin: 0;
-  padding-top: 10vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  text-align: center;
+  padding: 0;
+  overflow: hidden;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: 0.75s;
+/* Selection Highlight */
+::selection {
+  background-color: var(--accent-focal-subtle);
+  color: #fff;
 }
 
-.logo.tauri:hover {
-  filter: drop-shadow(0 0 2em #24c8db);
+/* ==========================================================================
+   Ultra-Slim Studio Scrollbars
+   ========================================================================== */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
 
-.row {
-  display: flex;
-  justify-content: center;
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
 }
 
-a:hover {
-  color: #535bf2;
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
 }
 
-h1 {
-  text-align: center;
+/* ==========================================================================
+   Utility Classes & Components
+   ========================================================================== */
+
+/* Technical Monospace Numbers (EXIF, ISO, Shutter, Aperture) */
+.font-mono {
+  font-family: var(--font-mono) !important;
+  font-feature-settings: "tnum" 1, "zero" 1;
 }
 
-input,
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  color: #0f0f0f;
-  background-color: #ffffff;
-  transition: border-color 0.25s;
-  box-shadow: 0 2px 2px rgba(0, 0, 0, 0.2);
-}
-
-button {
-  cursor: pointer;
-}
-
-button:hover {
-  border-color: #396cd8;
-}
-button:active {
-  border-color: #396cd8;
-  background-color: #e8e8e8;
-}
-
-input,
-button {
-  outline: none;
-}
-
-#greet-input {
-  margin-right: 5px;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color: #f6f6f6;
-    background-color: #2f2f2f;
-  }
-
-  a:hover {
-    color: #24c8db;
-  }
-
-  input,
-  button {
-    color: #ffffff;
-    background-color: #0f0f0f98;
-  }
-  button:active {
-    background-color: #0f0f0f69;
-  }
-}
-
-/* Glassmorphism Utility Classes for UI slimming */
+/* Glassmorphism Dark Panels */
 .glass-panel {
-  background: rgba(24, 24, 27, 0.8) !important;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
-  border: 1px solid rgba(63, 63, 70, 0.5) !important;
+  background: rgba(18, 18, 21, 0.82) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid var(--border-subtle) !important;
 }
 
 .glass-button {
-  background: rgba(24, 24, 27, 0.8) !important;
+  background: rgba(24, 24, 27, 0.75) !important;
   backdrop-filter: blur(12px) !important;
   -webkit-backdrop-filter: blur(12px) !important;
-  border: 1px solid rgba(63, 63, 70, 0.5) !important;
-  color: #a1a1aa;
-  border-radius: 10px;
+  border: 1px solid var(--border-subtle) !important;
+  color: var(--text-secondary);
+  border-radius: 8px;
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  transition: all 0.15s ease;
+  transition: all var(--transition-fast);
 }
 
 .glass-button:hover {
-  border-color: #38bdf8 !important;
-  color: #fff !important;
+  background: rgba(39, 39, 42, 0.9) !important;
+  border-color: var(--border-active) !important;
+  color: var(--text-primary) !important;
 }
 
-/* Spinner & Animation Utilities */
+/* EXIF HUD Mini-Badges */
+.badge-exif {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: -0.02em;
+}
+
+/* RAW Indicator Tag */
+.badge-raw {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--accent-focal);
+  padding: 1px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.05em;
+}
+
+/* Keyboard Shortcut Chip (e.g. ⌘K) */
+.kbd-shortcut {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+
+/* Standard Inputs & Controls */
+input, textarea, select {
+  font-family: inherit;
+  color: var(--text-primary);
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: var(--accent-focal);
+  box-shadow: 0 0 0 1px var(--accent-focal);
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  outline: none;
+}
+
+/* Animations */
 @keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 @keyframes pulse-glow {
   0%, 100% {
-    box-shadow: 0 0 8px rgba(168, 85, 247, 0.4);
+    box-shadow: 0 0 8px rgba(225, 29, 72, 0.3);
     opacity: 1;
   }
   50% {
-    box-shadow: 0 0 16px rgba(168, 85, 247, 0.85);
+    box-shadow: 0 0 16px rgba(225, 29, 72, 0.7);
     opacity: 0.85;
   }
 }
@@ -186,4 +224,3 @@ button {
 .pulse-glow {
   animation: pulse-glow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
-

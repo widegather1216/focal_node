@@ -91,61 +91,58 @@ export const GlobalCritiqueToast: React.FC = () => {
           onClick={() => setSelectedPhotoId(activeCritiqueJob.photoId)}
           style={{
             position: 'fixed',
-            left: '10px',
+            left: '14px',
             bottom: '16px',
             zIndex: 100,
-            width: '240px',
-            background: 'linear-gradient(145deg, rgba(24, 24, 27, 0.98) 0%, rgba(15, 15, 18, 0.99) 100%)',
-            border: '1px solid rgba(168, 85, 247, 0.35)',
-            borderRadius: '12px',
-            padding: '14px 14px',
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.6), 0 0 16px rgba(168, 85, 247, 0.2)',
+            width: '260px',
+            backgroundColor: 'var(--bg-surface)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: '10px',
+            padding: '12px 14px',
+            boxShadow: '0 12px 32px rgba(0, 0, 0, 0.65)',
             backdropFilter: 'blur(16px)',
-            color: '#f4f4f5',
+            color: 'var(--text-primary)',
             cursor: 'pointer',
             overflow: 'hidden',
-            boxSizing: 'border-box'
+            boxSizing: 'border-box',
+            userSelect: 'none'
           }}
         >
-          {/* Ambient Glow */}
-          <div style={{
-            position: 'absolute',
-            top: '-30px',
-            right: '-30px',
-            width: '90px',
-            height: '90px',
-            background: 'radial-gradient(circle, rgba(168, 85, 247, 0.2) 0%, rgba(0, 0, 0, 0) 70%)',
-            pointerEvents: 'none'
-          }} />
-
           {/* Header Row */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
               <div style={{
                 width: '24px',
                 height: '24px',
                 borderRadius: '6px',
-                background: isCompleted ? 'rgba(34, 197, 94, 0.2)' : 'rgba(168, 85, 247, 0.2)',
-                border: isCompleted ? '1px solid rgba(34, 197, 94, 0.4)' : '1px solid rgba(168, 85, 247, 0.4)',
-                boxShadow: isCompleted ? '0 0 8px rgba(34, 197, 94, 0.3)' : '0 0 8px rgba(168, 85, 247, 0.3)',
+                backgroundColor: 'var(--bg-card)',
+                border: '1px solid var(--border-subtle)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 flexShrink: 0
               }}>
                 {isCompleted ? (
-                  <Sparkles size={13} color="#4ade80" />
+                  <Sparkles size={13} color="var(--accent-emerald)" />
                 ) : (
-                  <Loader2 size={13} color="#c084fc" className="spin" />
+                  <Loader2 size={13} color="var(--accent-ai)" className="spin" />
                 )}
               </div>
-              <span style={{ fontSize: '12px', fontWeight: 600, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '130px' }}>
-                {isCompleted ? '비평 완료' : currentMessage}
+              <span style={{
+                fontSize: '12px',
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                flex: 1
+              }}>
+                {isCompleted ? '비평 생성 완료' : currentMessage}
               </span>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-              <span style={{ fontSize: '11px', color: '#c084fc', fontWeight: 700 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+              <span className="font-mono" style={{ fontSize: '11px', color: 'var(--accent-ai)', fontWeight: 700, whiteSpace: 'nowrap' }}>
                 {progress}%
               </span>
               <button
@@ -153,13 +150,13 @@ export const GlobalCritiqueToast: React.FC = () => {
                 style={{
                   background: 'none',
                   border: 'none',
-                  color: isCompleted ? '#71717a' : '#f87171',
+                  color: isCompleted ? 'var(--text-muted)' : '#f87171',
                   cursor: 'pointer',
                   padding: '2px',
                   display: 'flex',
                   alignItems: 'center',
                   borderRadius: '4px',
-                  transition: 'color 0.2s ease, background 0.2s ease'
+                  flexShrink: 0
                 }}
                 title={isCompleted ? "닫기" : "비평 중단"}
               >
@@ -171,31 +168,32 @@ export const GlobalCritiqueToast: React.FC = () => {
           {/* File Name & Subtext */}
           <div style={{
             fontSize: '11px',
-            color: '#a1a1aa',
+            color: 'var(--text-muted)',
             marginBottom: '8px',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between'
+            justifyContent: 'space-between',
+            gap: '8px'
           }}>
             <span style={{
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
-              maxWidth: '140px',
-              color: '#d4d4d8'
+              flex: 1,
+              color: 'var(--text-secondary)'
             }}>
               {activeCritiqueJob.fileName || '사진 AI 비평 중'}
             </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '1px', color: '#c084fc', fontSize: '10px', fontWeight: 600 }}>
-              상세보기 <ChevronRight size={11} />
+            <span style={{ display: 'flex', alignItems: 'center', gap: '2px', color: 'var(--accent-ai)', fontSize: '10px', fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>
+              상세보기 <ChevronRight size={11} style={{ flexShrink: 0 }} />
             </span>
           </div>
 
           {/* Animated Progress Bar */}
           <div style={{
-            height: '5px',
+            height: '4px',
             backgroundColor: 'rgba(255, 255, 255, 0.08)',
-            borderRadius: '3px',
+            borderRadius: '2px',
             overflow: 'hidden'
           }}>
             <motion.div
@@ -204,13 +202,8 @@ export const GlobalCritiqueToast: React.FC = () => {
               transition={{ duration: 0.4, ease: 'easeOut' }}
               style={{
                 height: '100%',
-                background: isCompleted
-                  ? 'linear-gradient(90deg, #22c55e 0%, #4ade80 100%)'
-                  : 'linear-gradient(90deg, #a855f7 0%, #6366f1 100%)',
-                borderRadius: '3px',
-                boxShadow: isCompleted
-                  ? '0 0 10px rgba(34, 197, 94, 0.5)'
-                  : '0 0 10px rgba(168, 85, 247, 0.5)'
+                backgroundColor: isCompleted ? 'var(--accent-emerald)' : 'var(--accent-ai)',
+                borderRadius: '2px'
               }}
             />
           </div>

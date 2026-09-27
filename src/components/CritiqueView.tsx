@@ -84,8 +84,8 @@ export const CritiqueView: React.FC = () => {
     <div style={{
       flex: 1,
       height: '100vh',
-      backgroundColor: '#0c0c0e',
-      color: '#f4f4f5',
+      backgroundColor: 'var(--bg-canvas)',
+      color: 'var(--text-primary)',
       display: 'flex',
       flexDirection: 'column',
       overflow: 'hidden',
@@ -93,71 +93,70 @@ export const CritiqueView: React.FC = () => {
     }}>
       {/* Header */}
       <header style={{
-        padding: '20px 32px',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-        background: 'linear-gradient(180deg, rgba(24, 24, 27, 0.8) 0%, rgba(12, 12, 14, 0.95) 100%)',
-        backdropFilter: 'blur(12px)',
+        padding: '16px 28px',
+        borderBottom: '1px solid var(--border-subtle)',
+        backgroundColor: 'var(--bg-surface)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         gap: '20px',
         zIndex: 10
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{
-            width: '42px',
-            height: '42px',
-            borderRadius: '12px',
-            background: 'linear-gradient(135deg, #a855f7 0%, #6366f1 100%)',
+            width: '36px',
+            height: '36px',
+            borderRadius: '8px',
+            backgroundColor: 'var(--bg-card)',
+            border: '1px solid var(--border-subtle)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            boxShadow: '0 4px 20px rgba(168, 85, 247, 0.35)'
           }}>
-            <Sparkles size={22} color="#ffffff" />
+            <Sparkles size={18} color="var(--accent-ai)" />
           </div>
           <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <h1 style={{ fontSize: '20px', fontWeight: 700, margin: 0, color: '#fff', letterSpacing: '-0.02em' }}>
-                AI 사진 비평 모아보기
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h1 style={{ fontSize: '16px', fontWeight: 600, margin: 0, color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
+                AI 사진 비평 & 큐레이션
               </h1>
-              <span style={{
-                background: 'rgba(168, 85, 247, 0.15)',
-                color: '#c084fc',
-                border: '1px solid rgba(168, 85, 247, 0.3)',
-                padding: '2px 9px',
-                borderRadius: '12px',
-                fontSize: '12px',
-                fontWeight: 600
+              <span className="font-mono" style={{
+                background: 'var(--bg-card)',
+                color: 'var(--text-secondary)',
+                border: '1px solid var(--border-subtle)',
+                padding: '2px 8px',
+                borderRadius: '10px',
+                fontSize: '11px',
+                fontWeight: 500
               }}>
-                {critiques.length}개의 비평
+                {critiques.length} 컷
               </span>
             </div>
-            <p style={{ margin: '4px 0 0 0', fontSize: '13px', color: '#a1a1aa' }}>
-              Gemma VLM이 분석한 사진의 구도, 조명, 색감 피드백 보관함
+            <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
+              AI가 분석한 사진의 미학적 구도와 광학적 디테일 평론 보관함
             </p>
           </div>
         </div>
 
         {/* Right Header Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           {critiques.length > 0 && (
             <>
-              <div style={{ position: 'relative', width: '240px' }}>
-                <Search size={15} color="#71717a" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+              <div style={{ position: 'relative', width: '220px' }}>
+                <Search size={13} color="var(--text-muted)" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
                 <input
                   type="text"
-                  placeholder="비평 또는 파일명 검색..."
+                  placeholder="비평 / 태그 검색..."
                   value={filterQuery}
                   onChange={(e) => setFilterQuery(e.target.value)}
                   style={{
                     width: '100%',
-                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                    border: '1px solid rgba(255, 255, 255, 0.12)',
-                    borderRadius: '10px',
-                    padding: '8px 12px 8px 34px',
-                    color: '#fff',
-                    fontSize: '13px',
+                    backgroundColor: 'var(--bg-card)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: '6px',
+                    padding: '6px 10px 6px 28px',
+                    color: 'var(--text-primary)',
+                    fontSize: '12px',
                     outline: 'none',
                     boxSizing: 'border-box'
                   }}
@@ -167,33 +166,35 @@ export const CritiqueView: React.FC = () => {
               <motion.button
                 onClick={handleGenerateSummary}
                 disabled={isGeneratingSummary}
-                whileHover={!isGeneratingSummary ? { scale: 1.03 } : {}}
-                whileTap={!isGeneratingSummary ? { scale: 0.97 } : {}}
+                whileHover={!isGeneratingSummary ? { scale: 1.02, backgroundColor: 'var(--bg-elevated)', borderColor: 'var(--border-active)' } : {}}
+                whileTap={!isGeneratingSummary ? { scale: 0.98 } : {}}
                 style={{
-                  background: 'linear-gradient(135deg, #a855f7 0%, #6366f1 100%)',
-                  color: '#fff',
-                  border: 'none',
-                  padding: '9px 16px',
-                  borderRadius: '10px',
-                  fontSize: '13px',
-                  fontWeight: 600,
+                  backgroundColor: 'var(--bg-card)',
+                  color: 'var(--text-primary)',
+                  border: '1px solid var(--border-subtle)',
+                  padding: '7px 14px',
+                  borderRadius: '6px',
+                  fontSize: '12px',
+                  fontWeight: 500,
                   cursor: isGeneratingSummary ? 'not-allowed' : 'pointer',
-                  opacity: isGeneratingSummary ? 0.7 : 1,
+                  opacity: isGeneratingSummary ? 0.6 : 1,
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
-                  boxShadow: '0 4px 16px rgba(168, 85, 247, 0.3)'
+                  whiteSpace: 'nowrap',
+                  flexShrink: 0,
+                  transition: 'all 0.15s ease'
                 }}
               >
                 {isGeneratingSummary ? (
                   <>
-                    <Loader2 size={15} className="spin" />
-                    <span>요약 분석 중...</span>
+                    <Loader2 size={13} className="spin" color="var(--accent-ai)" style={{ flexShrink: 0 }} />
+                    <span style={{ whiteSpace: 'nowrap' }}>요약 분석 중...</span>
                   </>
                 ) : (
                   <>
-                    <Wand2 size={15} />
-                    <span>종합 요약 생성</span>
+                    <Wand2 size={13} color="var(--accent-ai)" style={{ flexShrink: 0 }} />
+                    <span style={{ whiteSpace: 'nowrap' }}>종합 포트폴리오 요약</span>
                   </>
                 )}
               </motion.button>
@@ -206,7 +207,7 @@ export const CritiqueView: React.FC = () => {
       <div style={{
         flex: 1,
         overflowY: 'auto',
-        padding: '28px 32px',
+        padding: '24px 28px',
         boxSizing: 'border-box'
       }}>
         {/* Aggregated Critique Summary Card Section */}
@@ -233,73 +234,69 @@ export const CritiqueView: React.FC = () => {
           <motion.div
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}
+            transition={{ duration: 0.3 }}
             style={{
               height: '100%',
-              minHeight: '400px',
+              minHeight: '380px',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
               textAlign: 'center',
-              padding: '40px'
+              padding: '30px',
+              userSelect: 'none'
             }}
           >
-            <motion.div
-              animate={{ y: [0, -8, 0] }}
-              transition={{ repeat: Infinity, duration: 3, ease: 'easeInOut' }}
-              style={{
-                width: '72px',
-                height: '72px',
-                borderRadius: '24px',
-                background: 'rgba(168, 85, 247, 0.1)',
-                border: '1px solid rgba(168, 85, 247, 0.25)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginBottom: '20px',
-                boxShadow: '0 0 30px rgba(168, 85, 247, 0.15)'
-              }}
-            >
-              <Sparkles size={34} color="#c084fc" />
-            </motion.div>
-            <h3 style={{ fontSize: '18px', fontWeight: 600, color: '#f4f4f5', margin: '0 0 8px 0' }}>
+            <div style={{
+              width: '56px',
+              height: '56px',
+              borderRadius: '50%',
+              backgroundColor: 'var(--bg-card)',
+              border: '1px solid var(--border-subtle)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: '16px'
+            }}>
+              <Sparkles size={24} color="var(--accent-ai)" />
+            </div>
+            <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 6px 0' }}>
               아직 작성된 AI 비평이 없습니다
             </h3>
-            <p style={{ fontSize: '14px', color: '#a1a1aa', maxWidth: '420px', margin: '0 0 24px 0', lineHeight: 1.6 }}>
-              갤러리에서 원하는 사진을 클릭하여 우측 상세 정보 패널에서 AI 피드백을 요청해보세요!
+            <p style={{ fontSize: '13px', color: 'var(--text-muted)', maxWidth: '400px', margin: '0 0 20px 0', lineHeight: 1.5 }}>
+              갤러리에서 원하는 사진을 선택한 후 우측 상세 패널에서 AI 사진 비평을 요청해 보세요.
             </p>
             <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
+              whileHover={{ scale: 1.02, backgroundColor: 'var(--bg-elevated)', borderColor: 'var(--border-active)' }}
+              whileTap={{ scale: 0.98 }}
               onClick={() => setActiveTab('gallery')}
               style={{
-                background: 'linear-gradient(135deg, #a855f7 0%, #6366f1 100%)',
-                color: '#fff',
-                border: 'none',
-                padding: '10px 20px',
-                borderRadius: '10px',
-                fontSize: '14px',
-                fontWeight: 600,
+                backgroundColor: 'var(--bg-card)',
+                color: 'var(--text-primary)',
+                border: '1px solid var(--border-subtle)',
+                padding: '8px 16px',
+                borderRadius: '6px',
+                fontSize: '13px',
+                fontWeight: 500,
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '8px'
+                gap: '6px'
               }}
             >
-              <FileText size={16} /> 갤러리로 이동하여 비평 받기
+              <FileText size={14} color="var(--text-secondary)" /> 갤러리로 이동하기
             </motion.button>
           </motion.div>
         ) : filteredCritiques.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '60px 20px', color: '#71717a' }}>
-            <Search size={32} style={{ marginBottom: '12px', opacity: 0.5 }} />
-            <p style={{ fontSize: '15px', margin: 0 }}>'{filterQuery}' 검색 결과와 일치하는 비평이 없습니다.</p>
+          <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--text-muted)' }}>
+            <Search size={28} style={{ marginBottom: '10px', opacity: 0.5 }} />
+            <p style={{ fontSize: '14px', margin: 0 }}>'{filterQuery}' 검색 결과와 일치하는 비평이 없습니다.</p>
           </div>
         ) : (
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))',
-            gap: '24px',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(400px, 1fr))',
+            gap: '16px',
             maxWidth: '1600px',
             margin: '0 auto'
           }}>

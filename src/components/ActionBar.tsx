@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Download, X, Loader2 } from 'lucide-react';
+import { Download, X, Loader2, CheckCircle2 } from 'lucide-react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { useAppStore } from '../store/useAppStore';
 import { api } from '../services/api';
@@ -32,7 +32,7 @@ export function ActionBar() {
       
       try {
         const data = await api.exportPhotos(Array.from(selectedPhotoIds), targetFolder);
-        setExportMessage(`${data.exported_count}장의 사진 내보내기 완료 ✅`);
+        setExportMessage(`${data.exported_count}장의 사진 내보내기 완료`);
         setTimeout(() => {
           clearSelection();
           setExportMessage(null);
@@ -60,32 +60,44 @@ export function ActionBar() {
           position: 'fixed',
           bottom: '24px',
           left: '50%',
-          backgroundColor: '#1c1917',
-          border: '1px solid rgba(255, 255, 255, 0.15)',
-          color: '#fff',
-          padding: '10px 20px',
-          borderRadius: '32px',
+          backgroundColor: 'rgba(18, 18, 21, 0.92)',
+          border: '1px solid var(--border-subtle)',
+          color: 'var(--text-primary)',
+          padding: '8px 16px',
+          borderRadius: '24px',
           display: 'flex',
           alignItems: 'center',
-          gap: '20px',
-          boxShadow: '0 12px 36px rgba(0,0,0,0.6)',
+          gap: '16px',
+          boxShadow: '0 16px 36px rgba(0,0,0,0.7)',
           zIndex: 50,
-          backdropFilter: 'blur(12px)'
+          backdropFilter: 'blur(16px)',
+          userSelect: 'none'
         }}
       >
-        <span style={{ fontWeight: 600, fontSize: '13px', color: '#f4f4f5' }}>
-          {exportMessage || `${selectedPhotoIds.size}장의 사진 선택됨`}
+        <span style={{ fontWeight: 500, fontSize: '12px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {exportMessage ? (
+            <>
+              <CheckCircle2 size={14} color="var(--accent-emerald)" style={{ flexShrink: 0 }} />
+              <span>{exportMessage}</span>
+            </>
+          ) : (
+            <>
+              <span className="font-mono" style={{ fontWeight: 700, color: 'var(--accent-focal)' }}>
+                {selectedPhotoIds.size}
+              </span>
+              <span style={{ color: 'var(--text-secondary)' }}>장의 사진 선택됨</span>
+            </>
+          )}
         </span>
         
         {!exportMessage && (
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <motion.button
               onClick={handleExport}
               disabled={exporting}
               whileHover={exporting ? {} : { 
-                scale: 1.03, 
-                backgroundColor: '#22c55e', 
-                boxShadow: '0 0 12px rgba(34, 197, 94, 0.4)' 
+                scale: 1.02, 
+                backgroundColor: 'var(--accent-focal-hover)'
               }}
               whileTap={exporting ? {} : { scale: 0.97 }}
               transition={{ type: "spring", stiffness: 400, damping: 15 }}
@@ -93,39 +105,39 @@ export function ActionBar() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: '6px',
-                backgroundColor: '#16a34a',
+                backgroundColor: 'var(--accent-focal)',
                 color: '#fff',
                 border: 'none',
-                padding: '7px 16px',
-                borderRadius: '20px',
+                padding: '6px 14px',
+                borderRadius: '16px',
                 cursor: exporting ? 'not-allowed' : 'pointer',
                 fontWeight: 600,
-                fontSize: '13px'
+                fontSize: '12px'
               }}
             >
-              {exporting ? <Loader2 size={15} className="spin" /> : <Download size={15} />}
-              {exporting ? '내보내는 중...' : '내보내기 (Export)'}
+              {exporting ? <Loader2 size={13} className="spin" /> : <Download size={13} />}
+              {exporting ? '내보내는 중...' : '내보내기'}
             </motion.button>
             
             <motion.button
               onClick={clearSelection}
-              whileHover={{ scale: 1.1, backgroundColor: '#3f3f46' }}
+              whileHover={{ scale: 1.1, backgroundColor: 'var(--bg-elevated)', color: 'var(--text-primary)' }}
               whileTap={{ scale: 0.9 }}
               transition={{ type: "spring", stiffness: 500, damping: 15 }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                backgroundColor: '#27272a',
-                color: '#a1a1aa',
-                border: 'none',
-                padding: '7px',
+                backgroundColor: 'var(--bg-card)',
+                color: 'var(--text-muted)',
+                border: '1px solid var(--border-subtle)',
+                padding: '6px',
                 borderRadius: '50%',
                 cursor: 'pointer'
               }}
               title="선택 해제"
             >
-              <X size={15} />
+              <X size={13} />
             </motion.button>
           </div>
         )}
