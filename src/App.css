@@ -16,12 +16,14 @@
   --border-active: #3f3f46;      /* Focused inputs, interactive borders */
   --border-focus: #e11d48;       /* Focal Red Focus Ring */
 
-  /* Accent Colors (Single Primary Accent + Functional Accents) */
+  /* Accent Colors (Unified Leica Red / Monochromatic Crimson Family) */
   --accent-focal: #e11d48;       /* Leica / Lens Red (Primary Accent) */
-  --accent-focal-hover: #f43f5e;
-  --accent-focal-subtle: rgba(225, 29, 72, 0.15);
-  --accent-ai: #8b5cf6;          /* Gemma VLM & SigLIP AI Sparkle */
-  --accent-ai-subtle: rgba(139, 92, 246, 0.15);
+  --accent-focal-hover: #f43f5e; /* Bright Rose (Hover & Highlight) */
+  --accent-focal-deep: #be123c;  /* Deep Crimson (Structure / Hierarchy) */
+  --accent-focal-subtle: rgba(225, 29, 72, 0.12); /* Subtle Red Tint */
+  --accent-focal-glow: rgba(225, 29, 72, 0.25);   /* Focus & Active Glow */
+  --accent-ai: #f43f5e;          /* Unified with Rose Accent */
+  --accent-ai-subtle: rgba(225, 29, 72, 0.12);
   --accent-amber: #f59e0b;       /* Exposure Warning, Indexing */
   --accent-emerald: #10b981;     /* Success / Complete */
 

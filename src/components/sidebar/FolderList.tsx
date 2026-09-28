@@ -37,7 +37,7 @@ export const FolderList: React.FC<FolderListProps> = ({
         padding: '0 8px 6px 8px',
         marginTop: '4px'
       }}>
-        Library Folders
+        보관함 폴더
       </div>
 
       {/* All Photos Root Item */}
@@ -141,7 +141,7 @@ export const FolderList: React.FC<FolderListProps> = ({
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
-              title="폴더 제외 (Unindex)"
+              title="폴더 제외"
             >
               <Trash2 size={13} />
             </motion.button>

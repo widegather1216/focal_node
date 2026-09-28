@@ -42,17 +42,17 @@ export const IndexingProgressCard: React.FC<IndexingProgressCardProps> = ({
         padding: '12px',
         backgroundColor: 'var(--bg-card)',
         borderRadius: '6px',
-        border: isPaused ? '1px solid var(--accent-amber)' : '1px solid var(--border-subtle)',
+        border: isPaused ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid var(--border-subtle)',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           {isPaused ? (
-            <Pause size={13} color="var(--accent-amber)" style={{ flexShrink: 0 }} />
+            <Pause size={13} color="var(--text-secondary)" style={{ flexShrink: 0 }} />
           ) : (
             <Loader2 size={13} className="spin" color="var(--accent-focal)" style={{ flexShrink: 0 }} />
           )}
-          <span style={{ fontSize: '11px', fontWeight: 600, color: isPaused ? 'var(--accent-amber)' : 'var(--text-primary)' }}>
+          <span style={{ fontSize: '11px', fontWeight: 600, color: isPaused ? 'var(--text-secondary)' : 'var(--text-primary)' }}>
             {statusTitle}
           </span>
         </div>
@@ -67,7 +67,7 @@ export const IndexingProgressCard: React.FC<IndexingProgressCardProps> = ({
                   console.error("Pause error:", e);
                 }
               }}
-              style={{ background: 'none', border: 'none', color: 'var(--accent-amber)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+              style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
               title="일시정지"
             >
               <Pause size={13} />
@@ -81,7 +81,7 @@ export const IndexingProgressCard: React.FC<IndexingProgressCardProps> = ({
                   console.error("Resume error:", e);
                 }
               }}
-              style={{ background: 'none', border: 'none', color: 'var(--accent-emerald)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+              style={{ background: 'none', border: 'none', color: 'var(--accent-focal)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
               title="계속 진행"
             >
               <Play size={13} />
@@ -115,7 +115,7 @@ export const IndexingProgressCard: React.FC<IndexingProgressCardProps> = ({
         <div style={{
           width: `${progressPct}%`,
           height: '100%',
-          backgroundColor: isPaused ? 'var(--accent-amber)' : 'var(--accent-focal)',
+          backgroundColor: isPaused ? 'rgba(225, 29, 72, 0.4)' : 'var(--accent-focal)',
           transition: 'width 0.25s ease'
         }} />
       </div>

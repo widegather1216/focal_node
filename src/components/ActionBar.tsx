@@ -77,7 +77,7 @@ export function ActionBar() {
         <span style={{ fontWeight: 500, fontSize: '12px', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
           {exportMessage ? (
             <>
-              <CheckCircle2 size={14} color="var(--accent-emerald)" style={{ flexShrink: 0 }} />
+              <CheckCircle2 size={14} color="var(--accent-focal)" style={{ flexShrink: 0 }} />
               <span>{exportMessage}</span>
             </>
           ) : (

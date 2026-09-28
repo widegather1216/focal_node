@@ -99,12 +99,8 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
             margin: 0,
             color: 'var(--text-primary)',
             letterSpacing: '-0.02em',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px'
           }}>
             Focal Node
-            <span style={{ fontSize: '10px', fontWeight: 500, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>PRO</span>
           </h2>
         </div>
         

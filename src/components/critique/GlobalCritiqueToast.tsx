@@ -123,9 +123,9 @@ export const GlobalCritiqueToast: React.FC = () => {
                 flexShrink: 0
               }}>
                 {isCompleted ? (
-                  <Sparkles size={13} color="var(--accent-emerald)" />
+                  <Sparkles size={13} color="var(--accent-focal)" />
                 ) : (
-                  <Loader2 size={13} color="var(--accent-ai)" className="spin" />
+                  <Loader2 size={13} color="var(--accent-focal)" className="spin" />
                 )}
               </div>
               <span style={{
@@ -142,7 +142,7 @@ export const GlobalCritiqueToast: React.FC = () => {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-              <span className="font-mono" style={{ fontSize: '11px', color: 'var(--accent-ai)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+              <span className="font-mono" style={{ fontSize: '11px', color: 'var(--accent-focal)', fontWeight: 700, whiteSpace: 'nowrap' }}>
                 {progress}%
               </span>
               <button
@@ -184,7 +184,7 @@ export const GlobalCritiqueToast: React.FC = () => {
             }}>
               {activeCritiqueJob.fileName || '사진 AI 비평 중'}
             </span>
-            <span style={{ display: 'flex', alignItems: 'center', gap: '2px', color: 'var(--accent-ai)', fontSize: '10px', fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '2px', color: 'var(--accent-focal)', fontSize: '10px', fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>
               상세보기 <ChevronRight size={11} style={{ flexShrink: 0 }} />
             </span>
           </div>
@@ -202,7 +202,7 @@ export const GlobalCritiqueToast: React.FC = () => {
               transition={{ duration: 0.4, ease: 'easeOut' }}
               style={{
                 height: '100%',
-                backgroundColor: isCompleted ? 'var(--accent-emerald)' : 'var(--accent-ai)',
+                backgroundColor: 'var(--accent-focal)',
                 borderRadius: '2px'
               }}
             />

@@ -113,7 +113,7 @@ export const CritiqueView: React.FC = () => {
             alignItems: 'center',
             justifyContent: 'center',
           }}>
-            <Sparkles size={18} color="var(--accent-ai)" />
+            <Sparkles size={18} color="var(--accent-focal)" />
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -188,12 +188,12 @@ export const CritiqueView: React.FC = () => {
               >
                 {isGeneratingSummary ? (
                   <>
-                    <Loader2 size={13} className="spin" color="var(--accent-ai)" style={{ flexShrink: 0 }} />
+                    <Loader2 size={13} className="spin" color="var(--accent-focal)" style={{ flexShrink: 0 }} />
                     <span style={{ whiteSpace: 'nowrap' }}>요약 분석 중...</span>
                   </>
                 ) : (
                   <>
-                    <Wand2 size={13} color="var(--accent-ai)" style={{ flexShrink: 0 }} />
+                    <Wand2 size={13} color="var(--accent-focal)" style={{ flexShrink: 0 }} />
                     <span style={{ whiteSpace: 'nowrap' }}>종합 포트폴리오 요약</span>
                   </>
                 )}
@@ -258,7 +258,7 @@ export const CritiqueView: React.FC = () => {
               justifyContent: 'center',
               marginBottom: '16px'
             }}>
-              <Sparkles size={24} color="var(--accent-ai)" />
+              <Sparkles size={24} color="var(--accent-focal)" />
             </div>
             <h3 style={{ fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 6px 0' }}>
               아직 작성된 AI 비평이 없습니다

@@ -136,7 +136,7 @@ export function FullscreenViewer() {
                     </button>
                     <button
                       onClick={() => setScale(1)}
-                      style={{ background: 'none', border: 'none', color: scale !== 1 ? '#38bdf8' : '#71717a', padding: '6px', cursor: 'pointer', display: 'flex' }}
+                      style={{ background: 'none', border: 'none', color: scale !== 1 ? 'var(--accent-focal-hover)' : '#71717a', padding: '6px', cursor: 'pointer', display: 'flex' }}
                       title="100% 원본 비율 (0)"
                     >
                       <RotateCcw size={15} />

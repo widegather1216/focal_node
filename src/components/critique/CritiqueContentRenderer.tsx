@@ -270,7 +270,7 @@ function renderInlineMarkdown(text: string) {
             padding: '2px 6px',
             borderRadius: '4px',
             fontSize: '90%',
-            color: '#c084fc',
+            color: 'var(--accent-focal-hover)',
             fontFamily: 'monospace'
           }}
         >
@@ -290,10 +290,10 @@ export const CritiqueScoreboardCard: React.FC<{ scores: ParsedScores; isCompact?
   isCompact = false 
 }) => {
   const getGrade = (score: number) => {
-    if (score >= 90) return { label: 'S (Masterpiece)', color: '#a855f7', bg: 'rgba(168, 85, 247, 0.15)' };
-    if (score >= 80) return { label: 'A (Excellent)', color: '#38bdf8', bg: 'rgba(56, 189, 248, 0.15)' };
-    if (score >= 70) return { label: 'B (Good)', color: '#4ade80', bg: 'rgba(74, 222, 128, 0.15)' };
-    return { label: 'C (Developing)', color: '#fbbf24', bg: 'rgba(251, 191, 36, 0.15)' };
+    if (score >= 90) return { label: 'S (Masterpiece)', color: '#e11d48', bg: 'rgba(225, 29, 72, 0.15)' };
+    if (score >= 80) return { label: 'A (Excellent)', color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.12)' };
+    if (score >= 70) return { label: 'B (Good)', color: '#e4e4e7', bg: 'rgba(255, 255, 255, 0.08)' };
+    return { label: 'C (Developing)', color: '#a1a1aa', bg: 'rgba(255, 255, 255, 0.05)' };
   };
 
   const gradeInfo = scores.overall ? getGrade(scores.overall) : null;
@@ -304,7 +304,7 @@ export const CritiqueScoreboardCard: React.FC<{ scores: ParsedScores; isCompact?
         background: isCompact 
           ? 'linear-gradient(135deg, rgba(24, 24, 27, 0.8) 0%, rgba(18, 18, 20, 0.9) 100%)'
           : 'linear-gradient(135deg, rgba(39, 39, 42, 0.6) 0%, rgba(24, 24, 27, 0.9) 100%)',
-        border: '1px solid rgba(168, 85, 247, 0.25)',
+        border: '1px solid rgba(225, 29, 72, 0.25)',
         borderRadius: isCompact ? '10px' : '16px',
         padding: isCompact ? '12px 14px' : '18px 22px',
         marginBottom: isCompact ? '12px' : '20px',
@@ -316,7 +316,7 @@ export const CritiqueScoreboardCard: React.FC<{ scores: ParsedScores; isCompact?
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Sliders size={isCompact ? 15 : 18} color="#c084fc" />
+          <Sliders size={isCompact ? 15 : 18} color="var(--accent-focal)" />
           <span style={{ fontSize: isCompact ? '13px' : '15px', fontWeight: 700, color: '#f4f4f5' }}>
             6-Way 지각 앙상블 평점
           </span>
@@ -351,8 +351,8 @@ export const CritiqueScoreboardCard: React.FC<{ scores: ParsedScores; isCompact?
             alignItems: 'center',
             justifyContent: 'center',
             gap: isCompact ? '10px' : '4px',
-            background: 'rgba(168, 85, 247, 0.08)',
-            border: '1px solid rgba(168, 85, 247, 0.2)',
+            background: 'var(--accent-focal-subtle)',
+            border: '1px solid rgba(225, 29, 72, 0.25)',
             borderRadius: '12px',
             padding: isCompact ? '8px 12px' : '12px'
           }}>
@@ -369,28 +369,28 @@ export const CritiqueScoreboardCard: React.FC<{ scores: ParsedScores; isCompact?
         <div style={{ display: 'flex', flexDirection: 'column', gap: isCompact ? '6px' : '10px' }}>
           {scores.iaa !== null && (
             <ScoreBar 
-              icon={<Sparkles size={isCompact ? 12 : 13} color="#c084fc" style={{ flexShrink: 0 }} />}
+              icon={<Sparkles size={isCompact ? 12 : 13} color="var(--accent-focal-hover)" style={{ flexShrink: 0 }} />}
               label="미학 & 구도 (IAA)" 
               score={scores.iaa} 
-              color="#c084fc" 
+              color="var(--accent-focal-hover)" 
               isCompact={isCompact} 
             />
           )}
           {scores.iqa !== null && (
             <ScoreBar 
-              icon={<Camera size={isCompact ? 12 : 13} color="#38bdf8" style={{ flexShrink: 0 }} />}
+              icon={<Camera size={isCompact ? 12 : 13} color="var(--accent-focal)" style={{ flexShrink: 0 }} />}
               label="화질 & 광학 (IQA)" 
               score={scores.iqa} 
-              color="#38bdf8" 
+              color="var(--accent-focal)" 
               isCompact={isCompact} 
             />
           )}
           {scores.ista !== null && (
             <ScoreBar 
-              icon={<Layers size={isCompact ? 12 : 13} color="#4ade80" style={{ flexShrink: 0 }} />}
+              icon={<Layers size={isCompact ? 12 : 13} color="var(--accent-focal-deep)" style={{ flexShrink: 0 }} />}
               label="구조 & 질감 (ISTA)" 
               score={scores.ista} 
-              color="#4ade80" 
+              color="var(--accent-focal-deep)" 
               isCompact={isCompact} 
             />
           )}
@@ -450,22 +450,22 @@ export const ExecutiveSummaryCard: React.FC<{ summary: string; isCompact?: boole
     <div
       style={{
         background: isCompact
-          ? 'rgba(168, 85, 247, 0.08)'
-          : 'linear-gradient(135deg, rgba(168, 85, 247, 0.12) 0%, rgba(99, 102, 241, 0.08) 100%)',
-        border: '1px solid rgba(168, 85, 247, 0.3)',
-        borderLeft: isCompact ? '3px solid #c084fc' : '4px solid #c084fc',
+          ? 'var(--accent-focal-subtle)'
+          : 'linear-gradient(135deg, rgba(225, 29, 72, 0.08) 0%, rgba(24, 24, 27, 0.9) 100%)',
+        border: '1px solid rgba(225, 29, 72, 0.25)',
+        borderLeft: isCompact ? '3px solid var(--accent-focal)' : '4px solid var(--accent-focal)',
         borderRadius: isCompact ? '8px' : '14px',
         padding: isCompact ? '10px 14px' : '16px 20px',
-        boxShadow: isCompact ? 'none' : '0 4px 20px rgba(168, 85, 247, 0.12)',
+        boxShadow: isCompact ? 'none' : '0 4px 20px rgba(225, 29, 72, 0.1)',
         display: 'flex',
         flexDirection: 'column',
         gap: '6px'
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-        <Sparkles size={isCompact ? 13 : 16} color="#c084fc" />
-        <span style={{ fontSize: isCompact ? '11px' : '12px', fontWeight: 700, color: '#c084fc', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
-          통합 한 줄 총평 (Executive Summary)
+        <Sparkles size={isCompact ? 13 : 16} color="var(--accent-focal)" />
+        <span style={{ fontSize: isCompact ? '11px' : '12px', fontWeight: 700, color: 'var(--accent-focal)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+          통합 한 줄 총평
         </span>
       </div>
       <p style={{
@@ -492,19 +492,23 @@ function renderBlock(block: MarkdownBlock, idx: number, isCompact: boolean): Rea
 
     case 'section': {
       const getTheme = () => {
+        const subtleBorder = 'var(--border-subtle)';
+        const headerBg = 'rgba(255, 255, 255, 0.03)';
+        const titleColor = 'var(--text-primary)';
+
         switch (block.themeType) {
           case 'aesthetic':
-            return { icon: <Sparkles size={isCompact ? 14 : 17} color="#c084fc" />, border: 'rgba(168, 85, 247, 0.25)', bg: 'rgba(168, 85, 247, 0.1)', color: '#e9d5ff', badge: '미학 진단' };
+            return { icon: <Sparkles size={isCompact ? 14 : 17} color="var(--accent-focal-hover)" />, border: 'rgba(225, 29, 72, 0.3)', bg: headerBg, color: titleColor, badge: '미학 진단' };
           case 'camera':
-            return { icon: <Camera size={isCompact ? 14 : 17} color="#38bdf8" />, border: 'rgba(56, 189, 248, 0.25)', bg: 'rgba(56, 189, 248, 0.1)', color: '#bae6fd', badge: '화질/광학' };
+            return { icon: <Camera size={isCompact ? 14 : 17} color="var(--accent-focal)" />, border: 'rgba(225, 29, 72, 0.3)', bg: headerBg, color: titleColor, badge: '화질/광학' };
           case 'structure':
-            return { icon: <Layers size={isCompact ? 14 : 17} color="#818cf8" />, border: 'rgba(129, 140, 248, 0.25)', bg: 'rgba(129, 140, 248, 0.1)', color: '#c7d2fe', badge: '구조/질감' };
+            return { icon: <Layers size={isCompact ? 14 : 17} color="var(--accent-focal-deep)" />, border: 'rgba(225, 29, 72, 0.3)', bg: headerBg, color: titleColor, badge: '구조/질감' };
           case 'defect':
-            return { icon: <AlertTriangle size={isCompact ? 14 : 17} color="#fbbf24" />, border: 'rgba(251, 191, 36, 0.25)', bg: 'rgba(251, 191, 36, 0.1)', color: '#fef08a', badge: '보완 포인트' };
+            return { icon: <AlertTriangle size={isCompact ? 14 : 17} color="var(--accent-focal-hover)" />, border: 'rgba(225, 29, 72, 0.3)', bg: headerBg, color: titleColor, badge: '보완 포인트' };
           case 'advice':
-            return { icon: <Lightbulb size={isCompact ? 14 : 17} color="#34d399" />, border: 'rgba(52, 211, 153, 0.25)', bg: 'rgba(52, 211, 153, 0.1)', color: '#a7f3d0', badge: '실전 솔루션' };
+            return { icon: <Lightbulb size={isCompact ? 14 : 17} color="var(--accent-focal)" />, border: 'rgba(225, 29, 72, 0.3)', bg: headerBg, color: titleColor, badge: '실전 솔루션' };
           default:
-            return { icon: <Layers size={isCompact ? 14 : 17} color="#a1a1aa" />, border: 'rgba(255, 255, 255, 0.1)', bg: 'rgba(255, 255, 255, 0.05)', color: '#f4f4f5', badge: '분석 노트' };
+            return { icon: <Layers size={isCompact ? 14 : 17} color="var(--text-muted)" />, border: subtleBorder, bg: headerBg, color: titleColor, badge: '분석 노트' };
         }
       };
       const theme = getTheme();
@@ -538,32 +542,32 @@ function renderBlock(block: MarkdownBlock, idx: number, isCompact: boolean): Rea
         <article
           key={idx}
           style={{
-            backgroundColor: 'rgba(24, 24, 27, 0.65)',
-            border: `1px solid ${theme.border}`,
-            borderRadius: '14px',
+            backgroundColor: 'var(--bg-card)',
+            border: `1px solid var(--border-subtle)`,
+            borderRadius: '12px',
             overflow: 'hidden',
-            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.2)'
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.25)'
           }}
         >
           <div
             style={{
               padding: '12px 20px',
               backgroundColor: theme.bg,
-              borderBottom: `1px solid ${theme.border}`,
+              borderBottom: '1px solid var(--border-subtle)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between'
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ padding: '5px', borderRadius: '8px', background: 'rgba(0, 0, 0, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ padding: '5px', borderRadius: '6px', background: 'var(--accent-focal-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {theme.icon}
               </div>
-              <h3 style={{ margin: 0, fontSize: '15.5px', fontWeight: 700, color: theme.color, letterSpacing: '-0.01em' }}>
+              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: theme.color, letterSpacing: '-0.01em' }}>
                 {block.numberPrefix ? `${block.numberPrefix} ` : ''}{block.title}
               </h3>
             </div>
-            <span style={{ fontSize: '11px', fontWeight: 600, color: '#a1a1aa', background: 'rgba(0, 0, 0, 0.3)', padding: '3px 8px', borderRadius: '6px', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', background: 'rgba(255, 255, 255, 0.05)', padding: '3px 8px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
               {theme.badge}
             </span>
           </div>
@@ -596,7 +600,7 @@ function renderBlock(block: MarkdownBlock, idx: number, isCompact: boolean): Rea
         <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: isCompact ? '5px' : '8px' }}>
           {block.items.map((item, bIdx) => (
             <div key={bIdx} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', paddingLeft: '4px' }}>
-              <span style={{ color: '#a855f7', marginTop: isCompact ? '3px' : '5px', fontSize: '10px' }}>●</span>
+              <span style={{ color: 'var(--accent-focal)', marginTop: isCompact ? '3px' : '5px', fontSize: '10px' }}>●</span>
               <span style={{ flex: 1, color: '#e4e4e7', fontSize: isCompact ? '12.5px' : '14px', lineHeight: '1.65' }}>
                 {renderInlineMarkdown(item)}
               </span>
@@ -610,7 +614,7 @@ function renderBlock(block: MarkdownBlock, idx: number, isCompact: boolean): Rea
         <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: isCompact ? '5px' : '8px' }}>
           {block.items.map((item, oIdx) => (
             <div key={oIdx} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', paddingLeft: '4px' }}>
-              <span style={{ color: '#c084fc', fontSize: '11px', fontWeight: 700, marginTop: '2px', minWidth: '16px' }}>{oIdx + 1}.</span>
+              <span style={{ color: 'var(--accent-focal-hover)', fontSize: '11px', fontWeight: 700, marginTop: '2px', minWidth: '16px' }} className="font-mono">{oIdx + 1}.</span>
               <span style={{ flex: 1, color: '#e4e4e7', fontSize: isCompact ? '12.5px' : '14px', lineHeight: '1.65' }}>
                 {renderInlineMarkdown(item)}
               </span>
@@ -624,8 +628,8 @@ function renderBlock(block: MarkdownBlock, idx: number, isCompact: boolean): Rea
         <div
           key={idx}
           style={{
-            borderLeft: '3px solid #a855f7',
-            backgroundColor: 'rgba(168, 85, 247, 0.06)',
+            borderLeft: '3px solid var(--accent-focal)',
+            backgroundColor: 'var(--accent-focal-subtle)',
             borderRadius: '0 8px 8px 0',
             padding: isCompact ? '8px 12px' : '12px 16px',
             color: '#e4e4e7',
@@ -636,7 +640,7 @@ function renderBlock(block: MarkdownBlock, idx: number, isCompact: boolean): Rea
             gap: '8px'
           }}
         >
-          <Quote size={14} color="#c084fc" style={{ flexShrink: 0, marginTop: '3px' }} />
+          <Quote size={14} color="var(--accent-focal)" style={{ flexShrink: 0, marginTop: '3px' }} />
           <span>{renderInlineMarkdown(block.text)}</span>
         </div>
       );
@@ -667,7 +671,7 @@ function renderBlock(block: MarkdownBlock, idx: number, isCompact: boolean): Rea
 
     case 'code_block':
       return (
-        <div key={idx} style={{ backgroundColor: '#09090b', border: '1px solid rgba(255, 255, 255, 0.1)', borderRadius: '8px', padding: '12px', overflowX: 'auto', fontSize: '12px', fontFamily: 'monospace', color: '#c084fc' }}>
+        <div key={idx} style={{ backgroundColor: '#09090b', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '12px', overflowX: 'auto', fontSize: '12px', fontFamily: 'monospace', color: 'var(--accent-focal-hover)' }}>
           <pre style={{ margin: 0 }}>{block.code}</pre>
         </div>
       );

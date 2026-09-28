@@ -40,32 +40,33 @@ export const CritiqueSummaryCard: React.FC<CritiqueSummaryCardProps> = ({
       style={{
         maxWidth: '1600px',
         margin: '0 auto 28px auto',
-        background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.08) 0%, rgba(99, 102, 241, 0.05) 100%)',
-        border: '1px solid rgba(168, 85, 247, 0.25)',
+        background: 'linear-gradient(135deg, rgba(225, 29, 72, 0.07) 0%, rgba(24, 24, 27, 0.95) 100%)',
+        border: '1px solid rgba(225, 29, 72, 0.25)',
         borderRadius: '16px',
         overflow: 'hidden',
-        boxShadow: '0 8px 32px rgba(168, 85, 247, 0.12)',
+        boxShadow: '0 8px 32px rgba(225, 29, 72, 0.1)',
         position: 'relative'
       }}
     >
       {/* Header */}
       <div style={{
         padding: '16px 20px',
-        borderBottom: isSummaryExpanded ? '1px solid rgba(168, 85, 247, 0.15)' : 'none',
+        borderBottom: isSummaryExpanded ? '1px solid rgba(225, 29, 72, 0.15)' : 'none',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        background: 'rgba(24, 24, 27, 0.4)'
+        background: 'rgba(24, 24, 27, 0.5)'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <Award size={20} color="#c084fc" />
+          <Award size={20} color="var(--accent-focal)" />
           <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: '#fff' }}>
             AI 포트폴리오 비평 종합 리포트
           </h3>
           {summaryData && (
             <span style={{
-              background: 'rgba(168, 85, 247, 0.2)',
-              color: '#e9d5ff',
+              background: 'var(--accent-focal-subtle)',
+              color: 'var(--accent-focal-hover)',
+              border: '1px solid rgba(225, 29, 72, 0.25)',
               fontSize: '11px',
               padding: '2px 8px',
               borderRadius: '10px',
@@ -82,9 +83,9 @@ export const CritiqueSummaryCard: React.FC<CritiqueSummaryCardProps> = ({
               <button
                 onClick={onCopySummary}
                 style={{
-                  background: copiedSummary ? 'rgba(74, 222, 128, 0.15)' : 'rgba(255, 255, 255, 0.06)',
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                  color: copiedSummary ? '#4ade80' : '#e4e4e7',
+                  background: copiedSummary ? 'var(--accent-focal-subtle)' : 'rgba(255, 255, 255, 0.06)',
+                  border: `1px solid ${copiedSummary ? 'rgba(225, 29, 72, 0.3)' : 'rgba(255, 255, 255, 0.1)'}`,
+                  color: copiedSummary ? 'var(--accent-focal-hover)' : '#e4e4e7',
                   padding: '5px 10px',
                   borderRadius: '6px',
                   fontSize: '12px',
@@ -156,10 +157,10 @@ export const CritiqueSummaryCard: React.FC<CritiqueSummaryCardProps> = ({
       {isSummaryExpanded && (
         <div style={{ padding: '20px 24px' }}>
           {isGeneratingSummary && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--accent-ai)', padding: '12px 0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--accent-focal)', padding: '12px 0' }}>
               <Loader2 size={18} className="spin" style={{ flexShrink: 0 }} />
               <span style={{ fontSize: '13px', fontWeight: 500, wordBreak: 'keep-all', lineHeight: 1.6, color: 'var(--text-primary)' }}>
-                AI 모델이 <strong className="font-mono" style={{ color: 'var(--accent-ai)' }}>{totalCritiques}</strong>개의 사진 비평 데이터와 EXIF 정보를 종합하여 포트폴리오를 총체적으로 분석하고 있습니다...
+                AI 모델이 <strong className="font-mono" style={{ color: 'var(--accent-focal)' }}>{totalCritiques}</strong>개의 사진 비평 데이터와 EXIF 정보를 종합하여 포트폴리오를 총체적으로 분석하고 있습니다...
               </span>
             </div>
           )}

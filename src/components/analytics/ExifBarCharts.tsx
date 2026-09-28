@@ -25,7 +25,7 @@ export const ExifBarCharts: React.FC<ExifBarChartsProps> = ({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '18px', gap: '8px' }}>
           <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
             <Focus size={16} color="var(--accent-focal)" style={{ flexShrink: 0 }} />
-            <span style={{ whiteSpace: 'nowrap' }}>화각 (Focal Length) 선호도</span>
+            <span style={{ whiteSpace: 'nowrap' }}>화각 선호도</span>
           </h3>
           <div style={{ display: 'flex', gap: '2px', backgroundColor: 'var(--bg-canvas)', padding: '2px', borderRadius: '6px', border: '1px solid var(--border-subtle)', flexShrink: 0 }}>
             <button
@@ -85,7 +85,7 @@ export const ExifBarCharts: React.FC<ExifBarChartsProps> = ({
       <div style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-subtle)', borderRadius: '8px', padding: '20px', display: 'flex', flexDirection: 'column' }}>
         <h3 style={{ margin: '0 0 18px 0', fontSize: '14px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
           <Aperture size={16} color="var(--accent-focal)" style={{ flexShrink: 0 }} />
-          <span style={{ whiteSpace: 'nowrap' }}>조리개 (Aperture) 사용 분포</span>
+          <span style={{ whiteSpace: 'nowrap' }}>조리개 사용 분포</span>
         </h3>
         <div style={{ width: '100%', height: '300px' }}>
           {apertures && apertures.length > 0 ? (

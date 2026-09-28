@@ -56,10 +56,11 @@
 | **Elevated / Hover** | `#27272a` | 마우스 호버 시 배경, 플로팅 툴팁, 팝오버 메뉴 |
 | **Subtle Border** | `#27272a` / `rgba(255,255,255,0.08)` | 1px 섬세한 구분선, 카드 경계선 |
 | **Active Border** | `#3f3f46` | 포커스된 인풋 창, 선택 대기 상태 |
-| **Focal Accent (Red)** | `#e11d48` (Rose-600) | 검색창 포커스 링, 선택된 사진 테두리, 하트(즐겨찾기), 핵심 액션 |
-| **AI Magic (Purple/Indigo)**| `#8b5cf6` (Violet-500) | SigLIP AI 검색 하이라이트, Gemma 비평 배지, K-NN 유사도 칩 |
-| **Technical Amber (Warning)**| `#f59e0b` (Amber-500) | 인덱싱 진행률, 경고 알림, 뷰파인더 노출 경고 |
-| **Success (Green)** | `#10b981` (Emerald-500) | 내보내기 완료, 인덱싱 완료 상태 |
+| **Signature Focal Red (Core)** | `#e11d48` (`--accent-focal`) | 브랜드 시그니처, 검색창 포커스 링, 선택된 사진 테두리, 주요 액션 버튼, 로더 |
+| **Focal Red Hover (Highlight)**| `#f43f5e` (`--accent-focal-hover`) | 버튼/아이콘 호버 하이라이트, 상위 점수(A등급), 줌 리셋 액티브 피드백 |
+| **Deep Crimson (Subtle)** | `#be123c` (`--accent-focal-deep`) | 점수 바 및 구조화된 섹션 보더, 그라데이션 하단 |
+| **Focal Subtle Tint** | `rgba(225, 29, 72, 0.12)` (`--accent-focal-subtle`) | AI 칩/배지 배경, 활성 버튼 배경, 하이라이트 컨테이너 |
+| **Focal Focus Glow** | `rgba(225, 29, 72, 0.25)` (`--accent-focal-glow`) | 카드 호버 글로우, 리포트 윈도우 섀도우 |
 
 ---
 

@@ -67,7 +67,7 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
     <div style={{ marginTop: '24px', background: 'var(--bg-card)', padding: '16px', borderRadius: '8px', border: '1px solid var(--border-subtle)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
         <h4 style={{ margin: 0, fontSize: '13px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <Wand2 size={15} color="var(--accent-ai)" /> AI 사진 비평
+          <Wand2 size={15} color="var(--accent-focal)" /> AI 사진 비평
         </h4>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {loadingCritique ? (
@@ -98,7 +98,7 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
             <button
               onClick={onRequestCritique}
               style={{
-                background: 'none', border: 'none', color: 'var(--accent-ai)', cursor: 'pointer',
+                background: 'none', border: 'none', color: 'var(--accent-focal)', cursor: 'pointer',
                 fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px',
                 whiteSpace: 'nowrap', flexShrink: 0
               }}
@@ -128,13 +128,13 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
 
       {!loadingCritique && critique && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', border: 'none', justifyContent: 'flex-end' }}>
             <button
               onClick={() => photoId && openCritiqueDocument(photoId)}
               style={{
-                background: 'rgba(168, 85, 247, 0.15)',
-                border: '1px solid rgba(168, 85, 247, 0.35)',
-                color: '#c084fc',
+                background: 'var(--accent-focal-subtle)',
+                border: '1px solid rgba(225, 29, 72, 0.35)',
+                color: 'var(--accent-focal-hover)',
                 cursor: 'pointer',
                 fontSize: '11.5px',
                 fontWeight: 600,

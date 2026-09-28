@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Camera, Calendar, Eye, ExternalLink, Maximize2, Copy, Check, Trash2, FileText } from 'lucide-react';
+import { Camera, Calendar, Eye, Maximize2, Copy, Check, Trash2, FileText } from 'lucide-react';
 import { CritiqueItem } from '../../types/critique';
 import { api } from '../../services/api';
 import { useAppStore } from '../../store/useAppStore';
@@ -67,8 +67,8 @@ export const CritiqueCard: React.FC<CritiqueCardProps> = ({
         transition: 'border-color 0.2s ease, box-shadow 0.2s ease'
       }}
       whileHover={{
-        borderColor: 'rgba(168, 85, 247, 0.3)',
-        boxShadow: '0 12px 36px rgba(168, 85, 247, 0.12)'
+        borderColor: 'var(--accent-focal-glow)',
+        boxShadow: '0 12px 36px rgba(225, 29, 72, 0.12)'
       }}
     >
       {/* Top Thumbnail & Photo Info Bar */}
@@ -149,7 +149,7 @@ export const CritiqueCard: React.FC<CritiqueCardProps> = ({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', color: '#a1a1aa' }}>
               {item.camera_model && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                  <Camera size={12} color="#c084fc" />
+                  <Camera size={12} color="var(--accent-focal)" />
                   <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {item.camera_model} {item.lens_model ? `• ${item.lens_model}` : ''}
                   </span>
@@ -210,16 +210,13 @@ export const CritiqueCard: React.FC<CritiqueCardProps> = ({
               onClick={() => openCritiqueDocument(item.photo_id)}
               style={{
                 ...cardBtnStyle,
-                background: 'rgba(168, 85, 247, 0.15)',
-                border: '1px solid rgba(168, 85, 247, 0.35)',
-                color: '#c084fc'
+                background: 'var(--accent-focal-subtle)',
+                border: '1px solid rgba(225, 29, 72, 0.3)',
+                color: 'var(--accent-focal-hover)'
               }}
               title="리포트 문서 뷰어로 크게 보기"
             >
               <FileText size={12} /> 문서로 보기
-            </button>
-            <button onClick={() => onSelectPhoto(item.photo_id)} style={cardBtnStyle}>
-              <ExternalLink size={12} /> 상세 패널
             </button>
             <button onClick={() => onOpenFullscreen(item.photo_id)} style={cardBtnStyle}>
               <Maximize2 size={12} /> 원본 보기
@@ -230,9 +227,9 @@ export const CritiqueCard: React.FC<CritiqueCardProps> = ({
             <button
               onClick={() => onCopy(item.photo_id, item.critique)}
               style={{
-                background: copiedId === item.photo_id ? 'rgba(74, 222, 128, 0.15)' : 'transparent',
+                background: copiedId === item.photo_id ? 'var(--accent-focal-subtle)' : 'transparent',
                 border: 'none',
-                color: copiedId === item.photo_id ? '#4ade80' : '#a1a1aa',
+                color: copiedId === item.photo_id ? 'var(--accent-focal-hover)' : '#a1a1aa',
                 padding: '6px',
                 borderRadius: '6px',
                 cursor: 'pointer',

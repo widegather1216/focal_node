@@ -29,10 +29,10 @@ export function formatDate(dateStr?: string | null): string {
 }
 
 export function getScoreColor(score: number): string {
-  if (score >= 80) return '#10b981'; // Emerald Green
-  if (score >= 60) return '#3b82f6'; // Bright Blue
-  if (score >= 40) return '#f59e0b'; // Amber Yellow
-  return '#ef4444'; // Red
+  if (score >= 80) return '#e11d48'; // Leica Red
+  if (score >= 60) return '#f43f5e'; // Rose Crimson
+  if (score >= 40) return '#e4e4e7'; // Neutral Zinc
+  return '#71717a'; // Muted Zinc
 }
 
 export function getScoreBadgeStyle(score: number): React.CSSProperties {

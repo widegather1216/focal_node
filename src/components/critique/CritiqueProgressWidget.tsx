@@ -48,7 +48,7 @@ export const CritiqueProgressWidget: React.FC<CritiqueProgressWidgetProps> = ({ 
             justifyContent: 'center',
             flexShrink: 0
           }}>
-            <Loader2 size={14} color="var(--accent-ai)" className="spin" />
+            <Loader2 size={14} color="var(--accent-focal)" className="spin" />
           </div>
           <div style={{ minWidth: 0, flex: 1, overflow: 'hidden' }}>
             <h4 style={{
@@ -84,7 +84,7 @@ export const CritiqueProgressWidget: React.FC<CritiqueProgressWidgetProps> = ({ 
           <span className="font-mono" style={{
             fontSize: '11px',
             fontWeight: 600,
-            color: 'var(--accent-ai)',
+            color: 'var(--accent-focal)',
             backgroundColor: 'var(--bg-card)',
             padding: '2px 8px',
             borderRadius: '4px',
@@ -134,7 +134,7 @@ export const CritiqueProgressWidget: React.FC<CritiqueProgressWidgetProps> = ({ 
           transition={{ duration: 0.4, ease: 'easeOut' }}
           style={{
             height: '100%',
-            backgroundColor: 'var(--accent-ai)',
+            backgroundColor: 'var(--accent-focal)',
             borderRadius: '2px'
           }}
         />
@@ -176,16 +176,16 @@ export const CritiqueProgressWidget: React.FC<CritiqueProgressWidgetProps> = ({ 
                   alignItems: 'center',
                   justifyContent: 'center',
                   backgroundColor: isDone
-                    ? 'var(--accent-ai)'
+                    ? 'var(--accent-focal)'
                     : isCurrent
-                    ? 'var(--accent-ai-subtle)'
+                    ? 'var(--accent-focal-subtle)'
                     : 'rgba(255, 255, 255, 0.05)',
                   border: isCurrent
-                    ? '1px solid var(--accent-ai)'
+                    ? '1px solid var(--accent-focal)'
                     : isDone
-                    ? '1px solid var(--accent-ai)'
+                    ? '1px solid var(--accent-focal)'
                     : '1px solid var(--border-subtle)',
-                  color: isDone ? '#fff' : isCurrent ? 'var(--accent-ai)' : 'var(--text-muted)',
+                  color: isDone ? '#fff' : isCurrent ? 'var(--accent-focal)' : 'var(--text-muted)',
                   flexShrink: 0
                 }}
               >
@@ -200,7 +200,7 @@ export const CritiqueProgressWidget: React.FC<CritiqueProgressWidgetProps> = ({ 
               <span style={{
                 fontSize: '10.5px',
                 fontWeight: isCurrent ? 600 : 400,
-                color: isDone ? 'var(--text-primary)' : isCurrent ? 'var(--accent-ai)' : 'var(--text-muted)',
+                color: isDone ? 'var(--text-primary)' : isCurrent ? 'var(--accent-focal)' : 'var(--text-muted)',
                 textAlign: 'center',
                 whiteSpace: 'nowrap',
                 letterSpacing: '-0.02em',

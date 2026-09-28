@@ -68,7 +68,7 @@ function generatePrintHtml(
       margin: 0 auto;
     }
     .report-header {
-      border-bottom: 2px solid #9333ea;
+      border-bottom: 2px solid #e11d48;
       padding-bottom: 12px;
       margin-bottom: 20px;
       display: flex;
@@ -78,7 +78,7 @@ function generatePrintHtml(
     .brand-title {
       font-size: 11px;
       font-weight: 700;
-      color: #9333ea;
+      color: #e11d48;
       letter-spacing: 0.08em;
       text-transform: uppercase;
       margin-bottom: 4px;
@@ -136,11 +136,11 @@ function generatePrintHtml(
     .caption-box {
       margin-top: 8px;
       padding: 8px 12px;
-      background: #f3e8ff;
-      border-left: 3px solid #9333ea;
+      background: #fff1f2;
+      border-left: 3px solid #e11d48;
       border-radius: 4px;
       font-style: italic;
-      color: #4c1d95;
+      color: #9f1239;
       font-size: 12px;
     }
     .critique-body {
@@ -542,7 +542,7 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
             backgroundColor: '#0e0e11',
             borderRadius: isPopout || isMaximized ? 0 : '20px',
             border: isPopout || isMaximized ? 'none' : '1px solid rgba(255, 255, 255, 0.1)',
-            boxShadow: isPopout || isMaximized ? 'none' : '0 25px 60px -15px rgba(0, 0, 0, 0.7), 0 0 40px rgba(168, 85, 247, 0.12)',
+            boxShadow: isPopout || isMaximized ? 'none' : '0 25px 60px -15px rgba(0, 0, 0, 0.7), 0 0 40px rgba(225, 29, 72, 0.12)',
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden'
@@ -568,7 +568,7 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                 width: '32px',
                 height: '32px',
                 borderRadius: '8px',
-                background: 'linear-gradient(135deg, #a855f7 0%, #6366f1 100%)',
+                background: 'linear-gradient(135deg, #e11d48 0%, #be123c 100%)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -594,9 +594,9 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                     fontWeight: 600,
                     padding: '2px 7px',
                     borderRadius: '6px',
-                    background: 'rgba(168, 85, 247, 0.15)',
-                    color: '#c084fc',
-                    border: '1px solid rgba(168, 85, 247, 0.3)',
+                    background: 'var(--accent-focal-subtle)',
+                    color: 'var(--accent-focal-hover)',
+                    border: '1px solid rgba(225, 29, 72, 0.3)',
                     flexShrink: 0
                   }}>
                     {isPopout ? '독립 리포트 윈도우' : '리포트 뷰'}
@@ -617,9 +617,9 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                 onClick={handleCopyText}
                 disabled={!critiqueText}
                 style={{
-                  background: copied ? 'rgba(74, 222, 128, 0.15)' : 'rgba(255, 255, 255, 0.06)',
-                  border: `1px solid ${copied ? '#4ade80' : 'rgba(255, 255, 255, 0.12)'}`,
-                  color: copied ? '#4ade80' : '#d4d4d8',
+                  background: copied ? 'var(--accent-focal-subtle)' : 'rgba(255, 255, 255, 0.06)',
+                  border: `1px solid ${copied ? 'var(--accent-focal)' : 'rgba(255, 255, 255, 0.12)'}`,
+                  color: copied ? 'var(--accent-focal-hover)' : '#d4d4d8',
                   padding: '7px 12px',
                   borderRadius: '8px',
                   fontSize: '12px',
@@ -643,9 +643,9 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                 onClick={handleExportMarkdown}
                 disabled={!critiqueText}
                 style={{
-                  background: exported ? 'rgba(168, 85, 247, 0.2)' : 'rgba(255, 255, 255, 0.06)',
-                  border: `1px solid ${exported ? '#c084fc' : 'rgba(255, 255, 255, 0.12)'}`,
-                  color: exported ? '#c084fc' : '#d4d4d8',
+                  background: exported ? 'var(--accent-focal-subtle)' : 'rgba(255, 255, 255, 0.06)',
+                  border: `1px solid ${exported ? 'var(--accent-focal)' : 'rgba(255, 255, 255, 0.12)'}`,
+                  color: exported ? 'var(--accent-focal-hover)' : '#d4d4d8',
                   padding: '7px 12px',
                   borderRadius: '8px',
                   fontSize: '12px',
@@ -721,9 +721,9 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                 <button
                   onClick={() => setIsMaximized((prev) => !prev)}
                   style={{
-                    background: isMaximized ? 'rgba(168, 85, 247, 0.15)' : 'rgba(255, 255, 255, 0.06)',
-                    border: `1px solid ${isMaximized ? 'rgba(168, 85, 247, 0.4)' : 'rgba(255, 255, 255, 0.12)'}`,
-                    color: isMaximized ? '#c084fc' : '#d4d4d8',
+                    background: isMaximized ? 'var(--accent-focal-subtle)' : 'rgba(255, 255, 255, 0.06)',
+                    border: `1px solid ${isMaximized ? 'rgba(225, 29, 72, 0.4)' : 'rgba(255, 255, 255, 0.12)'}`,
+                    color: isMaximized ? 'var(--accent-focal-hover)' : '#d4d4d8',
                     width: '32px',
                     height: '32px',
                     borderRadius: '8px',
@@ -851,7 +851,7 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                   {scale !== 1 && (
                     <button
                       onClick={handleResetZoom}
-                      style={{ background: 'none', border: 'none', color: '#c084fc', cursor: 'pointer', padding: '4px' }}
+                      style={{ background: 'none', border: 'none', color: 'var(--accent-focal-hover)', cursor: 'pointer', padding: '4px' }}
                       title="줌 리셋"
                     >
                       <RotateCcw size={13} />
@@ -876,7 +876,7 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
               >
                 {meta?.camera_model && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#e4e4e7', fontWeight: 500 }}>
-                    <Camera size={13} color="#c084fc" />
+                    <Camera size={13} color="var(--accent-focal)" />
                     <span>{meta.camera_model}</span>
                   </div>
                 )}
@@ -931,8 +931,8 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                 {/* Document Title Header */}
                 <div style={{ marginBottom: '28px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '22px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                    <Sparkles size={16} color="#c084fc" />
-                    <span style={{ fontSize: '12px', fontWeight: 700, color: '#c084fc', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                    <Sparkles size={16} color="var(--accent-focal)" />
+                    <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--accent-focal-hover)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
                       Focal Node · AI Photo Critique Report
                     </span>
                   </div>
@@ -955,7 +955,7 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                       color: '#a1a1aa',
                       lineHeight: '1.65',
                       fontStyle: 'italic',
-                      borderLeft: '3px solid #a855f7',
+                      borderLeft: '3px solid var(--accent-focal)',
                       paddingLeft: '12px'
                     }}>
                       "{photo.ai_analysis.caption}"
@@ -966,7 +966,7 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                 {/* Content Renderer or Empty State */}
                 {isLoading ? (
                   <div style={{ padding: '60px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#a1a1aa' }}>
-                    <Loader2 size={24} className="spin" color="#c084fc" style={{ marginBottom: '12px' }} />
+                    <Loader2 size={24} className="spin" color="var(--accent-focal)" style={{ marginBottom: '12px' }} />
                     <p style={{ margin: 0, fontSize: '14px' }}>비평 데이터를 불러오는 중입니다...</p>
                   </div>
                 ) : critiqueText ? (

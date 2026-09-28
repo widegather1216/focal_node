@@ -91,7 +91,7 @@ export const PhotoAiAnalysisView: React.FC<PhotoAiAnalysisViewProps> = ({
               {aiAnalysis.aesthetic_tags.map((tag, idx) => (
                 <span
                   key={idx}
-                  style={{ background: 'var(--accent-ai-subtle)', color: 'var(--accent-ai)', border: '1px solid rgba(139, 92, 246, 0.3)', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center' }}
+                  style={{ background: 'var(--accent-focal-subtle)', color: 'var(--accent-focal-hover)', border: '1px solid rgba(225, 29, 72, 0.25)', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center' }}
                 >
                   {tag}
                 </span>
