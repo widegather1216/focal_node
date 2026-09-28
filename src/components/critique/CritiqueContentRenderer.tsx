@@ -9,22 +9,24 @@ import {
   Quote
 } from 'lucide-react';
 
-interface ParsedScores {
+export interface ParsedScores {
   overall: number | null;
   iaa: number | null;
   iqa: number | null;
   ista: number | null;
 }
 
-interface CritiqueContentRendererProps {
+export interface CritiqueContentRendererProps {
   content: string;
   mode?: 'compact' | 'document';
+  hideScoreboard?: boolean;
+  hideExecutiveSummary?: boolean;
 }
 
 /**
  * Extracts 6-Way ensemble scoreboard block if present.
  */
-function extractScoreboard(text: string): { scores: ParsedScores | null; remainingText: string } {
+export function extractScoreboard(text: string): { scores: ParsedScores | null; remainingText: string } {
   const scoreboardRegex = /\[(?:📊\s*)?6-Way\s*앙상블\s*비평\s*스코어보드\]([\s\S]*?)(?=(?:\n\s*#{1,4}\s*|\n\s*\d+\.\s*\[|\n\s*>\s*|$))/i;
   const match = text.match(scoreboardRegex);
 
@@ -52,7 +54,7 @@ function extractScoreboard(text: string): { scores: ParsedScores | null; remaini
 /**
  * Types of Markdown AST Blocks
  */
-type MarkdownBlock =
+export type MarkdownBlock =
   | { type: 'executive_summary'; summary: string }
   | { type: 'section'; level: number; numberPrefix?: string; title: string; themeType: 'aesthetic' | 'defect' | 'advice' | 'camera' | 'structure' | 'general'; children: MarkdownBlock[] }
   | { type: 'paragraph'; text: string }
@@ -63,7 +65,7 @@ type MarkdownBlock =
   | { type: 'code_block'; language: string; code: string }
   | { type: 'divider' };
 
-function determineThemeType(text: string): 'aesthetic' | 'defect' | 'advice' | 'camera' | 'structure' | 'general' {
+export function determineThemeType(text: string): 'aesthetic' | 'defect' | 'advice' | 'camera' | 'structure' | 'general' {
   const lower = text.toLowerCase();
   if (lower.includes('미학') || lower.includes('iaa') || lower.includes('장점') || lower.includes('개성') || text.includes('🎨') || text.includes('🌟')) {
     return 'aesthetic';
@@ -86,7 +88,7 @@ function determineThemeType(text: string): 'aesthetic' | 'defect' | 'advice' | '
 /**
  * Parses markdown text into rich structured blocks.
  */
-function parseMarkdownToBlocks(text: string): MarkdownBlock[] {
+export function parseMarkdownToBlocks(text: string): MarkdownBlock[] {
   const lines = text.split('\n');
   const rootBlocks: MarkdownBlock[] = [];
   let currentSection: (Extract<MarkdownBlock, { type: 'section' }>) | null = null;
@@ -689,18 +691,23 @@ function renderBlock(block: MarkdownBlock, idx: number, isCompact: boolean): Rea
  */
 export const CritiqueContentRenderer: React.FC<CritiqueContentRendererProps> = ({
   content,
-  mode = 'document'
+  mode = 'document',
+  hideScoreboard = false,
+  hideExecutiveSummary = false
 }) => {
   if (!content) return null;
 
   const isCompact = mode === 'compact';
   const { scores, remainingText } = extractScoreboard(content);
-  const blocks = parseMarkdownToBlocks(remainingText);
+  let blocks = parseMarkdownToBlocks(remainingText);
+  if (hideExecutiveSummary) {
+    blocks = blocks.filter(b => b.type !== 'executive_summary');
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: isCompact ? '12px' : '18px' }}>
-      {/* 1. Scoreboard (if extracted) */}
-      {scores && <CritiqueScoreboardCard scores={scores} isCompact={isCompact} />}
+      {/* 1. Scoreboard (if extracted and not hidden) */}
+      {!hideScoreboard && scores && <CritiqueScoreboardCard scores={scores} isCompact={isCompact} />}
 
       {/* 2. Structured Markdown Blocks */}
       {blocks.map((block, idx) => renderBlock(block, idx, isCompact))}
