@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   X, 
@@ -15,14 +15,13 @@ import {
   Camera, 
   FileText, 
   Calendar, 
-  Sparkles,
   Info,
   Loader2
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { usePhotoDetailQuery } from '../../hooks/usePhotoDetailQuery';
 import { api } from '../../services/api';
-import { CritiqueContentRenderer } from './CritiqueContentRenderer';
+import { CritiqueContentRenderer, extractScoreboard, parseMarkdownToBlocks } from './CritiqueContentRenderer';
 import { PhotoDetail } from '../../hooks/usePhotoDetail';
 
 interface CritiqueDocumentModalProps {
@@ -172,7 +171,7 @@ function generatePrintHtml(
     <div class="report-header">
       <div>
         <div class="brand-title">Focal Node · AI Photo Critique Report</div>
-        <h1 class="report-title">${photo?.file_name || '사진'} 심층 미학 평론</h1>
+        <h1 class="report-title">${photo?.file_name || '사진'}</h1>
       </div>
       <div class="report-date">${formattedDate ? `분석일: ${formattedDate}` : ''}</div>
     </div>
@@ -263,9 +262,18 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [critiqueDocumentPhotoId, isPopout, handleClose]);
 
+  const critiqueText = photo?.ai_analysis?.critique || '';
+  const mastheadData = useMemo(() => {
+    if (!critiqueText) return { scores: null, summary: null };
+    const { scores, remainingText } = extractScoreboard(critiqueText);
+    const blocks = parseMarkdownToBlocks(remainingText);
+    const summaryBlock = blocks.find((b) => b.type === 'executive_summary');
+    const summary = summaryBlock && 'summary' in summaryBlock ? summaryBlock.summary : null;
+    return { scores, summary };
+  }, [critiqueText]);
+
   if (!critiqueDocumentPhotoId) return null;
 
-  const critiqueText = photo?.ai_analysis?.critique || '';
   const thumbUrl = api.getPhotoThumbnailUrl(critiqueDocumentPhotoId);
   const originalUrl = `${api.getPhotoOriginalUrl(critiqueDocumentPhotoId)}?raw=true`;
   const imageUrl = imgError ? thumbUrl : originalUrl;
@@ -373,7 +381,7 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
     ].filter(Boolean).join(' | ');
 
     const markdownDocument = [
-      `# ${photo?.file_name || '사진'} 심층 미학 평론`,
+      `# ${photo?.file_name || '사진'}`,
       ``,
       `> **Focal Node · AI Photo Critique Report**  `,
       formattedDate ? `> **분석 일시:** ${formattedDate}  ` : '',
@@ -814,7 +822,7 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                   }}
                 />
 
-                {/* Floating Zoom Control Bar */}
+                {/* Floating Zoom Control Bar (Minimal Pill) */}
                 <div
                   style={{
                     position: 'absolute',
@@ -822,88 +830,95 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                     left: '16px',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px',
-                    background: 'rgba(18, 18, 22, 0.85)',
-                    backdropFilter: 'blur(8px)',
-                    border: '1px solid rgba(255, 255, 255, 0.12)',
-                    borderRadius: '10px',
-                    padding: '4px 8px',
+                    gap: '4px',
+                    background: 'rgba(18, 18, 22, 0.65)',
+                    backdropFilter: 'blur(12px)',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '20px',
+                    padding: '3px 8px',
                     zIndex: 10
                   }}
                 >
                   <button
                     onClick={() => setScale((prev) => Math.max(prev - 0.2, 0.6))}
-                    style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer', padding: '4px' }}
+                    style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer', padding: '2px', display: 'flex' }}
                     title="축소"
                   >
-                    <ZoomOut size={15} />
+                    <ZoomOut size={13} />
                   </button>
-                  <span style={{ fontSize: '11px', color: '#fff', fontWeight: 600, minWidth: '38px', textAlign: 'center' }}>
+                  <span className="font-mono" style={{ fontSize: '11px', color: '#f4f4f5', fontWeight: 600, minWidth: '36px', textAlign: 'center' }}>
                     {Math.round(scale * 100)}%
                   </span>
                   <button
                     onClick={() => setScale((prev) => Math.min(prev + 0.2, 3.5))}
-                    style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer', padding: '4px' }}
+                    style={{ background: 'none', border: 'none', color: '#a1a1aa', cursor: 'pointer', padding: '2px', display: 'flex' }}
                     title="확대"
                   >
-                    <ZoomIn size={15} />
+                    <ZoomIn size={13} />
                   </button>
                   {scale !== 1 && (
                     <button
                       onClick={handleResetZoom}
-                      style={{ background: 'none', border: 'none', color: 'var(--accent-focal-hover)', cursor: 'pointer', padding: '4px' }}
+                      style={{ background: 'none', border: 'none', color: 'var(--accent-focal-hover)', cursor: 'pointer', padding: '2px', display: 'flex', marginLeft: '2px' }}
                       title="줌 리셋"
                     >
-                      <RotateCcw size={13} />
+                      <RotateCcw size={12} />
                     </button>
                   )}
                 </div>
               </div>
 
-              {/* Bottom EXIF Chips Overlay */}
+              {/* Bottom EXIF HUD Overlay (Leica Monospace HUD) */}
               <div
                 style={{
-                  padding: '12px 18px',
-                  backgroundColor: 'rgba(14, 14, 18, 0.95)',
+                  padding: '10px 18px',
+                  backgroundColor: 'rgba(12, 12, 15, 0.95)',
                   borderTop: '1px solid rgba(255, 255, 255, 0.08)',
                   display: 'flex',
-                  flexWrap: 'wrap',
                   alignItems: 'center',
-                  gap: '8px',
+                  justifyContent: 'space-between',
+                  gap: '12px',
                   fontSize: '11.5px',
                   color: '#a1a1aa'
                 }}
               >
-                {meta?.camera_model && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#e4e4e7', fontWeight: 500 }}>
-                    <Camera size={13} color="var(--accent-focal)" />
-                    <span>{meta.camera_model}</span>
-                  </div>
-                )}
-                {meta?.lens_model && (
-                  <span style={{ color: '#71717a' }}>• {meta.lens_model}</span>
-                )}
-                <div style={{ display: 'flex', gap: '6px', marginLeft: 'auto' }}>
-                  {meta?.focal_length && (
-                    <span style={{ background: 'rgba(255, 255, 255, 0.06)', padding: '2px 7px', borderRadius: '4px', color: '#fff' }}>
-                      {meta.focal_length}mm
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, overflow: 'hidden' }}>
+                  <Camera size={13} color="var(--accent-focal)" style={{ flexShrink: 0 }} />
+                  <span style={{ color: '#e4e4e7', fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {meta?.camera_model || '카메라'}
+                  </span>
+                  {meta?.lens_model && (
+                    <span style={{ color: '#71717a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      · {meta.lens_model}
                     </span>
                   )}
-                  {meta?.f_number && (
-                    <span style={{ background: 'rgba(255, 255, 255, 0.06)', padding: '2px 7px', borderRadius: '4px', color: '#fff' }}>
-                      f/{meta.f_number}
-                    </span>
+                </div>
+
+                <div
+                  className="font-mono"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    color: '#f4f4f5',
+                    fontSize: '11px',
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0
+                  }}
+                >
+                  {meta?.focal_length && <span>{meta.focal_length}mm</span>}
+                  {meta?.focal_length && (meta?.f_number || meta?.shutter_speed || meta?.iso) && (
+                    <span style={{ color: 'rgba(255, 255, 255, 0.2)' }}>·</span>
                   )}
-                  {meta?.shutter_speed && (
-                    <span style={{ background: 'rgba(255, 255, 255, 0.06)', padding: '2px 7px', borderRadius: '4px', color: '#fff' }}>
-                      {meta.shutter_speed}s
-                    </span>
+                  {meta?.f_number && <span>f/{meta.f_number}</span>}
+                  {meta?.f_number && (meta?.shutter_speed || meta?.iso) && (
+                    <span style={{ color: 'rgba(255, 255, 255, 0.2)' }}>·</span>
                   )}
-                  {meta?.iso && (
-                    <span style={{ background: 'rgba(255, 255, 255, 0.06)', padding: '2px 7px', borderRadius: '4px', color: '#fff' }}>
-                      ISO {meta.iso}
-                    </span>
+                  {meta?.shutter_speed && <span>{meta.shutter_speed}s</span>}
+                  {meta?.shutter_speed && meta?.iso && (
+                    <span style={{ color: 'rgba(255, 255, 255, 0.2)' }}>·</span>
                   )}
+                  {meta?.iso && <span>ISO {meta.iso}</span>}
                 </div>
               </div>
             </div>
@@ -928,38 +943,93 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                   boxSizing: 'border-box'
                 }}
               >
-                {/* Document Title Header */}
-                <div style={{ marginBottom: '28px', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '22px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                    <Sparkles size={16} color="var(--accent-focal)" />
-                    <span style={{ fontSize: '12px', fontWeight: 700, color: 'var(--accent-focal-hover)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                      Focal Node · AI Photo Critique Report
-                    </span>
-                  </div>
-
+                {/* 1. Unified Editorial Masthead (Plan A) */}
+                <div style={{ marginBottom: '20px' }}>
                   <h1 style={{
-                    margin: '0 0 10px 0',
+                    margin: '0 0 14px 0',
                     fontSize: '24px',
-                    fontWeight: 800,
+                    fontWeight: 700,
                     color: '#fff',
                     letterSpacing: '-0.02em',
                     lineHeight: '1.3'
                   }}>
-                    {photo?.file_name} 심층 미학 평론
+                    {photo?.file_name}
                   </h1>
 
-                  {photo?.ai_analysis?.caption && (
+                  {/* Editorial Lead Subtitle (Executive Summary or Caption) */}
+                  {(mastheadData.summary || photo?.ai_analysis?.caption) && (
                     <p style={{
-                      margin: '12px 0 0 0',
-                      fontSize: '13.5px',
-                      color: '#a1a1aa',
+                      margin: '0 0 20px 0',
+                      fontSize: '15px',
                       lineHeight: '1.65',
+                      color: '#e4e4e7',
                       fontStyle: 'italic',
-                      borderLeft: '3px solid var(--accent-focal)',
-                      paddingLeft: '12px'
+                      letterSpacing: '-0.01em'
                     }}>
-                      "{photo.ai_analysis.caption}"
+                      "{mastheadData.summary || photo?.ai_analysis?.caption}"
                     </p>
+                  )}
+
+                  {/* 1-Line Minimal Spec Divider */}
+                  {mastheadData.scores && (
+                    <div style={{
+                      borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+                      padding: '12px 0 0 0',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '12px'
+                    }}>
+                      {/* Overall Score */}
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                        <span style={{ fontSize: '10.5px', color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.08em' }}>
+                          TOTAL
+                        </span>
+                        <span className="font-mono" style={{ fontSize: '19px', fontWeight: 700, color: 'var(--accent-focal-hover)', letterSpacing: '-0.02em', lineHeight: 1 }}>
+                          {mastheadData.scores.overall ?? '-'}
+                        </span>
+                        <span className="font-mono" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                          / 100
+                        </span>
+                      </div>
+
+                      {/* Detail Metrics Chips */}
+                      <div
+                        className="font-mono"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '10px',
+                          fontSize: '11.5px',
+                          color: 'var(--text-secondary)'
+                        }}
+                      >
+                        {mastheadData.scores.iaa !== null && (
+                          <span title="미학 & 구도 지수 (IAA)">
+                            <span style={{ color: 'var(--text-muted)', marginRight: '3px' }}>IAA</span>
+                            <strong style={{ color: '#fff' }}>{mastheadData.scores.iaa}</strong>
+                          </span>
+                        )}
+                        {mastheadData.scores.iaa !== null && (mastheadData.scores.iqa !== null || mastheadData.scores.ista !== null) && (
+                          <span style={{ color: 'rgba(255, 255, 255, 0.2)' }}>·</span>
+                        )}
+                        {mastheadData.scores.iqa !== null && (
+                          <span title="화질 & 광학 지수 (IQA)">
+                            <span style={{ color: 'var(--text-muted)', marginRight: '3px' }}>IQA</span>
+                            <strong style={{ color: '#fff' }}>{mastheadData.scores.iqa}</strong>
+                          </span>
+                        )}
+                        {mastheadData.scores.iqa !== null && mastheadData.scores.ista !== null && (
+                          <span style={{ color: 'rgba(255, 255, 255, 0.2)' }}>·</span>
+                        )}
+                        {mastheadData.scores.ista !== null && (
+                          <span title="구조 & 질감 지수 (ISTA)">
+                            <span style={{ color: 'var(--text-muted)', marginRight: '3px' }}>ISTA</span>
+                            <strong style={{ color: '#fff' }}>{mastheadData.scores.ista}</strong>
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   )}
                 </div>
 
@@ -971,7 +1041,12 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                   </div>
                 ) : critiqueText ? (
                   <div id="critique-rendered-body">
-                    <CritiqueContentRenderer content={critiqueText} mode="document" />
+                    <CritiqueContentRenderer
+                      content={critiqueText}
+                      mode="document"
+                      hideScoreboard={!!mastheadData.scores}
+                      hideExecutiveSummary={!!mastheadData.summary}
+                    />
                   </div>
                 ) : (
                   <div style={{

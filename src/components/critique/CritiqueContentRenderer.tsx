@@ -291,26 +291,14 @@ export const CritiqueScoreboardCard: React.FC<{ scores: ParsedScores; isCompact?
   scores, 
   isCompact = false 
 }) => {
-  const getGrade = (score: number) => {
-    if (score >= 90) return { label: 'S (Masterpiece)', color: '#e11d48', bg: 'rgba(225, 29, 72, 0.15)' };
-    if (score >= 80) return { label: 'A (Excellent)', color: '#f43f5e', bg: 'rgba(244, 63, 94, 0.12)' };
-    if (score >= 70) return { label: 'B (Good)', color: '#e4e4e7', bg: 'rgba(255, 255, 255, 0.08)' };
-    return { label: 'C (Developing)', color: '#a1a1aa', bg: 'rgba(255, 255, 255, 0.05)' };
-  };
-
-  const gradeInfo = scores.overall ? getGrade(scores.overall) : null;
-
   return (
     <div
       style={{
-        background: isCompact 
-          ? 'linear-gradient(135deg, rgba(24, 24, 27, 0.8) 0%, rgba(18, 18, 20, 0.9) 100%)'
-          : 'linear-gradient(135deg, rgba(39, 39, 42, 0.6) 0%, rgba(24, 24, 27, 0.9) 100%)',
-        border: '1px solid rgba(225, 29, 72, 0.25)',
-        borderRadius: isCompact ? '10px' : '16px',
-        padding: isCompact ? '12px 14px' : '18px 22px',
-        marginBottom: isCompact ? '12px' : '20px',
-        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25)',
+        background: 'rgba(255, 255, 255, 0.02)',
+        border: '1px solid var(--border-subtle)',
+        borderRadius: isCompact ? '8px' : '10px',
+        padding: isCompact ? '12px 14px' : '16px 20px',
+        marginBottom: isCompact ? '12px' : '24px',
         display: 'flex',
         flexDirection: 'column',
         gap: isCompact ? '10px' : '14px'
@@ -318,32 +306,17 @@ export const CritiqueScoreboardCard: React.FC<{ scores: ParsedScores; isCompact?
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Sliders size={isCompact ? 15 : 18} color="var(--accent-focal)" />
-          <span style={{ fontSize: isCompact ? '13px' : '15px', fontWeight: 700, color: '#f4f4f5' }}>
+          <Sliders size={isCompact ? 14 : 16} color="var(--accent-focal)" />
+          <span style={{ fontSize: isCompact ? '12.5px' : '14px', fontWeight: 600, color: '#f4f4f5', letterSpacing: '-0.01em' }}>
             6-Way 지각 앙상블 평점
           </span>
         </div>
-        {gradeInfo && (
-          <span
-            style={{
-              fontSize: isCompact ? '11px' : '12px',
-              fontWeight: 700,
-              padding: isCompact ? '2px 8px' : '4px 10px',
-              borderRadius: '20px',
-              background: gradeInfo.bg,
-              color: gradeInfo.color,
-              border: `1px solid ${gradeInfo.color}40`
-            }}
-          >
-            {gradeInfo.label}
-          </span>
-        )}
       </div>
 
       <div style={{
         display: 'grid',
-        gridTemplateColumns: isCompact ? '1fr' : '110px 1fr',
-        gap: isCompact ? '10px' : '20px',
+        gridTemplateColumns: isCompact ? '1fr' : '120px 1fr',
+        gap: isCompact ? '10px' : '24px',
         alignItems: 'center'
       }}>
         {scores.overall !== null && (
@@ -352,27 +325,29 @@ export const CritiqueScoreboardCard: React.FC<{ scores: ParsedScores; isCompact?
             flexDirection: isCompact ? 'row' : 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: isCompact ? '10px' : '4px',
-            background: 'var(--accent-focal-subtle)',
-            border: '1px solid rgba(225, 29, 72, 0.25)',
-            borderRadius: '12px',
-            padding: isCompact ? '8px 12px' : '12px'
+            gap: isCompact ? '8px' : '2px',
+            background: 'rgba(255, 255, 255, 0.03)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: '8px',
+            padding: isCompact ? '8px 12px' : '12px 14px'
           }}>
-            <span style={{ fontSize: '11px', color: '#a1a1aa', fontWeight: 500 }}>종합 점수</span>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: '2px' }}>
-              <span style={{ fontSize: isCompact ? '22px' : '28px', fontWeight: 800, color: '#fff', letterSpacing: '-0.02em' }}>
+            <span style={{ fontSize: '10px', color: 'var(--text-muted)', fontWeight: 600, letterSpacing: '0.06em' }}>
+              SCORE
+            </span>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '3px' }}>
+              <span className="font-mono" style={{ fontSize: isCompact ? '20px' : '26px', fontWeight: 700, color: '#fff', letterSpacing: '-0.02em', lineHeight: 1 }}>
                 {scores.overall}
               </span>
-              <span style={{ fontSize: '11px', color: '#71717a' }}>/100</span>
+              <span className="font-mono" style={{ fontSize: '11px', color: 'var(--text-muted)' }}>/ 100</span>
             </div>
           </div>
         )}
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: isCompact ? '6px' : '10px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: isCompact ? '6px' : '8px' }}>
           {scores.iaa !== null && (
             <ScoreBar 
-              icon={<Sparkles size={isCompact ? 12 : 13} color="var(--accent-focal-hover)" style={{ flexShrink: 0 }} />}
-              label="미학 & 구도 (IAA)" 
+              icon={<Sparkles size={12} color="var(--accent-focal-hover)" style={{ flexShrink: 0 }} />}
+              label="미학 & 구도 지수 (IAA)" 
               score={scores.iaa} 
               color="var(--accent-focal-hover)" 
               isCompact={isCompact} 
@@ -380,8 +355,8 @@ export const CritiqueScoreboardCard: React.FC<{ scores: ParsedScores; isCompact?
           )}
           {scores.iqa !== null && (
             <ScoreBar 
-              icon={<Camera size={isCompact ? 12 : 13} color="var(--accent-focal)" style={{ flexShrink: 0 }} />}
-              label="화질 & 광학 (IQA)" 
+              icon={<Camera size={12} color="var(--accent-focal)" style={{ flexShrink: 0 }} />}
+              label="화질 & 광학 지수 (IQA)" 
               score={scores.iqa} 
               color="var(--accent-focal)" 
               isCompact={isCompact} 
@@ -389,8 +364,8 @@ export const CritiqueScoreboardCard: React.FC<{ scores: ParsedScores; isCompact?
           )}
           {scores.ista !== null && (
             <ScoreBar 
-              icon={<Layers size={isCompact ? 12 : 13} color="var(--accent-focal-deep)" style={{ flexShrink: 0 }} />}
-              label="구조 & 질감 (ISTA)" 
+              icon={<Layers size={12} color="var(--accent-focal-deep)" style={{ flexShrink: 0 }} />}
+              label="구조 & 질감 지수 (ISTA)" 
               score={scores.ista} 
               color="var(--accent-focal-deep)" 
               isCompact={isCompact} 
@@ -418,16 +393,16 @@ const ScoreBar: React.FC<{
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: isCompact ? '11px' : '12px' }}>
-        <span style={{ color: '#d4d4d8', display: 'flex', alignItems: 'center', gap: '5px' }}>
+        <span style={{ color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '5px' }}>
           {icon}
           <span>{label}</span>
         </span>
-        <span style={{ color: '#fff', fontWeight: 600 }} className="font-mono">{score}점</span>
+        <span style={{ color: '#fff', fontWeight: 600 }} className="font-mono">{score}</span>
       </div>
       <div style={{
-        height: isCompact ? '4px' : '6px',
-        backgroundColor: 'rgba(255, 255, 255, 0.08)',
-        borderRadius: '3px',
+        height: isCompact ? '3px' : '4px',
+        backgroundColor: 'rgba(255, 255, 255, 0.06)',
+        borderRadius: '2px',
         overflow: 'hidden'
       }}>
         <div
@@ -435,7 +410,7 @@ const ScoreBar: React.FC<{
             height: '100%',
             width: `${Math.min(100, Math.max(0, score))}%`,
             backgroundColor: color,
-            borderRadius: '3px',
+            borderRadius: '2px',
             transition: 'width 0.8s ease'
           }}
         />
@@ -451,31 +426,28 @@ export const ExecutiveSummaryCard: React.FC<{ summary: string; isCompact?: boole
   return (
     <div
       style={{
-        background: isCompact
-          ? 'var(--accent-focal-subtle)'
-          : 'linear-gradient(135deg, rgba(225, 29, 72, 0.08) 0%, rgba(24, 24, 27, 0.9) 100%)',
-        border: '1px solid rgba(225, 29, 72, 0.25)',
-        borderLeft: isCompact ? '3px solid var(--accent-focal)' : '4px solid var(--accent-focal)',
-        borderRadius: isCompact ? '8px' : '14px',
-        padding: isCompact ? '10px 14px' : '16px 20px',
-        boxShadow: isCompact ? 'none' : '0 4px 20px rgba(225, 29, 72, 0.1)',
+        background: 'rgba(255, 255, 255, 0.02)',
+        borderLeft: '2.5px solid var(--accent-focal)',
+        borderRadius: '0 6px 6px 0',
+        padding: isCompact ? '10px 14px' : '14px 18px',
         display: 'flex',
         flexDirection: 'column',
         gap: '6px'
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-        <Sparkles size={isCompact ? 13 : 16} color="var(--accent-focal)" />
-        <span style={{ fontSize: isCompact ? '11px' : '12px', fontWeight: 700, color: 'var(--accent-focal)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+        <Sparkles size={isCompact ? 12 : 13} color="var(--accent-focal)" />
+        <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--accent-focal)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
           통합 한 줄 총평
         </span>
       </div>
       <p style={{
         margin: 0,
         fontSize: isCompact ? '13px' : '15px',
-        fontWeight: 500,
+        fontWeight: 400,
         color: '#f4f4f5',
-        lineHeight: isCompact ? '1.55' : '1.7',
+        lineHeight: isCompact ? '1.6' : '1.7',
+        fontStyle: 'italic',
         letterSpacing: '-0.01em'
       }}>
         "{summary}"
@@ -541,43 +513,30 @@ function renderBlock(block: MarkdownBlock, idx: number, isCompact: boolean): Rea
       }
 
       return (
-        <article
+        <section
           key={idx}
           style={{
-            backgroundColor: 'var(--bg-card)',
-            border: `1px solid var(--border-subtle)`,
-            borderRadius: '12px',
-            overflow: 'hidden',
-            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.25)'
+            paddingTop: '24px',
+            marginTop: '12px',
+            borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px'
           }}
         >
-          <div
-            style={{
-              padding: '12px 20px',
-              backgroundColor: theme.bg,
-              borderBottom: '1px solid var(--border-subtle)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between'
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ padding: '5px', borderRadius: '6px', background: 'var(--accent-focal-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                {theme.icon}
-              </div>
-              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: theme.color, letterSpacing: '-0.01em' }}>
-                {block.numberPrefix ? `${block.numberPrefix} ` : ''}{block.title}
-              </h3>
-            </div>
-            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', background: 'rgba(255, 255, 255, 0.05)', padding: '3px 8px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
-              {theme.badge}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span className="font-mono" style={{ fontSize: '13px', fontWeight: 700, color: 'var(--accent-focal)' }}>
+              {block.numberPrefix ?? '•'}
             </span>
+            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#f4f4f5', letterSpacing: '-0.01em' }}>
+              {block.title}
+            </h3>
           </div>
 
-          <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {block.children.map((child, cIdx) => renderBlock(child, cIdx, false))}
           </div>
-        </article>
+        </section>
       );
     }
 

@@ -369,11 +369,11 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
               e.currentTarget.style.background = 'rgba(225, 29, 72, 0.08)';
               e.currentTarget.style.borderColor = 'rgba(225, 29, 72, 0.25)';
             }}
-            title="A4 규격 심층 분석 리포트 전문 뷰어로 크게 보기"
+            title="문서 뷰어로 전체 비평 보기"
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <FileText size={14} color="var(--accent-focal)" />
-              <span style={{ fontSize: '12px', fontWeight: 600 }}>심층 비평 리포트 전문 보기</span>
+              <span style={{ fontSize: '12px', fontWeight: 600 }}>전체 비평 읽기</span>
             </div>
             <ArrowUpRight size={14} color="var(--accent-focal-hover)" />
           </button>
