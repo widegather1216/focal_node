@@ -1,5 +1,5 @@
 import threading
-from typing import Dict, Any, Set
+from typing import Dict, Any, Set, Optional
 
 class CritiqueCancelledException(Exception):
     """Raised when photo critique generation is cancelled by user request."""
@@ -11,7 +11,17 @@ class CritiqueStatusManager:
         self._cancelled_ids: Set[str] = set()
         self._lock = threading.Lock()
 
-    def update(self, photo_id: str, step: int, total_steps: int, message: str, progress: int, status: str = "processing"):
+    def update(
+        self,
+        photo_id: str,
+        step: int,
+        total_steps: int,
+        message: str,
+        progress: int,
+        status: str = "processing",
+        critique: Optional[str] = None,
+        critique_updated_at: Optional[str] = None
+    ):
         with self._lock:
             # If already cancelled, do not overwrite status unless explicitly resetting
             if photo_id in self._cancelled_ids and status != "cancelled":
@@ -23,18 +33,48 @@ class CritiqueStatusManager:
                 "message": message,
                 "progress": progress,
                 "status": status,
+                "critique": critique,
+                "critique_updated_at": critique_updated_at,
             }
 
     def get(self, photo_id: str) -> Dict[str, Any]:
         with self._lock:
-            return self._statuses.get(photo_id, {
-                "photo_id": photo_id,
-                "step": 0,
-                "total_steps": 4,
-                "message": "준비 중...",
-                "progress": 0,
-                "status": "idle"
-            })
+            if photo_id in self._statuses:
+                return dict(self._statuses[photo_id])
+
+        # Self-healing fallback: check database if critique already exists
+        # Useful when sleep/resume occurs or memory status was cleared
+        try:
+            from database import SessionLocal
+            import models
+            with SessionLocal() as db:
+                ai = db.query(models.AIAnalysis).filter(models.AIAnalysis.image_id == photo_id).first()
+                if ai and ai.critique:
+                    updated_at_str = ai.critique_updated_at.isoformat() if ai.critique_updated_at else None
+                    return {
+                        "photo_id": photo_id,
+                        "step": 4,
+                        "total_steps": 4,
+                        "message": "비평 완료",
+                        "progress": 100,
+                        "status": "completed",
+                        "critique": ai.critique,
+                        "critique_updated_at": updated_at_str
+                    }
+        except Exception:
+            pass
+
+        return {
+            "photo_id": photo_id,
+            "step": 0,
+            "total_steps": 4,
+            "message": "준비 중...",
+            "progress": 0,
+            "status": "idle",
+            "critique": None,
+            "critique_updated_at": None
+        }
+
 
     def request_cancel(self, photo_id: str):
         with self._lock:

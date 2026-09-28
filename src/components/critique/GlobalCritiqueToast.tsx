@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, Sparkles, X, ChevronRight } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../../store/useAppStore';
 import { api } from '../../services/api';
 import { CritiqueStatus } from '../../types/critique';
 
 export const GlobalCritiqueToast: React.FC = () => {
+  const queryClient = useQueryClient();
   const {
     activeCritiqueJob,
     setActiveCritiqueJob,
@@ -22,19 +24,24 @@ export const GlobalCritiqueToast: React.FC = () => {
       return;
     }
 
+    const currentJobPhotoId = activeCritiqueJob.photoId;
     let isMounted = true;
     let timerId: ReturnType<typeof setTimeout> | null = null;
     let dismissTimerId: ReturnType<typeof setTimeout> | null = null;
 
     const pollStatus = async () => {
       try {
-        const res = await api.getCritiqueStatus(activeCritiqueJob.photoId);
+        const res = await api.getCritiqueStatus(currentJobPhotoId);
         if (!isMounted) return;
 
         if (res) {
           setStatus(res);
           const isDone = res.status === 'completed' || res.status === 'error' || res.status === 'cancelled' || res.progress === 100;
           if (isDone) {
+            if (res.status === 'completed') {
+              queryClient.invalidateQueries({ queryKey: ['critiques'] });
+              queryClient.invalidateQueries({ queryKey: ['photoDetail', currentJobPhotoId] });
+            }
             dismissTimerId = setTimeout(() => {
               if (isMounted) {
                 setActiveCritiqueJob(null);
@@ -44,7 +51,7 @@ export const GlobalCritiqueToast: React.FC = () => {
           }
         }
       } catch {
-        // Silently ignore transient network errors
+        // Silently ignore transient network errors during OS sleep/wake
       }
 
       if (isMounted) {
@@ -54,12 +61,24 @@ export const GlobalCritiqueToast: React.FC = () => {
 
     pollStatus();
 
+    // Re-check immediately on system wake or focus
+    const handleWake = () => {
+      if (isMounted) pollStatus();
+    };
+    window.addEventListener('focus', handleWake);
+    window.addEventListener('online', handleWake);
+    document.addEventListener('visibilitychange', handleWake);
+
     return () => {
       isMounted = false;
       if (timerId) clearTimeout(timerId);
       if (dismissTimerId) clearTimeout(dismissTimerId);
+      window.removeEventListener('focus', handleWake);
+      window.removeEventListener('online', handleWake);
+      document.removeEventListener('visibilitychange', handleWake);
     };
-  }, [activeCritiqueJob?.photoId, setActiveCritiqueJob]);
+  }, [activeCritiqueJob?.photoId, setActiveCritiqueJob, queryClient]);
+
 
   // Show floating toast only when job exists AND DetailPanel for that photo is closed
   const isDetailOpen = selectedPhotoId === activeCritiqueJob?.photoId;

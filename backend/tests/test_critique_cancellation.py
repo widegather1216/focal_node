@@ -105,3 +105,58 @@ async def test_chat_service_generate_critique_cancelled(db_session, monkeypatch)
         # Verify no critique was committed to DB
         ai = db_session.query(models.AIAnalysis).filter(models.AIAnalysis.image_id == test_id).first()
         assert ai is None or not ai.critique
+
+
+@pytest.mark.asyncio
+async def test_critique_cancellation_unloads_models(db_session, monkeypatch):
+    """
+    Verifies that when critique is cancelled, both UniPercept and Gemma models
+    are immediately unloaded from RAM to prevent memory accumulation.
+    """
+    test_id = "test_cancel_unload_photo"
+    critique_status_manager.reset(test_id)
+
+    @contextmanager
+    def mock_session_scope():
+        yield db_session
+
+    monkeypatch.setattr("services.chat_service.SessionLocal", mock_session_scope)
+
+    img = models.Image(
+        id=test_id,
+        parent_dir="/fake",
+        file_name="unload_test.jpg",
+        file_path="/fake/unload_test.jpg",
+        file_size=1024,
+        file_mtime=1234567.0,
+        mime_type="image/jpeg",
+        is_favorite=False
+    )
+    db_session.add(img)
+    db_session.commit()
+
+    with patch("services.unipercept_adapter.get_unipercept_adapter") as mock_uni_getter, \
+         patch("services.chat_service.get_gemma_adapter") as mock_gemma_getter:
+
+        mock_uni = MagicMock()
+        mock_gemma = MagicMock()
+        mock_gemma.active_requests = 0
+
+        def cancel_during_unipercept(*args, **kwargs):
+            critique_status_manager.request_cancel(test_id)
+            critique_status_manager.check_cancelled(test_id)
+            return {}
+
+        mock_uni.generate_full_ensemble_critique.side_effect = cancel_during_unipercept
+        mock_uni_getter.return_value = mock_uni
+        mock_gemma_getter.return_value = mock_gemma
+
+        req = schemas.CritiqueRequest(photo_id=test_id, engine="unipercept")
+        res = await ChatService.generate_photo_critique(req)
+
+        assert res["status"] == "cancelled"
+        # UniPercept must be unloaded immediately upon cancellation!
+        mock_uni.unload_model.assert_called()
+        # Gemma must also be unloaded upon cancellation!
+        mock_gemma.unload_model.assert_called()
+

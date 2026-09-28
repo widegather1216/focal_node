@@ -142,6 +142,9 @@ class CritiqueStatusResponse(BaseModel):
     message: str
     progress: int
     status: str
+    critique: Optional[str] = None
+    critique_updated_at: Optional[str] = None
+
 
 
 

@@ -1,4 +1,5 @@
 import asyncio
+import threading
 from typing import Dict, Any, List, Optional
 from database import SessionLocal
 import models
@@ -55,6 +56,31 @@ def _clear_device_caches() -> None:
     except Exception:
         pass
 
+def _unload_critique_models() -> None:
+    """
+    Immediately unloads UniPercept model from memory and unloads Gemma model
+    if no other concurrent tasks (such as background indexing) are using it.
+    """
+    try:
+        from services.unipercept_adapter import get_unipercept_adapter
+        adapter = get_unipercept_adapter()
+        if hasattr(adapter, "unload_model"):
+            adapter.unload_model()
+    except Exception as e:
+        print(f"[ChatService] Error unloading UniPercept model: {e}", flush=True)
+
+    try:
+        gemma = get_gemma_adapter()
+        active_reqs = getattr(gemma, "active_requests", 0)
+        should_unload = not isinstance(active_reqs, int) or active_reqs <= 0
+        if should_unload and hasattr(gemma, "unload_model"):
+            gemma.unload_model()
+    except Exception as e:
+        print(f"[ChatService] Error unloading Gemma model: {e}", flush=True)
+
+    _clear_device_caches()
+
+
 def _fetch_critiques_from_db(photo_ids: Optional[List[str]]) -> List[Dict[str, Any]]:
     with SessionLocal() as db:
         query = (
@@ -106,19 +132,24 @@ async def _execute_unipercept_critique_pipeline(file_path: str, meta_data: dict,
     from services.unipercept_adapter import get_unipercept_adapter
     from services.critique_status import critique_status_manager, CritiqueCancelledException
 
-    res_dict = await asyncio.to_thread(
-        get_unipercept_adapter().generate_full_ensemble_critique,
-        file_path,
-        meta_data,
-        photo_id
-    )
-    critique_status_manager.check_cancelled(photo_id)
+    adapter = get_unipercept_adapter()
+    try:
+        res_dict = await asyncio.to_thread(
+            adapter.generate_full_ensemble_critique,
+            file_path,
+            meta_data,
+            photo_id
+        )
+        critique_status_manager.check_cancelled(photo_id)
 
-    raw_en = res_dict.get("critique", "")
-    scores_dict = res_dict.get("scores", {})
-    quality_score = res_dict.get("quality_score")
+        raw_en = res_dict.get("critique", "")
+        scores_dict = res_dict.get("scores", {})
+        quality_score = res_dict.get("quality_score")
+    finally:
+        # Guarantee UniPercept model is immediately unloaded from memory
+        # even if execution was cancelled or threw an error
+        await asyncio.to_thread(adapter.unload_model)
 
-    await asyncio.to_thread(get_unipercept_adapter().unload_model)
     print("[ChatService] UniPercept ensemble completed. Starting Gemma 4 translation...", flush=True)
 
     try:
@@ -171,53 +202,102 @@ async def _execute_gemma_critique_pipeline(file_path: str, meta_data: dict, phot
         return critique_text
 
 
+_critique_tasks: Dict[str, asyncio.Task] = {}
+_critique_tasks_lock = threading.Lock()
+
+async def _run_critique_pipeline(payload: schemas.CritiqueRequest) -> Dict[str, Any]:
+    file_path, meta_data = await asyncio.to_thread(_get_photo_and_metadata, payload.photo_id)
+    from services.critique_status import critique_status_manager, CritiqueCancelledException
+
+    critique_status_manager.reset(payload.photo_id)
+    critique_status_manager.update(payload.photo_id, 1, 4, "점수 산출 중", 15)
+    print(f"[ChatService] Generating photo critique for {payload.photo_id} (Engine: {payload.engine})...", flush=True)
+
+    try:
+        critique_status_manager.check_cancelled(payload.photo_id)
+
+        if payload.engine == "unipercept":
+            critique_text = await _execute_unipercept_critique_pipeline(file_path, meta_data, payload.photo_id)
+        else:
+            critique_text = await _execute_gemma_critique_pipeline(file_path, meta_data, payload.photo_id)
+
+        critique_status_manager.check_cancelled(payload.photo_id)
+
+        now_utc = models.utcnow()
+        await asyncio.to_thread(_save_critique_to_db, payload.photo_id, critique_text, now_utc)
+
+        critique_status_manager.update(
+            payload.photo_id,
+            4,
+            4,
+            "비평 완료",
+            100,
+            status="completed",
+            critique=critique_text,
+            critique_updated_at=now_utc.isoformat()
+        )
+
+        return {
+            "critique": critique_text,
+            "critique_updated_at": now_utc.isoformat(),
+            "engine_used": payload.engine,
+            "status": "completed"
+        }
+    except CritiqueCancelledException:
+        print(f"[ChatService] 🛑 Photo critique generation cancelled for {payload.photo_id}", flush=True)
+        critique_status_manager.update(payload.photo_id, 0, 4, "비평 생성이 사용자에 의해 중단되었습니다.", 0, status="cancelled")
+        await asyncio.to_thread(_unload_critique_models)
+        return {
+            "critique": "",
+            "critique_updated_at": None,
+            "engine_used": payload.engine,
+            "status": "cancelled"
+        }
+    except asyncio.CancelledError:
+        print(f"[ChatService] 🛑 Photo critique task cancelled for {payload.photo_id}", flush=True)
+        critique_status_manager.update(payload.photo_id, 0, 4, "비평 생성이 사용자에 의해 중단되었습니다.", 0, status="cancelled")
+        await asyncio.to_thread(_unload_critique_models)
+        raise
+    except Exception as e:
+        critique_status_manager.update(payload.photo_id, 0, 4, f"오류 발생: {str(e)}", 0, status="error")
+        await asyncio.to_thread(_unload_critique_models)
+        raise
+
 class ChatService:
     @staticmethod
+    def cancel_critique(photo_id: str) -> None:
+        """
+        Cancels critique task for photo_id and immediately frees model memory from RAM.
+        """
+        from services.critique_status import critique_status_manager
+        critique_status_manager.request_cancel(photo_id)
+        _unload_critique_models()
+
+    @staticmethod
     async def generate_photo_critique(payload: schemas.CritiqueRequest) -> Dict[str, Any]:
+
         """
         Generates deep photo critique using VLM (Gemma / UniPercept) and saves it to DB.
+        Shielded against client disconnection (e.g. system sleep/wake).
         """
-        file_path, meta_data = await asyncio.to_thread(_get_photo_and_metadata, payload.photo_id)
-        from services.critique_status import critique_status_manager, CritiqueCancelledException
-
-        critique_status_manager.reset(payload.photo_id)
-        critique_status_manager.update(payload.photo_id, 1, 4, "점수 산출 중", 15)
-        print(f"[ChatService] Generating photo critique for {payload.photo_id} (Engine: {payload.engine})...", flush=True)
+        photo_id = payload.photo_id
+        task = None
+        with _critique_tasks_lock:
+            existing_task = _critique_tasks.get(photo_id)
+            if existing_task and not existing_task.done():
+                task = existing_task
+            else:
+                task = asyncio.create_task(_run_critique_pipeline(payload))
+                _critique_tasks[photo_id] = task
 
         try:
-            critique_status_manager.check_cancelled(payload.photo_id)
+            # Shield the background critique task so client disconnect (e.g. sleep) does not cancel execution
+            return await asyncio.shield(task)
+        finally:
+            with _critique_tasks_lock:
+                if _critique_tasks.get(photo_id) is task and task.done():
+                    del _critique_tasks[photo_id]
 
-            if payload.engine == "unipercept":
-                critique_text = await _execute_unipercept_critique_pipeline(file_path, meta_data, payload.photo_id)
-            else:
-                critique_text = await _execute_gemma_critique_pipeline(file_path, meta_data, payload.photo_id)
-
-            critique_status_manager.check_cancelled(payload.photo_id)
-
-            now_utc = models.utcnow()
-            await asyncio.to_thread(_save_critique_to_db, payload.photo_id, critique_text, now_utc)
-
-            critique_status_manager.update(payload.photo_id, 4, 4, "비평 완료", 100, status="completed")
-
-            return {
-                "critique": critique_text,
-                "critique_updated_at": now_utc.isoformat(),
-                "engine_used": payload.engine,
-                "status": "completed"
-            }
-        except CritiqueCancelledException:
-            print(f"[ChatService] 🛑 Photo critique generation cancelled for {payload.photo_id}", flush=True)
-            critique_status_manager.update(payload.photo_id, 0, 4, "비평 생성이 사용자에 의해 중단되었습니다.", 0, status="cancelled")
-            await asyncio.to_thread(_clear_device_caches)
-            return {
-                "critique": "",
-                "critique_updated_at": None,
-                "engine_used": payload.engine,
-                "status": "cancelled"
-            }
-        except Exception as e:
-            critique_status_manager.update(payload.photo_id, 0, 4, f"오류 발생: {str(e)}", 0, status="error")
-            raise
 
     @staticmethod
     async def generate_critique_summary(payload: Optional[schemas.CritiqueSummaryRequest] = None) -> Dict[str, Any]:

@@ -25,5 +25,8 @@ export interface CritiqueStatus {
   message: string;
   progress: number;
   status: 'idle' | 'processing' | 'completed' | 'error' | 'cancelled';
+  critique?: string | null;
+  critique_updated_at?: string | null;
 }
+
 

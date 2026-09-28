@@ -1,8 +1,8 @@
 import { useAppStore } from '../store/useAppStore';
 import { SearchFilters } from '../types/photo';
-import { CritiqueItem, CritiqueSummaryResponse } from '../types/critique';
+import { CritiqueItem, CritiqueSummaryResponse, CritiqueStatus } from '../types/critique';
 
-export type { CritiqueItem, CritiqueSummaryResponse };
+export type { CritiqueItem, CritiqueSummaryResponse, CritiqueStatus };
 export type { SearchFilters };
 
 
@@ -288,7 +288,7 @@ class ApiClient {
     return res.json();
   }
 
-  async getCritiqueStatus(photoId: string): Promise<any> {
+  async getCritiqueStatus(photoId: string): Promise<CritiqueStatus> {
     const res = await fetch(`${this.baseUrl}/api/chat/critique/status/${photoId}`);
     if (!res.ok) {
       const err = await this.parseError(res, "Failed to fetch critique status");

@@ -57,9 +57,20 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
 
     pollStatus();
 
+    // Re-check immediately on system wake or window focus
+    const handleWake = () => {
+      if (isMounted) pollStatus();
+    };
+    window.addEventListener('focus', handleWake);
+    window.addEventListener('online', handleWake);
+    document.addEventListener('visibilitychange', handleWake);
+
     return () => {
       isMounted = false;
       if (timerId) clearTimeout(timerId);
+      window.removeEventListener('focus', handleWake);
+      window.removeEventListener('online', handleWake);
+      document.removeEventListener('visibilitychange', handleWake);
     };
   }, [loadingCritique, photoId]);
 

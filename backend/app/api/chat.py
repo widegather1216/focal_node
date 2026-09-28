@@ -33,10 +33,9 @@ def get_photo_critique_status(photo_id: str):
 @router.post("/critique/{photo_id}/cancel", response_model=schemas.CritiqueCancelResponse)
 def cancel_photo_critique(photo_id: str):
     """
-    Cancels an ongoing photo critique generation task safely.
+    Cancels an ongoing photo critique generation task safely and frees model memory.
     """
-    from services.critique_status import critique_status_manager
-    critique_status_manager.request_cancel(photo_id)
+    ChatService.cancel_critique(photo_id)
     return schemas.CritiqueCancelResponse(
         photo_id=photo_id,
         status="cancelled",

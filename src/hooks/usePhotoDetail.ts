@@ -153,6 +153,68 @@ export function usePhotoDetail() {
 
   const critiqueAbortControllerRef = useRef<AbortController | null>(null);
 
+  const pollAndRecoverCritique = async (photoId: string, signal: AbortSignal): Promise<string | null> => {
+    const maxAttempts = 35; // Poll up to ~50 seconds to allow MLX pipeline completion after sleep
+    const intervalMs = 1500;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      if (signal.aborted) {
+        return null;
+      }
+      try {
+        const st = await api.getCritiqueStatus(photoId);
+        if (st.status === 'completed' && st.critique) {
+          return st.critique;
+        }
+        if (st.status === 'cancelled') {
+          return null;
+        }
+        if (st.status === 'error') {
+          throw new Error(st.message || "비평 생성 오류");
+        }
+      } catch (err: any) {
+        if (err.message && err.message.includes("비평 생성 오류")) {
+          throw err;
+        }
+        // Silently tolerate transient network connection drops during OS sleep/wake
+      }
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+    return null;
+  };
+
+  // Re-sync on sleep wake-up (visibility change, window focus, network online)
+  useEffect(() => {
+    const handleWakeOrFocus = async () => {
+      const { activeCritiqueJob, selectedPhotoId: currentSelectedId } = useAppStore.getState();
+      const targetId = activeCritiqueJob?.photoId || currentSelectedId;
+      if (!targetId) return;
+
+      try {
+        const st = await api.getCritiqueStatus(targetId);
+        if (st.status === 'completed' && st.critique) {
+          if (useAppStore.getState().selectedPhotoId === targetId) {
+            setCritique(st.critique);
+          }
+          queryClient.invalidateQueries({ queryKey: ['critiques'] });
+          queryClient.invalidateQueries({ queryKey: ['photoDetail', targetId] });
+        }
+      } catch {
+        // Silently ignore if backend is still initializing/waking up
+      }
+    };
+
+    window.addEventListener('focus', handleWakeOrFocus);
+    window.addEventListener('online', handleWakeOrFocus);
+    document.addEventListener('visibilitychange', handleWakeOrFocus);
+
+    return () => {
+      window.removeEventListener('focus', handleWakeOrFocus);
+      window.removeEventListener('online', handleWakeOrFocus);
+      document.removeEventListener('visibilitychange', handleWakeOrFocus);
+    };
+  }, [queryClient]);
+
   const handleRequestCritique = async () => {
     const currentId = selectedPhotoId;
     if (!currentId || generatingCritiquePhotoIds.has(currentId)) return;
@@ -179,6 +241,25 @@ export function usePhotoDetail() {
       if (err.name === 'AbortError' || abortController.signal.aborted) {
         return;
       }
+
+      // Potential socket disconnect caused by system sleep/wake.
+      // Attempt recovery by polling backend status before treating as failure.
+      try {
+        const recoveredCritique = await pollAndRecoverCritique(currentId, abortController.signal);
+        if (abortController.signal.aborted) return;
+
+        if (recoveredCritique) {
+          if (useAppStore.getState().selectedPhotoId === currentId) {
+            setCritique(recoveredCritique);
+          }
+          queryClient.invalidateQueries({ queryKey: ['critiques'] });
+          queryClient.invalidateQueries({ queryKey: ['photoDetail', currentId] });
+          return;
+        }
+      } catch (recoverErr) {
+        console.warn("Critique recovery attempt error:", recoverErr);
+      }
+
       if (useAppStore.getState().selectedPhotoId === currentId) {
         console.error("Failed to generate critique:", err);
         setCritique("비평을 생성하는 도중 오류가 발생했습니다.");
@@ -195,6 +276,7 @@ export function usePhotoDetail() {
       }, 3500);
     }
   };
+
 
   const handleCancelCritique = async () => {
     const currentId = selectedPhotoId;
