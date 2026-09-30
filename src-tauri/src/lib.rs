@@ -59,6 +59,11 @@ fn reveal_in_finder(path: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn save_binary_file(path: String, data: Vec<u8>) -> Result<(), String> {
+    std::fs::write(&path, &data).map_err(|e| format!("Failed to write file at '{}': {}", path, e))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let state = Arc::new(AppState {
@@ -74,7 +79,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(state.clone())
-        .invoke_handler(tauri::generate_handler![get_api_port, reveal_in_finder])
+        .invoke_handler(tauri::generate_handler![get_api_port, reveal_in_finder, save_binary_file])
         .setup(move |app| {
             let app_handle = app.handle().clone();
             let state_for_thread = state_clone.clone();
