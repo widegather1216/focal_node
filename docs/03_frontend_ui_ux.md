@@ -66,19 +66,33 @@
 * **시나리오:** 선택한 다수의 사진을 지정 폴더로 복사 추출할 때 노출되는 진행 상황 모달.
 * **구성:** EventSource SSE 스트림으로 백엔드의 실시간 내보내기 파일 복사 프로그레스를 수신하여 렌더링.
 
+### 2.7. AI 비평 매거진 문서 뷰어 및 내보내기 (`CritiqueDocumentModal`)
+* **시나리오:** 개별 사진의 비평 상세 보기 또는 다중 선택 사진의 종합 비평 리포트를 열람할 때 노출되는 풀스크린/문서 모달.
+* **구성:**
+  * **매거진/에디토리얼 레이아웃:** 사진 원본, EXIF 메타데이터 배지, 그리고 AI 비평 본문을 고급스러운 흑백 모노크롬 매거진 양식으로 렌더링 (`CritiqueContentRenderer`).
+  * **Markdown(.md) 및 PDF(.pdf) 저장:** 비평 결과와 메타데이터를 정형화된 마크다운 또는 인쇄 품질의 PDF 파일로 로컬 저장.
+  * **실시간 진행률 및 취소 위젯:** 비평 생성 중 실시간 프로그레스 바(`CritiqueProgressWidget`), 취소 버튼, 백그라운드 진행 알림 토스트(`GlobalCritiqueToast`) 제공.
+
+### 2.8. AI 모델 다운로드 관리자 (`ModelDownloadModal`)
+* **시나리오:** 앱 최초 구동 시 또는 모델 다운로드 수동 트리거 시 노출되는 모달.
+* **구성:** SigLIP 2, Gemma 4, UniPercept 각 모델의 다운로드 바이트/진행률(%)을 시각화하고 실패 시 재시도 트리거 제공.
+
 ---
 
-## 3. 단일 책임 원칙(SRP) 컴포넌트 모듈화 매핑 [NEW]
+## 3. 단일 책임 원칙(SRP) 컴포넌트 모듈화 매핑
 
-프론트엔드의 대형 뷰들은 모두 명확한 목적의 서브 컴포넌트로 해체되어 가독성과 유지보수성이 극대화되어 있습니다:
+프론트엔드의 컴포넌트들은 모두 명확한 목적의 서브 컴포넌트로 해체되어 가독성과 유지보수성이 극대화되어 있습니다:
 
 | 메인 뷰 컴포넌트 | 서브 컴포넌트 & 커스텀 훅 모듈 | 역할 및 UI 책임 범위 |
 | :--- | :--- | :--- |
 | **`PhotoGallery`** | `PhotoCard`, `useDebounce` | 수직 가상화 그리드 배치 전담 / 카드 셀 UI 및 500ms 검색어 디바운스 훅 분리 |
-| **`CritiqueView`** | `CritiqueSummaryCard`, `CritiqueCard` | AI 비평 대시보드 레이아웃 조립 / 종합 요약 모달 카드 및 개별 비평 카드 UI 분리 |
+| **`CritiqueView`** | `CritiqueSummaryCard`, `CritiqueCard`, `CritiqueDocumentModal`, `CritiqueContentRenderer`, `CritiqueProgressWidget`, `GlobalCritiqueToast` | AI 비평 대시보드 레이아웃 조립 / 종합 요약 카드, 개별 비평 카드, 에디토리얼 문서 뷰어 모달, 비평 텍스트 파서, 진행률 위젯 및 전역 토스트 분리 |
 | **`FullscreenViewer`** | `FullscreenMetadataOverlay`, `useFullscreenControls` | 원본/디코딩 이미지 캔버스 / EXIF 메타데이터 플로팅 패널 및 단축키/확대/이동 훅 분리 |
 | **`Sidebar`** | `FolderList`, `IndexingProgressCard` | 사이드바 네비게이션 탭 / 인덱싱 폴더 목록 다이얼로그 및 실시간 진행바 UI 분리 |
 | **`AnalyticsView`** | `AnalyticsKpiGrid`, `GearDonutCharts`, `ExifBarCharts` | 장비 분석 대시보드 조립 / KPI 카드, 도넛 차트, 막대 차트(`use35mmMode` 캡슐화) 분리 |
-| **`DetailPanel`** | `PhotoExifView`, `PhotoCritiqueView`, `PhotoAiAnalysisView` | 우측 슬라이드 패널 / EXIF 표, AI 비평 뷰, AI 캡션/태그 편집 폼 서브 뷰 분리 |
-| **`App`** | `AppSplash` | 전체 앱 레이아웃 및 탭 디스패처 / 백엔드 초기 구동 대기 및 에러 화면 분리 |
+| **`DetailPanel`** | `PhotoExifView`, `PhotoCritiqueView`, `PhotoAiAnalysisView` | 우측 슬라이드 패널 / EXIF 표, AI 비평 뷰(문서 보기/재생성/취소 연동), AI 캡션/태그 편집 폼 서브 뷰 분리 |
+| **`App`** | `AppSplash`, `ModelDownloadModal` | 전체 앱 레이아웃 및 탭 디스패처 / 백엔드 초기 구동 대기 화면 및 AI 모델 다운로드 현황 모달 분리 |
+| **`SearchFilterMenu`** | `FilterRangeInput` | 카메라/렌즈 드롭다운 및 ISO/조리개/초점거리 Min-Max 숫자 슬라이더 범위 필터 분리 |
+| **공통 (Common)** | `ErrorBoundary`, `LoadingSpinner` | 렌더링 에러 경계선 격리 및 통일된 디자인 시스템 스피너 애니메이션 제공 |
+
 

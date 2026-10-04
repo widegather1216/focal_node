@@ -1,6 +1,6 @@
 # [Project Master] AI 기반 로컬 사진 검색 데스크탑 앱
 
-본 프로젝트는 SigLIP 2, Gemma 4 E4B-it, UniPercept 8B 모델을 활용하여, 외부 클라우드 전송 없이 로컬 환경에서 프라이버시를 완벽히 보호하며 사진을 관리하고 자연어로 검색할 수 있는 데스크탑 애플리케이션입니다.
+본 프로젝트는 SigLIP 2, Gemma 4 (12B-it-8bit), UniPercept 8B 모델을 활용하여, 외부 클라우드 전송 없이 로컬 환경에서 프라이버시를 완벽히 보호하며 사진을 관리하고 자연어로 검색할 수 있는 데스크탑 애플리케이션입니다.
 
 메모리를 극도로 절약하기 위해 Electron 대신 **Tauri + Python Sidecar** 아키텍처를 채택하고 있습니다.
 
@@ -14,48 +14,46 @@
    * ChromaDB 벡터 데이터베이스 컬렉션 구성
 
 2. ⚙️ **[백엔드 파이프라인 및 API / AI 프롬프트 명세](./02_backend_pipeline_api.md)**
-   * Indexing Service 백그라운드 워크플로우
-   * FastAPI API 엔드포인트 규격 및 3계층 (Router-Service-Repository) 구조
-   * Gemma 4 E4B-it 이미지 분석 시스템 프롬프트
+   * Indexing Service 백그라운드 워크플로우 및 원자적 보상 트랜잭션
+   * FastAPI API 엔드포인트 규격 (사진, 인덱싱, 검색, 비평, 장비 분석, 모델 다운로더)
+   * Gemma 4 (12B-it-8bit) 이미지 분석 시스템 프롬프트
 
 3. 🎨 **[프론트엔드 아키텍처 및 UI/UX 설계](./03_frontend_ui_ux.md)**
    * Zustand 전역 상태 및 TanStack Query 서버 상태 관리
-   * 가상 스크롤, `AnalyticsView`, AI 비평 패널 및 단일 책임 원칙(SRP) 서브 컴포넌트 모듈화
+   * 가상 스크롤, `AnalyticsView`, AI 비평 에디토리얼 문서 뷰어(`CritiqueDocumentModal`), PDF/MD 저장 및 SRP 서브 컴포넌트 모듈화
 
 4. ⚠️ **[에이전트 구현 제약사항 명세 (중요)](./04_implementation_constraints.md)**
    * FastAPI 동적 포트 할당 및 Tauri 포트 주입 규칙
    * SQLite WAL 모드 및 외래 키 동시성 설정
-   * 메모리 내(In-Memory) RAW 파일 스트리밍 구현 규칙
-   * CPU Bound 작업의 이벤트 루프 블로킹 방지 대책
+   * 메모리 내(In-Memory) RAW 파일 스트리밍 및 동시 디코딩 세마포어(`MAX_CONCURRENT_DECODES=3`)
+   * CPU Bound 작업의 이벤트 루프 블로킹 방지 및 비평 취소 대책
 
 5. 🤖 **[AI 모델 설치 및 로컬 구동 가이드](./05_ai_model_setup.md)**
-   * Gemma 4 E4B-it 설치 및 MLX 구동 방법
+   * Gemma 4 (12B-it-8bit) 설치 및 MLX 구동 방법
    * SigLIP 2 설치 및 PyTorch MPS 가속 구동 방법
-   * UniPercept 8B 비평 모델 구동 및 메모리 수동 언로드 지침
+   * UniPercept 8B 비평 모델 구동 및 메모리 수동/자동 언로드 지침
 
 6. 🏗️ **[코드 구조 및 백엔드/프론트엔드 아키텍처 명세](./06_code_structure_architecture.md)**
    * 전체 디렉터리 및 백엔드 3계층/프론트엔드 서브패키지 모듈화 아키텍처
-   * 모듈화된 인덱서 서브 패키지 (`services/indexer/`) 구조
+   * 인덱싱 서비스(`indexing_service.py`)와 상태 관리(`indexing_state.py`) 구조
    * `SearchService`, `ChatService`, `PhotoRepository`, `VectorRepository` 및 프론트엔드 SRP 서브컴포넌트 역할
 
-7. 💡 **[스마트 앨범 기획서](./07_plan_smart_albums.md)** & **[장비 통계 기획서](./08_plan_gear_analytics.md)**
-   * 저장 검색 조건 기반 스마트 앨범 기획
-   * 장비 사용 비율(카메라, 렌즈, 화각, 조리개) 통계 집계 명세
-
-8. 📚 **[코드베이스 함수 인벤토리 및 명세서](./09_codebase_function_inventory.md)**
+7. 📚 **[코드베이스 함수 인벤토리 및 명세서](./09_codebase_function_inventory.md)**
    * 백엔드(FastAPI), 데스크탑 호스트(Tauri/Rust), 프론트엔드(React/TS 서브컴포넌트/훅/타입) 파일별 함수 및 API 명세
    * 백엔드 및 프론트엔드 소스 코드 추상화(Abstraction) 및 모듈화 달성 현황
 
-9. 🎨 **[디자인 시스템 및 UI/UX 테마 가이드](./10_design_system_theme.md)**
+8. 🎨 **[디자인 시스템 및 UI/UX 테마 가이드](./10_design_system_theme.md)**
    * 「The Neutral Dark Studio」 디자인 철학 및 핵심 원칙
    * 모노크롬 다크 팔레트, 듀얼 폰트(산세리프 + 모노스페이스 EXIF), 컴포넌트 규격 및 CSS 변수
 
-10. 🗺️ **[전체 개발 로드맵 (ROADMAP.md)](./ROADMAP.md)**
-    * Phase 1~19 마일스톤 완료 및 백엔드/프론트엔드 모듈화 리팩토링 현황
+9. 🗺️ **[전체 개발 로드맵 및 백로그 (ROADMAP.md)](./ROADMAP.md)**
+   * Phase 1~21 마일스톤 완료 (비평 문서 뷰어, PDF/MD 내보내기, 모델 다운로더 등)
+   * 향후 백로그: 스마트 앨범(Smart Albums) 기획 명세
 
-11. 🔬 **연구 및 기술 분석 자료 (Research)**
+10. 🔬 **연구 및 기술 분석 자료 (Research)**
     * **[UniPercept RAM 30GB 점유 원인 분석 및 최적화 리포트](./research/UniPercept_Memory_Analysis.md)**
     * **[UniPercept 논문 한국어 완역본](./research/UniPercept_Paper_Korean.md)**
+
 
 ---
 

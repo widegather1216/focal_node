@@ -68,6 +68,7 @@ except Exception as e:
 
 ### 3.1. 스트리밍 구현 규칙
 * 원본 이미지 서빙 엔드포인트 `/api/photos/{id}/original` 요청 시, 원본 파일이 RAW 포맷인 경우에는 디스크에 어떠한 임시 파일도 작성해선 안 되며, 메모리 상에서 직접 디코딩하여 JPEG/WebP `StreamingResponse`로 반환해야 합니다.
+* **동시 디코딩 세마포어 제약:** 고용량 RAW 파일(ARW, CR3 등)의 동시 디코딩으로 인한 순간 메모리 급증을 방지하기 위해, 백엔드는 **최대 3개 동시 디코딩 세마포어(`MAX_CONCURRENT_DECODES = 3`)**를 강제해야 합니다.
 * **썸네일 캐시 예외:** 단, 갤러리 탐색 시 매번 무거운 RAW 파일 디코딩을 시도하면 심각한 CPU 점유와 UI 렉을 유발합니다. 썸네일 엔드포인트 `/api/photos/{id}/thumbnail`은 **정식 썸네일 캐시 디렉토리**를 거쳐야 합니다.
   * 인덱싱 시점에 1회 썸네일을 생성하여 캐시 폴더에 저장하고, 썸네일 조회 시 캐시 폴더에서 파일을 즉시 서빙합니다.
   * 캐시 미스(Cache Miss)가 발생한 경우에 한해, 메모리 상에서 `rawpy`로 원본 RAW를 파싱 후 크기를 줄여 응답하고 동시에 캐시 폴더에 쓰기를 실행합니다.
@@ -76,7 +77,7 @@ except Exception as e:
 
 ## 4. CPU-Bound 추론 작업의 이벤트 루프 블로킹 차단
 
-FastAPI는 비동기 싱글 스레드 이벤트 루프를 사용합니다. 이미지 전처리, 디코딩, SigLIP 2 및 Gemma 4 E4B-it 로드와 추론(MLX) 로직은 리소스를 극도로 점유하는 **대표적인 CPU Bound(연산 집약적) 작업**입니다.
+FastAPI는 비동기 싱글 스레드 이벤트 루프를 사용합니다. 이미지 전처리, 디코딩, SigLIP 2 및 Gemma 4 (12B-it-8bit) 로드와 추론 로직은 리소스를 극도로 점유하는 **대표적인 CPU Bound(연산 집약적) 작업**입니다.
 
 ### 4.1. 비차단(Non-blocking) 비동기 처리
 * 이미지 분석 및 추론 함수를 비동기 루프에서 호출할 때는 반드시 **`asyncio.to_thread()`**를 사용하여 백엔드 내부의 별도 워커(Worker) 스레드 풀에서 동작하도록 격리해야 합니다.
@@ -87,16 +88,18 @@ import asyncio
 
 async def index_file_endpoint(file_path: str):
     # 이벤트 루프 차단 없이 스레드 풀에서 무거운 AI 연산 수행
-    result = await asyncio.to_thread(worker.index_single_file_sync, file_path)
+    result = await asyncio.to_thread(worker_indexing_func, file_path)
     return result
 ```
 
 ### 4.2. Gemma 4 및 UniPercept 8B 메모리 관리 규칙
-* Gemma 4 E4B-it: **60초간 대기하는 타이머 기반 Keep-alive 전략**을 적용합니다.
-* UniPercept 8B: 16GB VRAM 점유를 최소화하기 위해 사진 비평 생성이 완료된 직후 즉시 `UniPerceptAdapter.unload_model()` (`mx.clear_cache()`)을 실행해 메모리를 반환해야 합니다.
+* Gemma 4 (12B-it-8bit): **60초간 대기하는 타이머 기반 Keep-alive 전략**을 적용합니다.
+* UniPercept 8B: 16GB VRAM 점유를 최소화하기 위해 `BaseKeepAliveModel` 기반 60초 타이머를 적용하고, 언로드 시 `UniPerceptAdapter.unload_model()` (`torch.mps.empty_cache()` 및 `gc.collect()`)을 실행해 메모리를 반환해야 합니다.
 
-### 4.3. 비동기 인덱싱 동시성 세마포어 제약 [NEW]
-* 백그라운드 인덱싱 조율 워커(`worker.py`)에서 수천 장의 사진을 비동기 처리할 때, 시스템 메모리/VRAM OOM을 방지하기 위해 **최대 4개 동시 작업 세마포어(`asyncio.Semaphore(4)`)** 제약을 강제합니다.
+### 4.3. 비동기 인덱싱 동시성 세마포어 및 취소 제약
+* 백그라운드 인덱싱 조율기(`services/indexing_service.py`)에서 수천 장의 사진을 비동기 처리할 때, 시스템 메모리/VRAM OOM을 방지하기 위해 **최대 4개 동시 작업 세마포어(`asyncio.Semaphore(4)`)** 제약을 강제합니다.
+* 비평(Critique) 생성 중 사용자가 취소 요청 시(`/api/chat/critique/cancel/{photo_id}`), 모델 추론 플래그를 즉시 감지하여 조기 중단하고 점유 메모리를 반환해야 합니다.
+
 
 ---
 

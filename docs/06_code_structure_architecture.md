@@ -25,16 +25,22 @@ focal_node/
 ├── src-tauri/               # Tauri(Rust) 백엔드 및 앱 패키징 로직
 │   ├── tauri.conf.json      # Tauri 앱 설정 및 Sidecar 바이너리 매핑 설정
 │   └── src/lib.rs           # Sidecar 기동, 포트 파싱 및 이벤트 브로드캐스팅
-├── src/                     # React/Vite 프론트엔드 코드 모듈 [NEW]
+├── src/                     # React/Vite 프론트엔드 코드 모듈
 │   ├── types/               # 중앙 데이터 타입 정의 (photo.ts, critique.ts)
-│   ├── hooks/               # 커스텀 훅 (useDebounce, useFullscreenControls, usePhotoDetail 등)
+│   ├── hooks/               # 커스텀 훅 (useDebounce, useFullscreenControls, usePhotoDetail, useBackendInit 등)
 │   ├── services/            # API 통신 클라이언트 (api.ts)
 │   ├── store/               # Zustand 로컬 전역 상태 (useAppStore.ts)
 │   ├── constants/           # 디자인 시스템 및 테마 상수 (theme.ts)
 │   └── components/          # 단일 책임 원칙(SRP) 적용 서브 컴포넌트 패키지
-│       ├── common/          # 공통 UI 컴포넌트 (LoadingSpinner, AppSplash)
+│       ├── common/          # 공통 UI 컴포넌트 (LoadingSpinner, AppSplash, ErrorBoundary)
 │       ├── gallery/         # 갤러리 그리드 셀 (PhotoCard)
-│       ├── critique/        # AI 비평 종합 요약 및 개별 카드 (CritiqueSummaryCard, CritiqueCard)
+│       ├── critique/        # AI 비평 카드, 에디토리얼 문서 뷰어 및 진행률 위젯
+│       │   ├── CritiqueCard.tsx
+│       │   ├── CritiqueSummaryCard.tsx
+│       │   ├── CritiqueDocumentModal.tsx    # 매거진 리포트 모달 & MD/PDF 저장
+│       │   ├── CritiqueContentRenderer.tsx  # 비평 내용 전용 에디토리얼 렌더러
+│       │   ├── CritiqueProgressWidget.tsx   # 실시간 비평 진행 프로그레스 바
+│       │   └── GlobalCritiqueToast.tsx      # 백그라운드 비평 완료/진행 토스트
 │       ├── fullscreen/      # 풀스크린 EXIF 오버레이 (FullscreenMetadataOverlay)
 │       ├── sidebar/         # 폴더 다이얼로그 및 인덱싱 프로그레스 (FolderList, IndexingProgressCard)
 │       ├── analytics/       # 통계 요약 및 차트 (AnalyticsKpiGrid, GearDonutCharts, ExifBarCharts)
@@ -52,42 +58,41 @@ focal_node/
 ├── backend/                 # Python FastAPI 백엔드 (AI 추론 / DB 관리)
 │   ├── app/
 │   │   ├── api/             # 슬림화된 FastAPI 라우터 모듈 모음
-│   │   │   ├── analytics.py # 장비 통계 및 분석 API
-│   │   │   ├── chat.py      # 포트폴리오 비평 및 AI 요약 API
-│   │   │   ├── folders.py   # 폴더 관리(조회, 삭제) API
-│   │   │   ├── indexing.py  # 백그라운드 인덱싱 제어(시작, 동기화, 파우즈, 캔슬) API
-│   │   │   ├── photos.py    # 갤러리 목록, 메타데이터, 썸네일/원본 스트리밍 API
-│   │   │   └── search.py    # 시맨틱 하이브리드 검색 및 유사도 쿼리 API
+│   │   │   ├── analytics.py # 장비 통계 및 분석 API (/api/analytics/stats)
+│   │   │   ├── chat.py      # 포트폴리오 비평, 취소, 문서 요약 API (/api/chat/*)
+│   │   │   ├── folders.py   # 폴더 관리(조회, 삭제) API (/api/folders)
+│   │   │   ├── indexing.py  # 백그라운드 인덱싱 제어 API (/api/index/*)
+│   │   │   ├── photos.py    # 갤러리 목록, 메타데이터, 썸네일/원본 스트리밍 API (/api/photos/*)
+│   │   │   └── search.py    # 시맨틱 하이브리드 검색 및 유사도 쿼리 API (/api/search/*)
 │   │   ├── core/
 │   │   │   └── ports.py     # AI 모듈 인터페이스 (ImageEmbeddingPort, ImageCaptioningPort 등)
 │   │   ├── repositories/    # 데이터 액세스 계층 (Data Access Layer)
 │   │   │   ├── photo_repository.py  # SQLite ORM 쿼리, EXIF 필터링, 검색 조건 조합
-│   │   │   └── vector_repository.py # ChromaDB Persistent 벡터 조작 및 캡슐화
+│   │   │   ├── vector_repository.py # ChromaDB Persistent 벡터 조작 및 캡슐화
+│   │   │   └── atomic_transaction.py # 원자적 트랜잭션 헬퍼
 │   │   ├── services/        # 비즈니스 로직 처리 계층 (Business Logic Layer)
-│   │   │   ├── indexer/     # 모듈화된 인덱서 서브 패키지 [NEW]
-│   │   │   │   ├── status.py   # 인덱싱 상태, pause/cancel 이벤트 및 글로벌 상태 관리
-│   │   │   │   ├── scanner.py  # 디렉터리 스캔, 지원 확장자, SHA-256 해시 계산
-│   │   │   │   ├── cleaner.py  # 좀비 레코드 청소, 폴더 삭제, SQLite-ChromaDB 보상 트랜잭션
-│   │   │   │   └── worker.py   # 단일/배치 파일 인덱싱 워커, 비동기 조율 루프, 인플레이스 재인덱싱
-│   │   │   ├── indexing_service.py # services/indexer 서브모듈을 하위 호환 재노출하는 Facade
+│   │   │   ├── indexing_service.py # 스캐닝, 파이프라인 호출, 원자적 삭제, 백그라운드 인덱싱 조율
+│   │   │   ├── indexing_state.py   # 인덱싱 상태 관리, pause/resume/cancel 스레드 세이프 이벤트
+│   │   │   ├── critique_status.py  # 실시간 비평 생성 진행 상태 추적 매니저
 │   │   │   ├── pipeline.py         # 파이프라인 패턴 기반 인덱싱 단계(Step) 조율
 │   │   │   ├── photo.py            # 원본/썸네일 생성 및 캐싱, 원자적 레코드 저장
-│   │   │   ├── search_service.py   # 하이브리드 검색(텍스트+SigLIP 2+EXIF 필터) 비즈니스 로직 [NEW]
-│   │   │   ├── chat_service.py     # VLM 사진 비평 생성, UniPercept/Gemma 메모리 교체, 요약 [NEW]
-│   │   │   ├── model_downloader.py # Hugging Face 모델 백그라운드 다운로더 [NEW]
+│   │   │   ├── search_service.py   # 하이브리드 검색(텍스트+SigLIP 2+EXIF 필터) 비즈니스 로직
+│   │   │   ├── chat_service.py     # VLM 사진 비평 생성, 비평 취소, 요약 보고서 비즈니스 로직
+│   │   │   ├── model_downloader.py # Hugging Face 모델 백그라운드 다운로더 및 상태 관리
 │   │   │   ├── mlx_adapters.py     # SigLIP 2 및 Gemma 4 MLX 모델 로딩, 60s Keep-alive 캐시
-│   │   │   ├── unipercept_adapter.py # UniPercept 8B 비평 전문 모델 어댑터 및 메모리 언로드
+│   │   │   ├── unipercept_adapter.py # UniPercept 8B 비평 전문 모델 어댑터 (PyTorch MPS)
 │   │   │   ├── ai_factory.py       # AI 어댑터 싱글톤 팩토리
+│   │   │   ├── base_model.py       # Keep-alive 모델 기반 클래스 및 GPU_LOCK
 │   │   │   └── taxonomy.py         # Zero-shot 비주얼 키워드 분류체계
 │   │   ├── utils/
 │   │   │   ├── image.py            # RAW 디코딩, EXIF 메타데이터 파싱
-│   │   │   └── process.py          # 부모 프로세스 데드락 감시 (watch_parent) [NEW]
+│   │   │   └── process.py          # 부모 프로세스 데드락 감시 (start_parent_watcher)
 │   │   ├── config.py               # 개발/운영 환경 판별 및 데이터 경로 설정
 │   │   ├── database.py             # SQLAlchemy 접속(WAL 모드, FK 강제) 및 스키마 마이그레이션 (run_migrations)
-│   │   ├── models.py               # SQLite ORM 스키마 (Image, ImageMetadata, AIAnalysis, IndexedFolder 등)
+│   │   ├── models.py               # SQLite ORM 스키마 (Image, ImageMetadata, AIAnalysis, IndexedFolder)
 │   │   ├── chroma.py               # ChromaDB 로컬 Persistent 설정 및 셀프 힐링
 │   │   ├── schemas.py              # Pydantic API 요청/응답 스키마
-│   │   └── main.py                 # FastAPI 진입점 (슬림화된 엔트리포인트, uvicorn 동적 포트 서빙)
+│   │   └── main.py                 # FastAPI 진입점 (모델 다운로드 엔드포인트, uvicorn 동적 포트 서빙)
 │   └── requirements.txt            # Python 의존성
 ├── docs/                    # 프로젝트 공식 기획 및 명세 문서 모음
 └── ~/.config/focal_node/    # 운영 데이터 폴더 (~/.config/focal_node_dev 개발용)
@@ -106,21 +111,23 @@ focal_node/
 *   **`main.py`:** 슬림화된 진입점으로 FastAPI 라우터 등록 및 `uvicorn` 동적 포트 서빙(`[Sidecar] PORT: {port}`)에 집중하며, `services/model_downloader.py` 및 `utils/process.py`를 호출하여 백그라운드 태스크를 개시합니다.
 
 ### 3.2. AI 어댑터 및 팩토리 계층 (`core/ports.py`, `services/mlx_adapters.py`, `services/ai_factory.py`)
-*   `ports.py`에 정의된 포트 추상 인터페이스를 기반으로 MLX 가속 어댑터를 구현합니다.
-*   **SigLIP2Adapter:** 768차원 L2 정규화 벡터 생성 및 Zero-shot 시각 키워드 분류를 수행합니다.
-*   **GemmaAdapter / UniPerceptAdapter:** Gemma 4 (E4B-it) 모델 및 UniPercept 모델을 통한 캡션/비평 생성. Gemma는 60초 Keep-alive 데몬으로 VRAM을 자진 반환하며, UniPercept는 16GB 메모리 절약을 위해 비평 완료 후 즉시 모델 언로드를 실행합니다.
+*   `ports.py`에 정의된 포트 추상 인터페이스를 기반으로 AI 어댑터를 구현합니다.
+*   **SigLIP2Adapter:** 768차원 L2 정규화 벡터 생성 및 Zero-shot 시각 키워드 분류를 수행하며 메모리에 상주합니다.
+*   **GemmaAdapter / UniPerceptAdapter:**
+    *   **Gemma 4 (12B-it-8bit):** MLX C++ 네이티브 가속 기반으로 서정적 캡션 및 키워드 생성. 작업 완료 후 60초 Keep-alive 버퍼 유지 후 메모리를 자진 반환합니다.
+    *   **UniPercept 8B:** PyTorch MPS 백엔드 기반 고정밀 사진 비평 생성. `BaseKeepAliveModel` 60초 유지 또는 언로드 시 `torch.mps.empty_cache()`를 통해 메모리를 확보합니다.
 
-### 3.3. 인덱서 서브 모듈 패키지 (`services/indexer/` 및 `services/indexing_service.py`)
-*   **단일 책임 분리:** 547라인의 `indexing_service.py`를 `status.py`(상태 관리), `scanner.py`(파일 스캔/해시), `cleaner.py`(좀비 레코드 청소/원자적 삭제), `worker.py`(인덱싱 파이프라인 워커)로 해체하여 모듈화했습니다.
-*   **Facade 패턴:** 기존 `indexing_service.py`는 `services.indexer` 모듈들을 re-export하여 100% 역방향 호환성을 유지합니다.
-*   **이벤트 루프 비차단:** 무거운 연산은 `asyncio.to_thread`로 백그라운드 스레드 풀에 위임합니다.
+### 3.3. 인덱싱 서비스 및 상태 조율 (`services/indexing_service.py`, `services/indexing_state.py`)
+*   **단일 책임 분리:** `indexing_state.py`가 pause/resume/cancel 이벤트 플래그 및 현재 진행률 상태를 독립적으로 관리하며, `indexing_service.py`가 디렉터리 스캔, SHA-256 검사, `IndexingPipeline` 실행 및 원자적 삭제를 처리합니다.
+*   **이벤트 루프 비차단:** 무거운 연산은 `asyncio.to_thread`로 백엔드 스레드 풀에 위임합니다.
+*   **동시성 세마포어:** 시스템 부하 방지를 위해 백그라운드 인덱싱은 4개 동시 작업(`asyncio.Semaphore(4)`), RAW 이미지 디코딩은 3개 동시 작업(`MAX_CONCURRENT_DECODES = 3`)으로 제어합니다.
 *   **보상 트랜잭션:** SQLite `commit` 실패 시 `VectorRepository.delete`를 호출하여 ChromaDB의 벡터를 즉시 롤백합니다.
 
 ### 3.4. 비즈니스 서비스 & 레포지토리 계층 (`services/search_service.py`, `services/chat_service.py`, `repositories/`)
 *   **`PhotoRepository`**: SQLite ORM 질의, EXIF 조건 결합, 페이지네이션 및 장비 분석 통계 집계 쿼리를 캡슐화합니다.
 *   **`VectorRepository`**: ChromaDB CRUD 조작 및 K-NN 유사도 검색을 전담 캡슐화합니다.
 *   **`SearchService`**: SQLite 텍스트 검색 결과와 SigLIP 2 벡터 검색 결과를 가중 합성하는 하이브리드 검색 비즈니스 로직을 수행합니다.
-*   **`ChatService`**: VLM 모델 선택(Gemma vs UniPercept), 영-한 번역 및 비평 요약 보고서 생성 워크플로우를 처리합니다.
+*   **`ChatService`**: VLM 모델 선택(Gemma vs UniPercept), 비평 취소, 영-한 번역 및 비평 요약 보고서 생성 워크플로우를 처리합니다.
 
 ---
 
@@ -134,10 +141,11 @@ Tauri 백엔드(`src-tauri/src/lib.rs`)는 구동 시 Python 백엔드 프로세
 프론트엔드 코드는 거대 모놀리식 뷰를 피하고 **단일 책임 원칙(SRP)**과 **리렌더링 성능 최적화**를 보장하도록 구조화되어 있습니다.
 
 * **타입 중앙화 (`src/types/`)**: `photo.ts`와 `critique.ts`로 데이터 타입을 모듈화하여 `api.ts` 및 Zustand Store 간 타입 안전성을 보장합니다.
-* **커스텀 훅 (`src/hooks/`)**: `useFullscreenControls`(뷰어 단축키/확대/이동), `useDebounce`(입력 디바운싱), `usePhotoDetail` 등 비즈니스 및 이벤트 로직을 전용 훅으로 추출했습니다.
+* **커스텀 훅 (`src/hooks/`)**: `useFullscreenControls`(뷰어 단축키/확대/이동), `useDebounce`(입력 디바운싱), `usePhotoDetail`, `useAnalyticsQuery`, `useModelDownloadStatus` 등 비즈니스 및 이벤트 로직을 전용 훅으로 추출했습니다.
 * **서브 컴포넌트 패키지 (`src/components/`)**:
   * **`analytics/`**: `AnalyticsKpiGrid`, `GearDonutCharts`, `ExifBarCharts`로 분리하고, 화각 토글 상태(`use35mmMode`)를 캡슐화하여 페이지 전체 리렌더링을 차단합니다.
-  * **`critique/`**: `CritiqueSummaryCard`, `CritiqueCard`로 분리하여 AI 종합 비평 요약 카드와 개별 비평 항목을 핀포인트 제어합니다.
+  * **`critique/`**: `CritiqueSummaryCard`, `CritiqueCard`, `CritiqueDocumentModal`, `CritiqueContentRenderer`, `CritiqueProgressWidget`, `GlobalCritiqueToast`로 세분화하여 에디토리얼 문서 뷰어, 실시간 진행률 위젯, PDF/MD 내보내기를 모듈식으로 제공합니다.
   * **`fullscreen/` & `sidebar/`**: `FullscreenMetadataOverlay`, `FolderList`, `IndexingProgressCard`로 분리하여 각 오버레이 및 동적 리스트 렌더링에만 전념합니다.
-  * **`detail/` & `common/`**: `PhotoAiAnalysisView`(캡션/태그 편집), `AppSplash`(앱 구동 대기), `LoadingSpinner`(공통 로더) 등 명확한 목적의 서브 뷰로 구성됩니다.
+  * **`detail/` & `common/`**: `PhotoExifView`, `PhotoCritiqueView`, `PhotoAiAnalysisView`, `AppSplash`, `LoadingSpinner`, `ErrorBoundary` 등 명확한 목적의 서브 뷰로 구성됩니다.
+
 

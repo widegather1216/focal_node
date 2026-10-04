@@ -74,22 +74,19 @@ SQLite ORM과 ChromaDB 벡터 스토리지를 전담 조작하는 레포지토�
 
 ---
 
-### 1.5. 모듈화된 인덱서 서브 패키지 (`backend/app/services/indexer/` & `indexing_service.py`)
+### 1.5. 인덱싱 서비스 및 상태 조율 (`backend/app/services/indexing_service.py` & `indexing_state.py`)
 
 | 함수 / 클래스 | 위치 (Module) | 입력 (Parameters) | 출력 (Return Value) | 역할 및 사양 |
 | :--- | :--- | :--- | :--- | :--- |
-| `indexing_status` | `status.py` | (Global Variable) | `dict` | 백그라운드 인덱싱 진행률(`processed_files`, `total_files`, `status`, `current_file`) 상태. |
-| `pause_indexing` / `resume_indexing` / `cancel_indexing` | `status.py` | 없음 | `None` | 백그라운드 인덱싱 큐를 일시정지, 재개 또는 즉시 취소합니다. |
-| `calculate_sha256` | `scanner.py` | `file_path: str` | `str` | 8KB 청크 단위로 파일 SHA-256 해시값(Primary Key)을 계산합니다. |
-| `scan_directory` | `scanner.py` | `folder_paths: list[str]` | `list[str]` | 지원 확장자(RAW 포함) 이미지들을 재귀 스캔하여 반환합니다. |
-| `delete_photo_atomic_sync` | `cleaner.py` | `db, image_id` | `None` | SQLite 및 VectorRepository(ChromaDB)에서 원자적으로 레코드를 삭제합니다. |
-| `cleanup_zombie_records` | `cleaner.py` | `db: Session = None` | `None` | 미존재/삭제 폴더 레코드 및 ChromaDB 고아 임베딩을 정제 청소합니다. |
-| `remove_folder_data` | `cleaner.py` | `folder_path: str, db: Session = None` | `None` | 지정 폴더와 하위 모든 사진 레코드/벡터를 원자적 일괄 삭제합니다. |
-| `run_ai_pipeline_sync` | `worker.py` | `file_path: str` | `tuple[dict, list, dict]` | EXIF, SigLIP 2 임베딩, Gemma 4 캡션을 연속 추론하여 반환합니다. |
-| `index_single_file_sync` | `worker.py` | `file_path: str` | `dict \| str` | 해시 검사, IndexingPipeline 실행 및 수정 파일 인플레이스 교체를 수행합니다. |
-| `reindex_single_photo_inplace` | `worker.py` | `photo_id: str` | `dict` | 기존 사진의 메타데이터와 AI 캡션/임베딩만 제자리에서 재추론 및 업데이트합니다. |
-| `run_indexing_background` | `worker.py` | `folder_paths: list[str]` | `None` (async) | 세마포어(4개) 청크 기반의 비동기 백그라운드 인덱싱 조율 루프를 실행합니다. |
-| `indexing_service` | `indexing_service.py` | (Facade) | N/A | 위 `indexer/` 서브모듈의 모든 주요 함수/변수를 re-export하여 100% 역방향 호환을 제공합니다. |
+| `IndexingStateManager` | `indexing_state.py` | 싱글톤 인스턴스 | N/A | 스레드 세이프 인덱싱 진행 상태, pause/cancel 이벤트 및 상태 딕셔너리 관리. |
+| `pause_indexing` / `resume_indexing` / `cancel_indexing` | `indexing_service.py` | 없음 | `None` | `indexing_state_manager`를 통해 인덱싱 큐를 일시정지, 재개 또는 즉시 취소합니다. |
+| `calculate_sha256` | `indexing_service.py` | `file_path: str` | `str` | 8KB 청크 단위로 파일 SHA-256 해시값(Primary Key)을 계산합니다. |
+| `scan_directory` | `indexing_service.py` | `folder_paths: list[str]` | `list[str]` | 지원 확장자(RAW 포함) 이미지들을 재귀 스캔하여 중복 없이 반환합니다. |
+| `delete_photo_atomic_sync` | `indexing_service.py` | `db, image_id` | `None` | SQLite 및 VectorRepository(ChromaDB)에서 원자적으로 레코드를 보상 삭제합니다. |
+| `cleanup_zombie_records` | `indexing_service.py` | `db: Session = None` | `None` | 디스크에서 제거된 파일 및 고아 ChromaDB 임베딩을 정제 청소합니다. |
+| `remove_folder_data` | `indexing_service.py` | `folder_path: str, db: Session = None` | `None` | 지정 폴더와 하위 모든 사진 레코드/벡터를 원자적 일괄 삭제합니다. |
+| `run_indexing_background` | `indexing_service.py` | `folder_paths: list[str]` | `None` (async) | 세마포어(4개) 기반 비동기 백그라운드 인덱싱 조율 루프를 실행합니다. |
+| `reindex_single_photo_inplace` | `indexing_service.py` | `photo_id: str` | `dict` | 기존 사진의 메타데이터와 AI 캡션/임베딩만 제자리에서 재추론 및 업데이트합니다. |
 
 ---
 
@@ -101,6 +98,7 @@ API 라우터로부터 비즈니스 로직을 분리 캡슐화한 서비스 모�
 | `SearchService.search_photos` | `request: SearchRequest` | `List[Image]` | 텍스트 검색 결과와 SigLIP 2 벡터 검색 결과를 가중 합성하고 EXIF 필터를 적용합니다. |
 | `SearchService.search_similar_photos` | `request: SimilarSearchRequest` | `List[Image]` | 대상 사진의 임베딩을 가져와 ChromaDB K-NN 시각 유사도 검색을 수행합니다. |
 | `ChatService.generate_photo_critique` | `payload: CritiqueRequest` | `Dict[str, Any]` | Gemma 또는 UniPercept VLM 선택에 따른 사진 비평 추론 및 DB 저장을 수행합니다. |
+| `ChatService.cancel_critique` | `photo_id: str` | `None` | 진행 중인 사진 비평 생성 작업을 취소 플래그를 통해 조기 중단하고 메모리를 반환합니다. |
 | `ChatService.generate_critique_summary` | `payload: CritiqueSummaryRequest` | `Dict[str, Any]` | 축적된 비평 데이터들을 바탕으로 Gemma LLM 종합 요약 보고서를 생성합니다. |
 | `photo.generate_and_cache_thumbnail` | `file_path: str, image_id: str` | `bytes` | 가로 360px JPEG 썸네일을 캐시 디렉터리에 원자적 무손실 저장 후 바이트를 반환합니다. |
 | `photo.get_original_image_bytes` | `db_image: DBImage` | `tuple[bytes, str]` | RAW 파일은 실시간 sRGB JPEG 디코딩 스트리밍, 일반 이미지는 원본 바이트를 반환합니다. |
@@ -108,12 +106,12 @@ API 라우터로부터 비즈니스 로직을 분리 캡슐화한 서비스 모�
 
 ---
 
-### 1.7. API 라우터 (`backend/app/api/`)
+### 1.7. API 라우터 (`backend/app/api/` & `main.py`)
 
 * **Photos Router (`api/photos.py`)**
   * `get_photos(limit, offset, parent_dir, db)` ➔ `List[PhotoListResponse]`: `PhotoRepository` 기반 갤러리 조회
-  * `get_photo_thumbnail(id, db)` ➔ `Response(image/jpeg)`: 캐시 우선 썸네일 스트리밍
-  * `get_photo_original(id, db)` ➔ `Response / FileResponse`: RAW 디코딩 / 원본 이미지 스트리밍
+  * `get_photo_thumbnail(id, db)` ➔ `Response(image/jpeg)`: 캐시 우선 썸네일 스트리밍 (동시성 제한 `MAX_CONCURRENT_DECODES=3`)
+  * `get_photo_original(id, db)` ➔ `Response / FileResponse`: RAW 메모리 디코딩 / 원본 이미지 스트리밍
   * `get_photo_detail(id, db)` ➔ `PhotoDetailResponse`: 상세 EXIF 및 AI 분석 정보 조회
   * `patch_photo_metadata(id, payload, db)` ➔ `UpdateMetadataResponse`: 캡션 및 태그 수정
   * `export_photos(payload)` ➔ `StreamingResponse(EventStream)`: 선택 사진 복사 내보내기 진행 상황 스트리밍
@@ -136,12 +134,20 @@ API 라우터로부터 비즈니스 로직을 분리 캡슐화한 서비스 모�
 
 * **Chat Router (`api/chat.py`)**
   * `get_photo_critique(payload)` ➔ `CritiqueResponse`: `ChatService` VLM 비평 생성 위임
+  * `get_photo_critique_status(photo_id)` ➔ `CritiqueStatusResponse`: 실시간 비평 진행률/단계 조회
+  * `cancel_photo_critique(photo_id)` ➔ `CritiqueCancelResponse`: 진행 중인 비평 작업 안전 취소
   * `get_all_critiques(db)` ➔ `List[CritiqueItemResponse]`: 비평 목록 조회
   * `delete_photo_critique(photo_id, db)` ➔ 비평 삭제
   * `generate_critique_summary(payload)` ➔ `CritiqueSummaryResponse`: `ChatService` 비평 종합 보고서 생성 위임
 
 * **Analytics Router (`api/analytics.py`)**
-  * `get_analytics_stats(db)` ➔ `AnalyticsStatsResponse`: `PhotoRepository.get_gear_analytics` 통계 반환
+  * `get_analytics_stats(db)` ➔ `AnalyticsStatsResponse`: `PhotoRepository.get_gear_analytics` 통계 반환 (`GET /api/analytics/stats`)
+
+* **System Routes (`main.py`)**
+  * `health_check()` ➔ `{"status": "ok"}`
+  * `get_model_download_status()` ➔ `GET /api/system/models/status`: 모델별/전체 다운로드 진행 상태 반환
+  * `trigger_model_download()` ➔ `POST /api/system/models/download`: 모델 백그라운드 다운로더 재시작 트리거
+
 
 ---
 
@@ -171,11 +177,21 @@ API 라우터로부터 비즈니스 로직을 분리 캡슐화한 서비스 모�
 | `exportPhotos` | `photoIds, destinationFolder` | `Promise<ExportResult>` | EventSource 스트림으로 사진 내보내기 수행. |
 | `fetchFolders` / `removeFolder` | `path?: string` | `Promise<Folder[]>` | 등록된 폴더 목록 조회 및 unindex 요청. |
 | `startIndexing` / `syncDatabase`| `folderPaths: string[]` | `Promise<any>` | 인덱싱 개시 및 전체 동기화 요청. |
-| `getPhotoCritique` | `photoId: string` | `Promise<{critique: string}>` | 사진 AI 비평 텍스트 요청. |
+| `pauseIndexing` / `resumeIndexing` / `cancelIndexing` | 없음 | `Promise<any>` | 백그라운드 인덱싱 일시정지, 재개, 취소 요청. |
+| `getIndexingStatus` | 없음 | `Promise<any>` | 현재 인덱싱 진행률 및 상태 조회. |
+| `getPhotoCritique` | `photoId: string, signal?: AbortSignal` | `Promise<{critique: string}>` | 사진 AI 비평 텍스트 요청 (AbortController 연동). |
+| `cancelCritique` | `photoId: string` | `Promise<any>` | 진행 중인 비평 생성 작업 즉시 취소 요청. |
+| `getCritiques` | 없음 | `Promise<CritiqueItem[]>` | 비평이 작성된 전체 사진 리스트 조회. |
+| `deleteCritique` | `photoId: string` | `Promise<any>` | 특정 사진의 저장된 비평 삭제. |
+| `getCritiqueSummary` | `photoIds?: string[]` | `Promise<CritiqueSummaryResponse>` | 비평 종합 요약 보고서 생성 요청. |
+| `getCritiqueStatus` | `photoId: string` | `Promise<CritiqueStatus>` | 비평 생성 진행률/단계 실시간 조회. |
 | `reindexPhoto` | `id: string` | `Promise<PhotoDetail>` | 사진 1장 AI 재분석 요청. |
 | `toggleFavorite` | `id: string` | `Promise<{id, is_favorite}>` | 즐겨찾기 상태 변경. |
 | `getPhotoThumbnailUrl` | `id: string` | `string` | `http://127.0.0.1:{port}/api/photos/{id}/thumbnail` URL 생성. |
 | `getPhotoOriginalUrl` | `id: string` | `string` | `http://127.0.0.1:{port}/api/photos/{id}/original` URL 생성. |
+| `getAnalyticsStats` | 없음 | `Promise<AnalyticsStats>` | 카메라, 렌즈, 화각, 조리개 장비 통계 데이터 조회 (`GET /api/analytics/stats`). |
+| `getModelDownloadStatus` | 없음 | `Promise<ModelDownloadStatusResponse>` | AI 모델 백그라운드 다운로드 진행 상태 및 전체 진행률 조회. |
+| `triggerModelDownload` | 없음 | `Promise<any>` | AI 모델 백그라운드 다운로더 수동 트리거. |
 
 ---
 
@@ -185,22 +201,29 @@ API 라우터로부터 비즈니스 로직을 분리 캡슐화한 서비스 모�
 | :--- | :--- | :--- | :--- |
 | `PhotoCard` | `components/gallery/PhotoCard.tsx` | `photo, isSelected, onSelectPhoto, onToggleSelection, onToggleFavorite` | 갤러리 가상화 그리드의 개별 사진 셀 (체크박스, 하트, 썸네일, hover 배지) |
 | `CritiqueSummaryCard` | `components/critique/CritiqueSummaryCard.tsx` | `summaryData, isGeneratingSummary, summaryError, onCopySummary...` | AI 비평 종합 요약 정보 및 토글/복사 모달 카드 |
-| `CritiqueCard` | `components/critique/CritiqueCard.tsx` | `item, index, copiedId, onSelectPhoto, onOpenFullscreen...` | 개별 이미지 AI 비평 정보 및 액션 버튼 카드 |
+| `CritiqueCard` | `components/critique/CritiqueCard.tsx` | `item, index, copiedId, onSelectPhoto, onOpenFullscreen...` | 개별 이미지 AI 비평 정보, 상태 배지 및 액션 버튼 카드 |
+| `CritiqueDocumentModal` | `components/critique/CritiqueDocumentModal.tsx` | `isOpen, onClose, critiques, singleModePhotoId` | 전문 매거진 에디토리얼 비평 리포트 모달 (Markdown / PDF 저장 지원) |
+| `CritiqueContentRenderer` | `components/critique/CritiqueContentRenderer.tsx` | `critiqueText, photo, className` | 비평 본문 구조화 파서 및 전문적인 타이포그래피 서식 렌더러 |
+| `CritiqueProgressWidget` | `components/critique/CritiqueProgressWidget.tsx` | `photoId, onCancel` | 비평 생성 실시간 단계/진행률 프로그레스 바 및 취소 액션 |
+| `GlobalCritiqueToast` | `components/critique/GlobalCritiqueToast.tsx` | 없음 (Zustand 연동) | 백그라운드 비평 진행 상태 및 완료 알림 플로팅 토스트 |
 | `FullscreenMetadataOverlay` | `components/fullscreen/FullscreenMetadataOverlay.tsx` | `photo, isVisible` | 뷰어 하단 플로팅 EXIF 메타데이터(카메라, 렌즈, 화각, 조리개, ISO) 패널 |
 | `FolderList` | `components/sidebar/FolderList.tsx` | `folders, selectedFolder, onSelectFolder, removeFolder...` | 등록된 인덱싱 폴더 목록 표시 및 추가/삭제 다이얼로그 |
 | `IndexingProgressCard` | `components/sidebar/IndexingProgressCard.tsx` | `isIndexing, indexingState, indexingProgress` | 실시간 백그라운드 인덱싱 진행률(%) 및 파일 경로 표시 |
 | `AnalyticsKpiGrid` | `components/analytics/AnalyticsKpiGrid.tsx` | `stats` | 총 사진, 사용 카메라, 렌즈 라인업, 최다 조리개 요약 KPI 카드 4종 |
 | `GearDonutCharts` | `components/analytics/GearDonutCharts.tsx` | `cameras, lenses, colors, customTooltip` | 카메라 바디 및 렌즈 모델 점유율 도넛 차트 2종 시각화 |
 | `ExifBarCharts` | `components/analytics/ExifBarCharts.tsx` | `focal_lengths, focal_lengths_35mm, apertures, customTooltip` | 화각(`use35mmMode` 상태 캡슐화) 및 조리개 사용 분포 막대 차트 2종 시각화 |
+| `PhotoExifView` | `components/detail/PhotoExifView.tsx` | `metadata` | 상세 패널 내 EXIF 메타데이터 키/값 테이블 서브 뷰 |
+| `PhotoCritiqueView` | `components/detail/PhotoCritiqueView.tsx` | `photo, aiAnalysis, onCritiqueUpdated` | 상세 패널 내 AI 비평 생성/취소/문서 보기 및 실시간 진행 위젯 |
 | `PhotoAiAnalysisView` | `components/detail/PhotoAiAnalysisView.tsx` | `aiAnalysis, editing, captionEdit, tagsEdit, handleSave...` | AI 캡션/태그/미학 태그 렌더링 및 사용자 편집/저장 폼 |
 | `FilterRangeInput` | `components/filter/FilterRangeInput.tsx` | `label, minValue, maxValue, onMinChange, onMaxChange` | 검색 필터의 ISO/조리개/초점거리 Min-Max 숫자 범위 입력 컴포넌트 |
 | `ActionBar` | `components/ActionBar.tsx` | `isSelectMode, selectedCount, onToggleSelectMode, onExport, onSelectAll, onDeselectAll` | 상단 다중선택 모드 전환 및 내보내기/전체선택 액션바 컨트롤러 |
 | `ModelDownloadModal` | `components/ModelDownloadModal.tsx` | 없음 (Zustand 연동) | AI 모델 백그라운드 다운로드 진행률 및 취소/에러 모달 다이얼로그 |
 | `AppSplash` | `components/common/AppSplash.tsx` | `backendStatus, backendError, isDownloadingModel` | 앱 초기 구동 시 백엔드 포트 수신 및 환경 준비 대기 화면 |
+| `ErrorBoundary` | `components/common/ErrorBoundary.tsx` | `children, fallback` | 프론트엔드 React 렌더링 에러 격리 바운더리 |
 | `LoadingSpinner` | `components/common/LoadingSpinner.tsx` | `size, color, message, fullScreen` | 공통 로딩 스피너 및 무한 회전 애니메이션 컴포넌트 |
 | `useDebounce` | `hooks/useDebounce.ts` | `value: T, delay: number = 500` | 입력값(검색어 등) 500ms 디바운스 처리 범용 커스텀 훅 |
 | `useFullscreenControls` | `hooks/useFullscreenControls.ts` | 없음 | 풀스크린 뷰어 단축키(Esc, Arrow, Zoom, Zen), 확대/축소, 이전/다음 탐색 훅 |
-| `useAnalyticsQuery` | `hooks/useAnalyticsQuery.ts` | 없음 | `GET /api/analytics` 통계 데이터 캐싱을 위한 TanStack Query 훅 |
+| `useAnalyticsQuery` | `hooks/useAnalyticsQuery.ts` | 없음 | `GET /api/analytics/stats` 통계 데이터 캐싱을 위한 TanStack Query 훅 |
 | `useBackendInit` | `hooks/useBackendInit.ts` | 없음 | Sidecar 기동 대기, 포트 수신 및 헬스체크 초기화 훅 |
 | `useIndexingStatus` | `hooks/useIndexingStatus.ts` | 없음 | 백그라운드 인덱싱 진행률 및 상태 폴링 훅 |
 | `useModelDownloadStatus` | `hooks/useModelDownloadStatus.ts` | 없음 | AI 모델 백그라운드 다운로드 진행 상태 모니터링 훅 |
@@ -208,7 +231,7 @@ API 라우터로부터 비즈니스 로직을 분리 캡슐화한 서비스 모�
 | `usePhotosQuery` | `hooks/usePhotosQuery.ts` | `selectedFolder: string | null` | 갤러리 그리드 사진 목록 무한 스크롤 및 캐싱 TanStack Query 훅 |
 | `useTauriEvents` | `hooks/useTauriEvents.ts` | 없음 | Tauri Native Event 스트림 리스너 등록 및 전역 상태 디스패치 훅 |
 | `types/photo.ts` | `types/photo.ts` | N/A | `Photo`, `PhotoMetadata`, `SearchFilters` 타입 정의 모듈 |
-| `types/critique.ts` | `types/critique.ts` | N/A | `CritiqueItem`, `CritiqueSummaryResponse` 타입 정의 모듈 |
+| `types/critique.ts` | `types/critique.ts` | N/A | `CritiqueItem`, `CritiqueSummaryResponse`, `CritiqueStatus` 타입 정의 모듈 |
 
 ---
 
@@ -216,11 +239,16 @@ API 라우터로부터 비즈니스 로직을 분리 캡슐화한 서비스 모�
 
 1. **인덱싱 워크플로우 파이프라인 패턴 적용 완료 (`services/pipeline.py`)**
    - Hash ➔ Thumbnail ➔ EXIF ➔ AIInference 4단계 `PipelineStep`으로 추상화 완료.
-2. **인덱서 서비스 모듈화 완료 (`services/indexer/`)**
-   - 547줄의 monolith 구성을 `status.py`, `scanner.py`, `cleaner.py`, `worker.py`로 SRP 분리 완료.
+2. **인덱서 서비스 분리 및 상태 조율 (`services/indexing_service.py` & `indexing_state.py`)**
+   - 상태 관리와 일시정지/취소 이벤트를 `indexing_state.py`로 분리하고, 비동기 세마포어(4개)와 RAW 디코딩 세마포어(3개)로 동시성 폭증을 원천 차단.
 3. **API Repositories 및 Business Services 계층 완비**
    - Router의 직렬 쿼리와 비즈니스 로직을 `PhotoRepository`, `VectorRepository`, `SearchService`, `ChatService`로 완벽 캡슐화 완료.
-4. **프론트엔드 단일 책임 원칙(SRP) 적용 및 리렌더링 최적화 완료 (`src/`)** [NEW]
-   - `CritiqueView`, `FullscreenViewer`, `Sidebar`, `AnalyticsView`, `DetailPanel` 등 대형 모놀리식 뷰를 12개 서브 컴포넌트 및 커스텀 훅으로 해체하여 슬림화.
+4. **프론트엔드 단일 책임 원칙(SRP) 적용 및 리렌더링 최적화 완료 (`src/`)**
+   - `CritiqueView`, `FullscreenViewer`, `Sidebar`, `AnalyticsView`, `DetailPanel` 등 대형 모놀리식 뷰를 15개 이상의 서브 컴포넌트 및 전용 커스텀 훅으로 해체하여 슬림화.
    - `use35mmMode` 상태 캡슐화를 통해 화각 토글 시 전체 페이지 리렌더링 차단 및 `src/types/` 중앙 타입 모듈화 완수.
+5. **AI 비평 에디토리얼 문서 뷰어 및 리포트 내보내기 구현 완료 (`CritiqueDocumentModal.tsx`)**
+   - 비평 데이터를 매거진 리포트 양식으로 서식화하여 렌더링하고 Markdown(.md) 및 PDF(.pdf) 파일로 로컬 저장하는 프로 사진가 워크플로우 지원.
+6. **Hugging Face 모델 백그라운드 지능형 다운로더 및 상태 추적 완비 (`services/model_downloader.py`, `ModelDownloadModal.tsx`)**
+   - 토큰리스 미러를 통한 원클릭 무중단 모델 세팅 및 실시간 진행률 시각화.
+
 

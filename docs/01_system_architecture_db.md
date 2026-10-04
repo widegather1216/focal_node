@@ -34,9 +34,9 @@
   * `ImageCaptioningPort.generate_caption_and_tags(...) -> dict`
 * **`services/mlx_adapters.py`**: Apple Silicon (Mac Native) 전용 MLX 구현체.
   * **SigLIP 2**: 잦은 검색 및 임베딩 요청에 빠른 응답을 하기 위해 메모리 상주(Keep-alive) 상태로 유지.
-  * **Gemma 4 E4B-it**: 메모리 점유율이 높으므로 지연 로딩(Lazy Loading) 및 60초간 유지되는 **Keep-alive 타이머 전략**을 수행한 후 메모리를 OS에 반환합니다.
-* **`services/unipercept_adapter.py`**: UniPercept 8B 비평 전용 VLM 모델 어댑터.
-  * 16GB 메모리 절약을 위해 사진 비평 생성이 완료된 직후 즉시 `mx.clear_cache()`를 호출하여 VRAM을 명시적으로 반환합니다.
+  * **Gemma 4 (12B-it-8bit)**: 메모리 점유율이 높으므로 지연 로딩(Lazy Loading) 및 60초간 유지되는 **Keep-alive 타이머 전략**을 수행한 후 메모리를 OS에 반환합니다.
+* **`services/unipercept_adapter.py`**: UniPercept 8B 비평 전용 VLM 모델 어댑터 (PyTorch MPS 백엔드).
+  * `BaseKeepAliveModel` 기반 60초 Keep-alive 버퍼를 적용하며, 완료 후 또는 언로드 시 `torch.mps.empty_cache()`와 `gc.collect()`를 호출하여 VRAM을 명시적으로 반환합니다.
 * **`utils/image.py`**: Mac 하드웨어 가속 및 RAW 이미지 전처리 모듈.
   * 고용량 RAW 파일(ARW, CR3, DNG 등) 디코딩 및 sRGB 정밀 변환 처리.
 
@@ -82,7 +82,7 @@ ChromaDB는 트랜잭션 및 롤백을 지원하지 않기 때문에, 데이터 
 
 #### Table 3: `ai_analysis` (AI 생성 맥락 및 사용자 편집 정보)
 * `image_id` (VARCHAR(64), Primary Key, Foreign Key): `images.id` 참조, CASCADE ON DELETE
-* `caption` (TEXT): Gemma 4 E4B-it가 생성한 상세 사진 묘사 캡션
+* `caption` (TEXT): Gemma 4 (12B-it-8bit)가 생성한 상세 사진 묘사 캡션
 * `tags` (TEXT): JSON 형태의 키워드 문자열 리스트 (예: `["바다", "하늘", "일몰"]`)
 * `aesthetic_tags` (TEXT): 전문가용 구도/조명 관련 톤앤매너 태그 (JSON)
 * `critique` (TEXT): UniPercept/Gemma 4가 생성한 전문 사진 비평 텍스트
