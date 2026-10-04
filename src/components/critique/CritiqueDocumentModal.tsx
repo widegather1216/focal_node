@@ -74,246 +74,247 @@ function generatePrintHtml(
   scores?: CritiqueScores | null
 ): string {
   const meta = photo?.metadata;
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>AI 사진 비평 리포트 - ${photo?.file_name || 'Focal Node'}</title>
-  <style>
-    @page {
-      size: A4 portrait;
-      margin: 14mm;
-    }
-    * {
-      box-sizing: border-box;
-      -webkit-print-color-adjust: exact !important;
-      print-color-adjust: exact !important;
-    }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Apple SD Gothic Neo", "Malgun Gothic", "Pretendard", sans-serif;
-      color: #1f2937;
-      background: #ffffff;
-      margin: 0;
-      padding: 24px;
-      font-size: 13px;
-      line-height: 1.6;
-    }
-    .report-container {
-      max-width: 760px;
-      margin: 0 auto;
-    }
-    .report-header {
-      border-bottom: 2px solid #e11d48;
-      padding-bottom: 12px;
-      margin-bottom: 18px;
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-end;
-    }
-    .brand-title {
-      font-size: 11px;
-      font-weight: 700;
-      color: #e11d48;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      margin-bottom: 4px;
-    }
-    .report-title {
-      font-size: 20px;
-      font-weight: 800;
-      color: #111827;
-      margin: 0;
-    }
-    .report-date {
-      font-size: 12px;
-      color: #6b7280;
-    }
-    .photo-summary-card {
-      display: flex;
-      gap: 18px;
-      background: #f9fafb;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      padding: 14px 16px;
-      margin-bottom: 18px;
-      page-break-inside: avoid;
-    }
-    .photo-img {
-      max-width: 220px;
-      max-height: 165px;
-      object-fit: contain;
-      border-radius: 6px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
-      background: #111;
-    }
-    .meta-details {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      gap: 6px;
-    }
-    .meta-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 12px;
-    }
-    .meta-label {
-      color: #6b7280;
-      font-weight: 500;
-      min-width: 60px;
-    }
-    .meta-value {
-      color: #111827;
-      font-weight: 600;
-    }
-    .caption-box {
-      margin-top: 6px;
-      padding: 8px 12px;
-      background: #fff1f2;
-      border-left: 3px solid #e11d48;
-      border-radius: 4px;
-      font-style: italic;
-      color: #9f1239;
-      font-size: 12px;
-      line-height: 1.5;
-    }
-    .score-grid {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 22px;
-      page-break-inside: avoid;
-    }
-    .score-card {
-      flex: 1;
-      background: #f9fafb;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      padding: 10px 12px;
-      text-align: center;
-    }
-    .score-card.main-score {
-      flex: 1.3;
-      background: #fff1f2;
-      border-color: #fecdd3;
-    }
-    .score-label {
-      font-size: 10.5px;
-      font-weight: 600;
-      color: #6b7280;
-      margin-bottom: 2px;
-      letter-spacing: 0.04em;
-    }
-    .score-card.main-score .score-label {
-      color: #e11d48;
-    }
-    .score-val {
-      font-size: 19px;
-      font-weight: 800;
-      color: #111827;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    }
-    .score-card.main-score .score-val {
-      color: #e11d48;
-    }
-    .score-max {
-      font-size: 11px;
-      font-weight: 500;
-      color: #9ca3af;
-      margin-left: 2px;
-    }
-    .critique-body {
-      color: #374151 !important;
-      font-size: 13px;
-      line-height: 1.7;
-    }
-    .critique-body *, .critique-body p, .critique-body span, .critique-body li {
-      color: #374151 !important;
-    }
-    .critique-body h1, .critique-body h2, .critique-body h3, .critique-body h4, .critique-body strong, .critique-body b {
-      color: #111827 !important;
-      page-break-after: avoid;
-    }
-    .critique-body section, .critique-body div {
-      page-break-inside: avoid;
-    }
-    .report-footer {
-      margin-top: 32px;
-      padding-top: 12px;
-      border-top: 1px solid #e5e7eb;
-      display: flex;
-      justify-content: space-between;
-      color: #9ca3af;
-      font-size: 11px;
-      page-break-inside: avoid;
-    }
-  </style>
-</head>
-<body>
-  <div class="report-container">
-    <div class="report-header">
-      <div>
-        <div class="brand-title">Focal Node · AI Photo Critique Report</div>
-        <h1 class="report-title">${photo?.file_name || '사진'}</h1>
-      </div>
-      <div class="report-date">${formattedDate ? `분석일: ${formattedDate}` : ''}</div>
-    </div>
-
-    <div class="photo-summary-card">
-      <img src="${imageUrl}" class="photo-img" alt="${photo?.file_name || ''}" />
-      <div class="meta-details">
-        ${meta?.camera_model ? `<div class="meta-row"><span class="meta-label">카메라</span><span class="meta-value">${meta.camera_model}</span></div>` : ''}
-        ${meta?.lens_model ? `<div class="meta-row"><span class="meta-label">렌즈</span><span class="meta-value">${meta.lens_model}</span></div>` : ''}
-        <div class="meta-row">
-          <span class="meta-label">촬영 정보</span>
-          <span class="meta-value">
-            ${[
-              meta?.focal_length ? `${meta.focal_length}mm` : null,
-              meta?.f_number ? `f/${meta.f_number}` : null,
-              meta?.shutter_speed ? `${meta.shutter_speed}s` : null,
-              meta?.iso ? `ISO ${meta.iso}` : null
-            ].filter(Boolean).join('  ·  ') || '메타데이터 없음'}
-          </span>
+  return `
+  <div class="focal-pdf-report-container">
+    <style>
+      .focal-pdf-report-container {
+        box-sizing: border-box;
+        width: 794px;
+        background-color: #ffffff !important;
+        color: #1f2937 !important;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Apple SD Gothic Neo", "Malgun Gothic", "Pretendard", sans-serif;
+        padding: 36px 40px;
+        line-height: 1.6;
+        font-size: 13px;
+        --accent-focal: #e11d48;
+        --accent-focal-hover: #be123c;
+        --accent-focal-deep: #9f1239;
+        --text-primary: #111827;
+        --text-secondary: #4b5563;
+        --text-muted: #6b7280;
+        --border-subtle: #e5e7eb;
+      }
+      .focal-pdf-report-container * {
+        box-sizing: border-box;
+      }
+      .focal-pdf-report-container .report-container {
+        max-width: 714px;
+        margin: 0 auto;
+      }
+      .focal-pdf-report-container .report-header {
+        border-bottom: 2px solid #e11d48;
+        padding-bottom: 12px;
+        margin-bottom: 18px;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-end;
+      }
+      .focal-pdf-report-container .brand-title {
+        font-size: 11px;
+        font-weight: 700;
+        color: #e11d48;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 4px;
+      }
+      .focal-pdf-report-container .report-title {
+        font-size: 20px;
+        font-weight: 800;
+        color: #111827;
+        margin: 0;
+      }
+      .focal-pdf-report-container .report-date {
+        font-size: 12px;
+        color: #6b7280;
+      }
+      .focal-pdf-report-container .photo-summary-card {
+        display: flex;
+        gap: 18px;
+        background: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 14px 16px;
+        margin-bottom: 18px;
+      }
+      .focal-pdf-report-container .photo-img {
+        max-width: 220px;
+        max-height: 165px;
+        object-fit: contain;
+        border-radius: 6px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+        background: #111;
+      }
+      .focal-pdf-report-container .meta-details {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 6px;
+      }
+      .focal-pdf-report-container .meta-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+      }
+      .focal-pdf-report-container .meta-label {
+        color: #6b7280;
+        font-weight: 500;
+        min-width: 60px;
+      }
+      .focal-pdf-report-container .meta-value {
+        color: #111827;
+        font-weight: 600;
+      }
+      .focal-pdf-report-container .caption-box {
+        margin-top: 6px;
+        padding: 8px 12px;
+        background: #fff1f2;
+        border-left: 3px solid #e11d48;
+        border-radius: 4px;
+        font-style: italic;
+        color: #9f1239;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .focal-pdf-report-container .score-grid {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 22px;
+      }
+      .focal-pdf-report-container .score-card {
+        flex: 1;
+        background: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 10px 12px;
+        text-align: center;
+      }
+      .focal-pdf-report-container .score-card.main-score {
+        flex: 1.3;
+        background: #fff1f2;
+        border-color: #fecdd3;
+      }
+      .focal-pdf-report-container .score-label {
+        font-size: 10.5px;
+        font-weight: 600;
+        color: #6b7280;
+        margin-bottom: 2px;
+        letter-spacing: 0.04em;
+      }
+      .focal-pdf-report-container .score-card.main-score .score-label {
+        color: #e11d48;
+      }
+      .focal-pdf-report-container .score-val {
+        font-size: 19px;
+        font-weight: 800;
+        color: #111827;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+      .focal-pdf-report-container .score-card.main-score .score-val {
+        color: #e11d48;
+      }
+      .focal-pdf-report-container .score-max {
+        font-size: 11px;
+        font-weight: 500;
+        color: #9ca3af;
+        margin-left: 2px;
+      }
+      .focal-pdf-report-container .critique-body {
+        color: #374151 !important;
+        font-size: 13px;
+        line-height: 1.7;
+      }
+      .focal-pdf-report-container .critique-body * {
+        color: #374151 !important;
+        border-color: #e5e7eb !important;
+      }
+      .focal-pdf-report-container .critique-body h1,
+      .focal-pdf-report-container .critique-body h2,
+      .focal-pdf-report-container .critique-body h3,
+      .focal-pdf-report-container .critique-body h4,
+      .focal-pdf-report-container .critique-body strong,
+      .focal-pdf-report-container .critique-body b {
+        color: #111827 !important;
+      }
+      .focal-pdf-report-container .critique-body section {
+        border-top-color: #e5e7eb !important;
+      }
+      .focal-pdf-report-container .critique-body svg {
+        stroke: #e11d48 !important;
+      }
+      .focal-pdf-report-container .report-footer {
+        margin-top: 32px;
+        padding-top: 12px;
+        border-top: 1px solid #e5e7eb;
+        display: flex;
+        justify-content: space-between;
+        color: #9ca3af;
+        font-size: 11px;
+      }
+    </style>
+    <div class="report-container">
+      <div class="report-header">
+        <div>
+          <div class="brand-title">Focal Node · AI Photo Critique Report</div>
+          <h1 class="report-title">${photo?.file_name || '사진'}</h1>
         </div>
-        ${photo?.ai_analysis?.caption ? `<div class="caption-box">"${photo.ai_analysis.caption}"</div>` : ''}
+        <div class="report-date">${formattedDate ? `분석일: ${formattedDate}` : ''}</div>
+      </div>
+
+      <div class="photo-summary-card">
+        <img src="${imageUrl}" class="photo-img" alt="${photo?.file_name || ''}" />
+        <div class="meta-details">
+          ${meta?.camera_model ? `<div class="meta-row"><span class="meta-label">카메라</span><span class="meta-value">${meta.camera_model}</span></div>` : ''}
+          ${meta?.lens_model ? `<div class="meta-row"><span class="meta-label">렌즈</span><span class="meta-value">${meta.lens_model}</span></div>` : ''}
+          <div class="meta-row">
+            <span class="meta-label">촬영 정보</span>
+            <span class="meta-value">
+              ${[
+                meta?.focal_length ? `${meta.focal_length}mm` : null,
+                meta?.f_number ? `f/${meta.f_number}` : null,
+                meta?.shutter_speed ? `${meta.shutter_speed}s` : null,
+                meta?.iso ? `ISO ${meta.iso}` : null
+              ].filter(Boolean).join('  ·  ') || '메타데이터 없음'}
+            </span>
+          </div>
+          ${photo?.ai_analysis?.caption ? `<div class="caption-box">"${photo.ai_analysis.caption}"</div>` : ''}
+        </div>
+      </div>
+
+      ${scores ? `
+      <div class="score-grid">
+        <div class="score-card main-score">
+          <div class="score-label">종합 평가</div>
+          <div class="score-val">${scores.overall ?? '-'}<span class="score-max">/100</span></div>
+        </div>
+        ${scores.iaa !== null ? `
+        <div class="score-card">
+          <div class="score-label">IAA (미학 & 구도)</div>
+          <div class="score-val">${scores.iaa}</div>
+        </div>` : ''}
+        ${scores.iqa !== null ? `
+        <div class="score-card">
+          <div class="score-label">IQA (화질 & 광학)</div>
+          <div class="score-val">${scores.iqa}</div>
+        </div>` : ''}
+        ${scores.ista !== null ? `
+        <div class="score-card">
+          <div class="score-label">ISTA (구조 & 질감)</div>
+          <div class="score-val">${scores.ista}</div>
+        </div>` : ''}
+      </div>` : ''}
+
+      <div class="critique-body">
+        ${critiqueContentHtml}
+      </div>
+
+      <div class="report-footer">
+        <span>On-device AI Local Photo Search & Aesthetic Curator</span>
+        <span>Focal Node</span>
       </div>
     </div>
-
-    ${scores ? `
-    <div class="score-grid">
-      <div class="score-card main-score">
-        <div class="score-label">종합 평가</div>
-        <div class="score-val">${scores.overall ?? '-'}<span class="score-max">/100</span></div>
-      </div>
-      ${scores.iaa !== null ? `
-      <div class="score-card">
-        <div class="score-label">IAA (미학 & 구도)</div>
-        <div class="score-val">${scores.iaa}</div>
-      </div>` : ''}
-      ${scores.iqa !== null ? `
-      <div class="score-card">
-        <div class="score-label">IQA (화질 & 광학)</div>
-        <div class="score-val">${scores.iqa}</div>
-      </div>` : ''}
-      ${scores.ista !== null ? `
-      <div class="score-card">
-        <div class="score-label">ISTA (구조 & 질감)</div>
-        <div class="score-val">${scores.ista}</div>
-      </div>` : ''}
-    </div>` : ''}
-
-    <div class="critique-body">
-      ${critiqueContentHtml}
-    </div>
-
-    <div class="report-footer">
-      <span>On-device AI Local Photo Search & Aesthetic Curator</span>
-      <span>Focal Node</span>
-    </div>
-  </div>
-</body>
-</html>`;
+  </div>`;
 }
 
 export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ isStandalone = false }) => {
@@ -322,19 +323,26 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
 
   const [copied, setCopied] = useState(false);
   const [exported, setExported] = useState(false);
+  const [isExportingMd, setIsExportingMd] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [pdfExported, setPdfExported] = useState(false);
-  const [savedPdfPath, setSavedPdfPath] = useState<string | null>(null);
-  const [pdfProgress, setPdfProgress] = useState<{
+  const [lastSavedPath, setLastSavedPath] = useState<string | null>(null);
+  const [exportProgress, setExportProgress] = useState<{
     active: boolean;
+    type: 'pdf' | 'md';
+    title: string;
     step: string;
     detail: string;
     percent: number;
+    savedPath?: string | null;
   }>({
     active: false,
+    type: 'pdf',
+    title: '',
     step: '',
     detail: '',
-    percent: 0
+    percent: 0,
+    savedPath: null
   });
   const [isMaximized, setIsMaximized] = useState(false);
   const [scale, setScale] = useState(1);
@@ -347,14 +355,17 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
   const urlParams = new URLSearchParams(window.location.search);
   const isPopout = isStandalone || urlParams.get('popout') === 'critique';
 
-  // Reset zoom, pan & PDF states when photo changes
+  // Reset zoom, pan & export states when photo changes
   useEffect(() => {
     setScale(1);
     setPosition({ x: 0, y: 0 });
     setImgError(false);
-    setSavedPdfPath(null);
+    setLastSavedPath(null);
+    setExported(false);
+    setIsExportingMd(false);
     setPdfExported(false);
-    setPdfProgress({ active: false, step: '', detail: '', percent: 0 });
+    setIsExportingPdf(false);
+    setExportProgress({ active: false, type: 'pdf', title: '', step: '', detail: '', percent: 0, savedPath: null });
   }, [critiqueDocumentPhotoId]);
 
   // Window or Modal close handler
@@ -491,11 +502,13 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
     }
   };
 
-  // 2. Export markdown document (.md)
-  const handleExportMarkdown = () => {
-    if (!critiqueText) return;
+  // 2. Export markdown document (.md) with native save dialog and visual feedback
+  const handleExportMarkdown = async () => {
+    if (!critiqueText || isExportingMd) return;
+    setIsExportingMd(true);
+
     const baseName = photo?.file_name ? photo.file_name.replace(/\.[^/.]+$/, "") : "photo";
-    const fileName = `${baseName}_AI비평.md`;
+    const defaultFileName = `${baseName}_AI비평.md`;
 
     const exposureParts = [
       meta?.focal_length ? `${meta.focal_length}mm` : null,
@@ -503,6 +516,17 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
       meta?.shutter_speed ? `${meta.shutter_speed}s` : null,
       meta?.iso ? `ISO ${meta.iso}` : null
     ].filter(Boolean).join(' | ');
+
+    const scoreLines = mastheadData.scores ? [
+      mastheadData.scores.overall !== null ? `> **종합 평가 점수:** ${mastheadData.scores.overall} / 100  ` : null,
+      (mastheadData.scores.iaa !== null || mastheadData.scores.iqa !== null || mastheadData.scores.ista !== null)
+        ? `> **세부 평가 지수:** ${[
+            mastheadData.scores.iaa !== null ? `IAA(미학/구도) ${mastheadData.scores.iaa}` : null,
+            mastheadData.scores.iqa !== null ? `IQA(화질/광학) ${mastheadData.scores.iqa}` : null,
+            mastheadData.scores.ista !== null ? `ISTA(구조/질감) ${mastheadData.scores.ista}` : null
+          ].filter(Boolean).join('  ·  ')}  `
+        : null
+    ].filter(Boolean) as string[] : [];
 
     const markdownDocument = [
       `# ${photo?.file_name || '사진'}`,
@@ -513,24 +537,77 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
       meta?.lens_model ? `> **렌즈:** ${meta.lens_model}  ` : '',
       exposureParts ? `> **노출 설정:** ${exposureParts}  ` : '',
       photo?.ai_analysis?.caption ? `> **캡션:** *"${photo.ai_analysis.caption}"*  ` : '',
+      ...scoreLines,
       ``,
       `---`,
       ``,
       critiqueText
     ].filter(line => line !== null).join('\n');
 
-    const blob = new Blob([markdownDocument], { type: 'text/markdown;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    let selectedPath: string | null = null;
+    try {
+      const { save } = await import('@tauri-apps/plugin-dialog');
+      selectedPath = await save({
+        defaultPath: defaultFileName,
+        filters: [{ name: 'Markdown 문서 (*.md)', extensions: ['md'] }]
+      });
+    } catch (dialogErr) {
+      console.warn('Tauri dialog save is unavailable, will fallback to browser download:', dialogErr);
+    }
 
-    setExported(true);
-    setTimeout(() => setExported(false), 2000);
+    // 사용자가 파일 저장 창에서 "취소"를 누른 경우
+    if (selectedPath === null && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+      setIsExportingMd(false);
+      return;
+    }
+
+    try {
+      const encoder = new TextEncoder();
+      const uint8Array = encoder.encode(markdownDocument);
+
+      if (selectedPath) {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('save_binary_file', {
+          path: selectedPath,
+          data: Array.from(uint8Array)
+        });
+        setLastSavedPath(selectedPath);
+      } else {
+        // 브라우저 fallback 다운로드
+        const blob = new Blob([markdownDocument], { type: 'text/markdown;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = defaultFileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }
+
+      setExported(true);
+      setExportProgress({
+        active: true,
+        type: 'md',
+        title: '마크다운 리포트 저장 완료',
+        step: '마크다운 파일(.md) 저장 성공',
+        detail: selectedPath ? `저장 위치: ${selectedPath}` : '다운로드 폴더에 마크다운 파일이 저장되었습니다.',
+        percent: 100,
+        savedPath: selectedPath
+      });
+
+      // 2.5초 후 자동 닫기
+      setTimeout(() => {
+        setExportProgress((prev) => ({ ...prev, active: false }));
+      }, 2500);
+
+      setTimeout(() => setExported(false), 3000);
+    } catch (err) {
+      console.error('Failed to export markdown document:', err);
+      alert('마크다운 파일 저장 중 오류가 발생했습니다.');
+    } finally {
+      setIsExportingMd(false);
+    }
   };
 
   // 3. Export PDF report handler with step-by-step progress feedback
@@ -545,11 +622,14 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
 
     try {
       // 1) 사진 에셋 준비 (15%)
-      setPdfProgress({
+      setExportProgress({
         active: true,
+        type: 'pdf',
+        title: 'A4 비평 리포트 PDF 생성 중',
         step: '사진 및 그래픽 에셋 준비 중...',
         detail: '고해상도 인쇄를 위해 사진 이미지를 인라인으로 준비하고 있습니다.',
-        percent: 15
+        percent: 15,
+        savedPath: null
       });
       await delay(80);
 
@@ -559,11 +639,14 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
       }
 
       // 2) A4 리포트 레이아웃 구성 (35%)
-      setPdfProgress({
+      setExportProgress({
         active: true,
+        type: 'pdf',
+        title: 'A4 비평 리포트 PDF 생성 중',
         step: 'A4 리포트 레이아웃 렌더링 중...',
         detail: 'EXIF 메타데이터와 종합 평가 지수 그리드를 배치하고 있습니다.',
-        percent: 35
+        percent: 35,
+        savedPath: null
       });
       await delay(80);
 
@@ -578,43 +661,63 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
         mastheadData.scores
       );
 
-      // 오프스크린 렌더링 컨테이너 생성 (html2canvas 좌표계 오프셋 버그 방지를 위해 0,0 위치에 투명 배치)
+      // 오프스크린 렌더링 컨테이너 생성 (사용자에게는 보이지 않도록 z-index -9999로 배치하되 html2canvas 인식을 위해 opacity 1 유지)
       container = document.createElement('div');
       container.id = 'pdf-render-temp-container';
       container.style.position = 'fixed';
       container.style.left = '0';
       container.style.top = '0';
       container.style.width = '794px'; // 210mm at 96 DPI
-      container.style.background = '#ffffff';
+      container.style.backgroundColor = '#ffffff';
       container.style.color = '#1f2937';
       container.style.zIndex = '-9999';
-      container.style.opacity = '0';
+      container.style.opacity = '1';
       container.style.pointerEvents = 'none';
       container.innerHTML = printHtml;
       document.body.appendChild(container);
 
-      // 내부 이미지 로드 대기
+      // 내부 이미지 로드 및 디코딩 완료 대기
       const imgElements = Array.from(container.querySelectorAll('img'));
       await Promise.all(
         imgElements.map(
           (img) =>
             new Promise<void>((resolve) => {
-              if (img.complete) {
-                resolve();
+              if (img.complete && img.naturalWidth > 0) {
+                if ('decode' in img) {
+                  img.decode().then(() => resolve()).catch(() => resolve());
+                } else {
+                  resolve();
+                }
               } else {
-                img.onload = () => resolve();
+                img.onload = () => {
+                  if ('decode' in img) {
+                    img.decode().then(() => resolve()).catch(() => resolve());
+                  } else {
+                    resolve();
+                  }
+                };
                 img.onerror = () => resolve();
               }
             })
         )
       );
 
+      // 브라우저 DOM 렌더링 파이프라인(Layout/Paint) 완료를 위해 2프레임 대기
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => resolve());
+        });
+      });
+
       // 3) 초고해상도 캔버스 캡처 (65%)
-      setPdfProgress({
+      setExportProgress({
         active: true,
+        type: 'pdf',
+        title: 'A4 비평 리포트 PDF 생성 중',
         step: '초고해상도(Retina 2x) 벡터 캔버스 캡처 중...',
         detail: '텍스트와 이미지를 선명한 픽셀로 정밀 렌더링하고 있습니다.',
-        percent: 65
+        percent: 65,
+        savedPath: null
       });
       await delay(100);
 
@@ -628,15 +731,23 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
         y: 0,
         scrollX: 0,
         scrollY: 0,
+        width: 794,
         windowWidth: 794
       });
 
+      if (!canvas || canvas.width <= 0 || canvas.height <= 0) {
+        throw new Error('Canvas capture resulted in invalid dimensions');
+      }
+
       // 4) A4 페이지 슬라이스 및 PDF 조립 (85%)
-      setPdfProgress({
+      setExportProgress({
         active: true,
+        type: 'pdf',
+        title: 'A4 비평 리포트 PDF 생성 중',
         step: 'A4 페이지 슬라이스 및 PDF 조립 중...',
         detail: '인쇄 규격에 맞춰 페이지를 분할하고 최종 문서를 조립하고 있습니다.',
-        percent: 85
+        percent: 85,
+        savedPath: null
       });
       await delay(80);
 
@@ -695,11 +806,14 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
       }
 
       // 5) 파일 저장 경로 확인 (95%)
-      setPdfProgress({
+      setExportProgress({
         active: true,
+        type: 'pdf',
+        title: 'A4 비평 리포트 PDF 생성 중',
         step: '저장 경로 확인 및 파일 기록 중...',
         detail: '원하는 저장 위치와 파일명을 선택해 주세요.',
-        percent: 95
+        percent: 95,
+        savedPath: null
       });
 
       const baseName = photo?.file_name ? photo.file_name.replace(/\.[^/.]+$/, '') : 'photo';
@@ -718,7 +832,7 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
 
       // 사용자가 파일 저장 창에서 "취소"를 누른 경우
       if (selectedPath === null && typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-        setPdfProgress((prev) => ({ ...prev, active: false }));
+        setExportProgress((prev) => ({ ...prev, active: false }));
         setIsExportingPdf(false);
         return;
       }
@@ -732,30 +846,33 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
           path: selectedPath,
           data: Array.from(uint8Array)
         });
-        setSavedPdfPath(selectedPath);
+        setLastSavedPath(selectedPath);
       } else {
         // 브라우저 fallback 다운로드
         pdf.save(defaultFileName);
       }
 
       // 6) 저장 완료 (100%)
-      setPdfProgress({
+      setExportProgress({
         active: true,
+        type: 'pdf',
+        title: 'PDF 리포트 저장 완료',
         step: 'PDF 리포트 저장 완료!',
         detail: selectedPath ? `파일이 성공적으로 저장되었습니다.` : '다운로드 폴더에 저장되었습니다.',
-        percent: 100
+        percent: 100,
+        savedPath: selectedPath
       });
       setPdfExported(true);
 
       // 완료 후 2.5초 뒤 모달 오버레이 자동 닫기
       setTimeout(() => {
-        setPdfProgress((prev) => ({ ...prev, active: false }));
+        setExportProgress((prev) => ({ ...prev, active: false }));
       }, 2500);
 
       setTimeout(() => setPdfExported(false), 4000);
     } catch (error) {
       console.error('Failed to generate or save PDF report:', error);
-      setPdfProgress((prev) => ({ ...prev, active: false }));
+      setExportProgress((prev) => ({ ...prev, active: false }));
       alert('PDF 생성 및 저장 중 오류가 발생했습니다.');
     } finally {
       if (container && container.parentNode) {
@@ -765,12 +882,13 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
     }
   };
 
-  // 3-1. Reveal saved PDF in Finder / File Explorer
-  const handleRevealPdf = async () => {
-    if (!savedPdfPath) return;
+  // 3-1. Reveal saved file in Finder / File Explorer
+  const handleRevealFile = async (filePath?: string | null) => {
+    const targetPath = filePath || lastSavedPath;
+    if (!targetPath) return;
     try {
       const { invoke } = await import('@tauri-apps/api/core');
-      await invoke('reveal_in_finder', { path: savedPdfPath });
+      await invoke('reveal_in_finder', { path: targetPath });
     } catch (e) {
       console.warn('Failed to reveal file in finder:', e);
     }
@@ -979,7 +1097,7 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
               {/* Export Markdown (.md) Button */}
               <button
                 onClick={handleExportMarkdown}
-                disabled={!critiqueText}
+                disabled={!critiqueText || isExportingMd}
                 style={{
                   background: exported ? 'var(--accent-focal-subtle)' : 'rgba(255, 255, 255, 0.06)',
                   border: `1px solid ${exported ? 'var(--accent-focal)' : 'rgba(255, 255, 255, 0.12)'}`,
@@ -988,18 +1106,27 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                   borderRadius: '8px',
                   fontSize: '12px',
                   fontWeight: 500,
-                  cursor: critiqueText ? 'pointer' : 'not-allowed',
+                  cursor: critiqueText && !isExportingMd ? 'pointer' : 'not-allowed',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
                   whiteSpace: 'nowrap',
                   flexShrink: 0,
-                  transition: 'all 0.2s ease'
+                  transition: 'all 0.2s ease',
+                  opacity: isExportingMd ? 0.75 : 1
                 }}
                 title="마크다운 리포트 파일(.md)로 다운로드 저장"
               >
-                {exported ? <Check size={14} style={{ flexShrink: 0 }} /> : <Download size={14} style={{ flexShrink: 0 }} />}
-                <span style={{ whiteSpace: 'nowrap' }}>{exported ? '저장 완료!' : 'MD 저장'}</span>
+                {isExportingMd ? (
+                  <Loader2 size={14} className="spin" style={{ flexShrink: 0 }} />
+                ) : exported ? (
+                  <Check size={14} style={{ flexShrink: 0 }} />
+                ) : (
+                  <Download size={14} style={{ flexShrink: 0 }} />
+                )}
+                <span style={{ whiteSpace: 'nowrap' }}>
+                  {isExportingMd ? 'MD 저장 중...' : exported ? '저장 완료!' : 'MD 저장'}
+                </span>
               </button>
 
               {/* Export PDF Button */}
@@ -1037,10 +1164,10 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                 </span>
               </button>
 
-              {/* Reveal saved PDF in Finder button (shown after successful save) */}
-              {savedPdfPath && (
+              {/* Reveal saved file in Finder button (shown after successful save of PDF or MD) */}
+              {lastSavedPath && (
                 <button
-                  onClick={handleRevealPdf}
+                  onClick={() => handleRevealFile(lastSavedPath)}
                   style={{
                     background: 'rgba(225, 29, 72, 0.15)',
                     border: '1px solid rgba(225, 29, 72, 0.35)',
@@ -1057,7 +1184,7 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                     flexShrink: 0,
                     transition: 'all 0.2s ease'
                   }}
-                  title="저장된 PDF 파일 위치를 Finder에서 표시"
+                  title="저장된 파일 위치를 Finder에서 표시"
                 >
                   <ExternalLink size={12} style={{ flexShrink: 0 }} />
                   <span>폴더 열기</span>
@@ -1436,9 +1563,9 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
             </div>
           </div>
 
-          {/* PDF Generation Progress Modal Overlay */}
+          {/* Export Generation Progress & Completion Modal Overlay */}
           <AnimatePresence>
-            {pdfProgress.active && (
+            {exportProgress.active && (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -1483,26 +1610,30 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                         width: '42px',
                         height: '42px',
                         borderRadius: '10px',
-                        backgroundColor: pdfProgress.percent === 100 ? 'rgba(34, 197, 94, 0.15)' : 'rgba(225, 29, 72, 0.15)',
-                        border: `1px solid ${pdfProgress.percent === 100 ? 'rgba(34, 197, 94, 0.35)' : 'rgba(225, 29, 72, 0.35)'}`,
+                        backgroundColor: exportProgress.percent === 100 ? 'rgba(34, 197, 94, 0.15)' : 'rgba(225, 29, 72, 0.15)',
+                        border: `1px solid ${exportProgress.percent === 100 ? 'rgba(34, 197, 94, 0.35)' : 'rgba(225, 29, 72, 0.35)'}`,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         flexShrink: 0
                       }}
                     >
-                      {pdfProgress.percent === 100 ? (
+                      {exportProgress.percent === 100 ? (
                         <Check size={20} color="#22c55e" />
+                      ) : exportProgress.type === 'md' ? (
+                        <FileText size={20} color="var(--accent-focal-hover)" />
                       ) : (
                         <FileDown size={20} color="var(--accent-focal-hover)" />
                       )}
                     </div>
                     <div style={{ overflow: 'hidden' }}>
                       <h3 style={{ margin: '0 0 3px 0', fontSize: '15px', fontWeight: 700, color: '#f4f4f5' }}>
-                        {pdfProgress.percent === 100 ? 'PDF 리포트 저장 완료' : 'A4 비평 리포트 PDF 생성 중'}
+                        {exportProgress.title}
                       </h3>
                       <p style={{ margin: 0, fontSize: '12px', color: '#a1a1aa', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {photo?.file_name}
+                        {exportProgress.type === 'md'
+                          ? `${photo?.file_name ? photo.file_name.replace(/\.[^/.]+$/, "") : "photo"}_AI비평.md`
+                          : photo?.file_name}
                       </p>
                     </div>
                   </div>
@@ -1511,17 +1642,17 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                       <span style={{ fontSize: '12.5px', fontWeight: 600, color: '#e4e4e7' }}>
-                        {pdfProgress.step}
+                        {exportProgress.step}
                       </span>
                       <span
                         className="font-mono"
                         style={{
                           fontSize: '13px',
                           fontWeight: 700,
-                          color: pdfProgress.percent === 100 ? '#22c55e' : 'var(--accent-focal-hover)'
+                          color: exportProgress.percent === 100 ? '#22c55e' : 'var(--accent-focal-hover)'
                         }}
                       >
-                        {pdfProgress.percent}%
+                        {exportProgress.percent}%
                       </span>
                     </div>
 
@@ -1540,28 +1671,28 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                         style={{
                           height: '100%',
                           borderRadius: '4px',
-                          background: pdfProgress.percent === 100
+                          background: exportProgress.percent === 100
                             ? 'linear-gradient(90deg, #16a34a 0%, #22c55e 100%)'
                             : 'linear-gradient(90deg, #e11d48 0%, #f43f5e 100%)',
-                          boxShadow: pdfProgress.percent === 100
+                          boxShadow: exportProgress.percent === 100
                             ? '0 0 10px rgba(34, 197, 94, 0.5)'
                             : '0 0 10px rgba(225, 29, 72, 0.5)',
-                          width: `${pdfProgress.percent}%`
+                          width: `${exportProgress.percent}%`
                         }}
                         transition={{ ease: 'easeOut', duration: 0.3 }}
                       />
                     </div>
 
                     <span style={{ fontSize: '11.5px', color: '#71717a', lineHeight: 1.4 }}>
-                      {pdfProgress.detail}
+                      {exportProgress.detail}
                     </span>
                   </div>
 
                   {/* Footer Action or Status Notice */}
-                  {pdfProgress.percent === 100 && savedPdfPath ? (
+                  {exportProgress.percent === 100 && (exportProgress.savedPath || lastSavedPath) ? (
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px', paddingTop: '4px' }}>
                       <button
-                        onClick={handleRevealPdf}
+                        onClick={() => handleRevealFile(exportProgress.savedPath || lastSavedPath)}
                         style={{
                           background: 'rgba(225, 29, 72, 0.15)',
                           border: '1px solid rgba(225, 29, 72, 0.35)',
@@ -1581,7 +1712,7 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                         <span>Finder에서 파일 열기</span>
                       </button>
                       <button
-                        onClick={() => setPdfProgress((prev) => ({ ...prev, active: false }))}
+                        onClick={() => setExportProgress((prev) => ({ ...prev, active: false }))}
                         style={{
                           background: 'rgba(255, 255, 255, 0.08)',
                           border: '1px solid rgba(255, 255, 255, 0.15)',
@@ -1600,7 +1731,7 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                   ) : (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '11px', color: '#71717a' }}>
                       <Loader2 size={12} className="spin" color="var(--accent-focal)" />
-                      <span>고해상도 렌더링 중입니다. 잠시만 기다려주세요...</span>
+                      <span>{exportProgress.type === 'md' ? '마크다운 리포트를 파일로 저장하고 있습니다...' : '고해상도 렌더링 중입니다. 잠시만 기다려주세요...'}</span>
                     </div>
                   )}
                 </motion.div>
