@@ -3,15 +3,17 @@ import os
 import shutil
 import asyncio
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import Response, StreamingResponse, FileResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
 import models
 import services.photo as photo_service
-from database import get_db
+from database import get_db, SessionLocal
 import schemas
 from repositories.photo_repository import PhotoRepository
+from utils.image import is_raw_image
+from services.indexing_service import reindex_single_photo_inplace
 
 MAX_CONCURRENT_DECODES = 3
 _decode_semaphore: Optional[asyncio.Semaphore] = None
@@ -92,7 +94,6 @@ async def get_photo_original(id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Photo not found")
         
     try:
-        from utils.image import is_raw_image
         if is_raw_image(db_image.file_path):
             async with get_decode_semaphore():
                 original_bytes, content_type = await asyncio.to_thread(photo_service.get_original_image_bytes, db_image)
@@ -100,7 +101,6 @@ async def get_photo_original(id: str, db: Session = Depends(get_db)):
         else:
             if not os.path.exists(db_image.file_path):
                 raise HTTPException(status_code=404, detail="Original file not found on disk")
-            from fastapi.responses import FileResponse
             return FileResponse(db_image.file_path, media_type=db_image.mime_type)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -205,7 +205,6 @@ async def export_photos(payload: schemas.ExportRequest):
     if not os.path.exists(dest_folder) or not os.path.isdir(dest_folder):
         raise HTTPException(status_code=400, detail="Invalid destination folder")
 
-    from database import SessionLocal
     with SessionLocal() as db:
         photo_repo = PhotoRepository(db)
         images = photo_repo.get_by_ids(payload.photo_ids)
@@ -214,8 +213,6 @@ async def export_photos(payload: schemas.ExportRequest):
         export_items = [{"file_path": img.file_path, "file_name": img.file_name} for img in images]
 
     return StreamingResponse(_stream_export_events(export_items, dest_folder), media_type="text/event-stream")
-
-from services.indexing_service import reindex_single_photo_inplace
 
 @router.post("/{id}/reindex", response_model=schemas.PhotoDetailResponse)
 async def reindex_photo(id: str):

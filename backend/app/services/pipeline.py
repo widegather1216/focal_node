@@ -1,5 +1,4 @@
 import os
-import hashlib
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Union, Optional
 from utils.image import extract_metadata

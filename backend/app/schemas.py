@@ -69,11 +69,6 @@ class ExportRequest(BaseModel):
     photo_ids: List[str]
     destination_folder: str
 
-class ExportResponse(BaseModel):
-    status: str
-    exported_count: int
-    errors: Optional[List[str]] = None
-
 class SearchFilter(BaseModel):
     is_favorite: Optional[bool] = None
     camera_model: Optional[str] = None

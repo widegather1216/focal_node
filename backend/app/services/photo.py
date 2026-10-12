@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from PIL import Image
 from models import Image as DBImage, ImageMetadata as DBImageMetadata, AIAnalysis as DBAIAnalysis
 from utils.image import is_raw_image, decode_raw_to_pil, load_pil_image
+from repositories.atomic_transaction import CompensatingTransactionManager
 
 from config import THUMBNAILS_DIR
 
@@ -75,21 +76,6 @@ def generate_and_cache_thumbnail(file_path: str, image_id: str) -> bytes:
     jpeg_bytes = _resize_image_to_jpeg_bytes(img, target_width=360)
     _atomic_write_cache_file(cache_path, jpeg_bytes, image_id)
     return jpeg_bytes
-
-def get_thumbnail_bytes(db_image: DBImage) -> bytes:
-    """
-    Returns the thumbnail image bytes. First searches in cache; on miss, decodes and caches it.
-    """
-    cache_path = get_thumbnail_path(db_image.id)
-    if os.path.exists(cache_path):
-        try:
-            with open(cache_path, "rb") as f:
-                return f.read()
-        except Exception:
-            # Fallback to generation if cache read fails
-            pass
-            
-    return generate_and_cache_thumbnail(db_image.file_path, db_image.id)
 
 def get_original_image_bytes(db_image: DBImage) -> tuple[bytes, str]:
     """
@@ -189,52 +175,18 @@ def _save_photos_atomic_internal(db: Session, items_data: list[dict], refresh_mo
     db.add_all(db_images)
     db.add_all(db_metadatas)
     db.add_all(db_ais)
-    
-    chroma_upserted = False
+
     if chroma_ids:
-        try:
-            from repositories.vector_repository import VectorRepository
-            vector_repo = VectorRepository()
-            vector_repo.upsert(ids=chroma_ids, embeddings=chroma_embeddings, metadatas=chroma_metadatas)
-            chroma_upserted = True
-        except Exception as e:
-            db.rollback()
-            raise e
-            
-    try:
+        tx_manager = CompensatingTransactionManager(db)
+        tx_manager.upsert_and_commit(chroma_ids, chroma_embeddings, chroma_metadatas)
+    else:
         db.commit()
-        if refresh_models:
-            for img in db_images:
-                db.refresh(img)
-        return db_images
-    except Exception as e:
-        db.rollback()
-        if chroma_upserted:
-            try:
-                from repositories.vector_repository import VectorRepository
-                VectorRepository().delete(ids=chroma_ids)
-            except Exception as chroma_err:
-                print(f"[Compensating Tx Error] ChromaDB delete failed after SQLite rollback: {chroma_err}")
-        raise e
 
+    if refresh_models:
+        for img in db_images:
+            db.refresh(img)
+    return db_images
 
-def register_photo_atomic(
-    db: Session,
-    image_data: dict,
-    metadata_data: dict,
-    ai_data: dict,
-    embedding: list[float] | None = None
-) -> DBImage:
-    """
-    Saves a single photo atomically in SQLite and ChromaDB vector store.
-    """
-    item = {
-        "image_data": image_data,
-        "metadata_data": metadata_data,
-        "ai_data": ai_data,
-        "embedding": embedding
-    }
-    return _save_photos_atomic_internal(db, [item], refresh_models=True)[0]
 
 def register_photos_batch_atomic(db: Session, batch_data: list[dict]) -> None:
     """

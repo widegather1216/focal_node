@@ -1,72 +1,39 @@
-# [Project Master] AI 기반 로컬 사진 검색 데스크탑 앱
+# [Project Master] Focal Node: All-in-One Local Photo Studio
 
-본 프로젝트는 SigLIP 2, Gemma 4 (12B-it-8bit), UniPercept 8B 모델을 활용하여, 외부 클라우드 전송 없이 로컬 환경에서 프라이버시를 완벽히 보호하며 사진을 관리하고 자연어로 검색할 수 있는 데스크탑 애플리케이션입니다.
+본 프로젝트는 외부 클라우드 전송 없이 Mac Native(Apple MLX)로 구동되는 **프라이버시 보호 로컬 사진 관리 및 AI 검색/비평 데스크탑 플랫폼**입니다.
 
-메모리를 극도로 절약하기 위해 Electron 대신 **Tauri + Python Sidecar** 아키텍처를 채택하고 있습니다.
-
----
-
-## 📂 개발 참고 문서 목차 (Table of Contents)
-
-1. 🏛️ **[시스템 아키텍처 및 데이터베이스 설계](./01_system_architecture_db.md)**
-   * 어댑터 패턴 (Adapter Pattern) 구조
-   * SQLite 관계형 데이터베이스 스키마 (WAL 모드 적용)
-   * ChromaDB 벡터 데이터베이스 컬렉션 구성
-
-2. ⚙️ **[백엔드 파이프라인 및 API / AI 프롬프트 명세](./02_backend_pipeline_api.md)**
-   * Indexing Service 백그라운드 워크플로우 및 원자적 보상 트랜잭션
-   * FastAPI API 엔드포인트 규격 (사진, 인덱싱, 검색, 비평, 장비 분석, 모델 다운로더)
-   * Gemma 4 (12B-it-8bit) 이미지 분석 시스템 프롬프트
-
-3. 🎨 **[프론트엔드 아키텍처 및 UI/UX 설계](./03_frontend_ui_ux.md)**
-   * Zustand 전역 상태 및 TanStack Query 서버 상태 관리
-   * 가상 스크롤, `AnalyticsView`, AI 비평 에디토리얼 문서 뷰어(`CritiqueDocumentModal`), PDF/MD 저장 및 SRP 서브 컴포넌트 모듈화
-
-4. ⚠️ **[에이전트 구현 제약사항 명세 (중요)](./04_implementation_constraints.md)**
-   * FastAPI 동적 포트 할당 및 Tauri 포트 주입 규칙
-   * SQLite WAL 모드 및 외래 키 동시성 설정
-   * 메모리 내(In-Memory) RAW 파일 스트리밍 및 동시 디코딩 세마포어(`MAX_CONCURRENT_DECODES=3`)
-   * CPU Bound 작업의 이벤트 루프 블로킹 방지 및 비평 취소 대책
-
-5. 🤖 **[AI 모델 설치 및 로컬 구동 가이드](./05_ai_model_setup.md)**
-   * Gemma 4 (12B-it-8bit) 설치 및 MLX 구동 방법
-   * SigLIP 2 설치 및 PyTorch MPS 가속 구동 방법
-   * UniPercept 8B 비평 모델 구동 및 메모리 수동/자동 언로드 지침
-
-6. 🏗️ **[코드 구조 및 백엔드/프론트엔드 아키텍처 명세](./06_code_structure_architecture.md)**
-   * 전체 디렉터리 및 백엔드 3계층/프론트엔드 서브패키지 모듈화 아키텍처
-   * 인덱싱 서비스(`indexing_service.py`)와 상태 관리(`indexing_state.py`) 구조
-   * `SearchService`, `ChatService`, `PhotoRepository`, `VectorRepository` 및 프론트엔드 SRP 서브컴포넌트 역할
-
-7. 📚 **[코드베이스 함수 인벤토리 및 명세서](./09_codebase_function_inventory.md)**
-   * 백엔드(FastAPI), 데스크탑 호스트(Tauri/Rust), 프론트엔드(React/TS 서브컴포넌트/훅/타입) 파일별 함수 및 API 명세
-   * 백엔드 및 프론트엔드 소스 코드 추상화(Abstraction) 및 모듈화 달성 현황
-
-8. 🎨 **[디자인 시스템 및 UI/UX 테마 가이드](./10_design_system_theme.md)**
-   * 「The Neutral Dark Studio」 디자인 철학 및 핵심 원칙
-   * 모노크롬 다크 팔레트, 듀얼 폰트(산세리프 + 모노스페이스 EXIF), 컴포넌트 규격 및 CSS 변수
-
-9. 🗺️ **[전체 개발 로드맵 및 백로그 (ROADMAP.md)](./ROADMAP.md)**
-   * Phase 1~21 마일스톤 완료 (비평 문서 뷰어, PDF/MD 내보내기, 모델 다운로더 등)
-   * 향후 백로그: 스마트 앨범(Smart Albums) 기획 명세
-
-10. 🔬 **연구 및 기술 분석 자료 (Research)**
-    * **[UniPercept RAM 30GB 점유 원인 분석 및 최적화 리포트](./research/UniPercept_Memory_Analysis.md)**
-    * **[UniPercept 논문 한국어 완역본](./research/UniPercept_Paper_Korean.md)**
-
+초고속 자연어 시맨틱 검색, 고용량 RAW 디코딩, 전문 AI 에디토리얼 비평 및 35mm 환산 장비 통계 분석을 단일 데스크탑 환경에서 제공합니다.
 
 ---
 
-## 🚀 1. 프로젝트 개요 및 핵심 목표
+## 🧭 최신 기능 위키 명세서 (Living Feature Wiki)
 
-### 1.1. 핵심 목표
-* **자연어 기반 시맨틱 검색:** "비 오는 날 카페", "역광에서 뛰어가는 강아지" 등 맥락과 분위기로 사진 검색.
-* **오프라인 메타데이터 생성:** AI가 사진을 분석하여 캡션과 핵심 태그(키워드)를 자동 생성.
-* **프로 사진가 워크플로우 지원:** 고용량 RAW 파일(ARW, CR3 등) 디코딩 및 Adobe RGB 처리, 정밀한 EXIF 메타데이터(ISO, 조리개, 35mm 환산 화각 등) 추출.
-* **하드웨어 최적화:** M4 칩의 통합 메모리 구조를 극대화하는 MLX 어댑터를 우선 구축하고, 향후 Windows 확장성을 보장하는 어댑터(DIP) 패턴 적용.
+프로젝트의 모든 아키텍처, 데이터 모델, API 및 인수 조건은 단일 통합 위키에서 모듈별로 관리됩니다:
 
-### 1.2. 기술 스택 (Tech Stack)
-* **Frontend:** Tauri v2, React 19, TypeScript, Tailwind CSS, Zustand, TanStack Query, Recharts
-* **Backend:** Python (FastAPI), SQLAlchemy, PyInstaller
-* **Database:** SQLite (관계형 메타데이터, WAL 모드), ChromaDB (벡터 데이터)
-* **AI Models & Engine:** SigLIP 2, Gemma 4 (12B-it-8bit), UniPercept 8B / Apple MLX & PyTorch MPS
+* 📄 **[마스터 개요 및 로드맵 (Feature Hub)](./features/core_studio/README.md)**
+  * 전체 기능 개요, 마일스톤 완료 현황 및 신규 백로그 체크리스트
+* 🏛️ **[시스템 아키텍처 청사진 (Architecture)](./features/core_studio/architecture.md)**
+  * Mermaid 데이터 흐름도, 디렉터리 청사진, 3계층 의존성 규칙 및 4대 제약사항
+* 📋 **[데이터 모델 및 API 명세서 (Spec & Contracts)](./features/core_studio/spec.md)**
+  * SQLite/ChromaDB 스키마, 지능형 2단계 파이프라인 규칙, REST API 계약 및 엣지 케이스 처리
+* ✅ **[인수 조건 및 검증 매트릭스 (Verification)](./features/core_studio/verification.md)**
+  * Given-When-Then 인수 조건, Happy/Boundary/Negative 테스트 매트릭스 및 결함 관리 대장
+
+---
+
+## 🛠️ 핵심 기술 스택 (Tech Stack)
+
+* **데스크탑 호스트:** Tauri v2, Rust
+* **프론트엔드 UI:** React 19, TypeScript, Tailwind CSS, Zustand, TanStack Query, Recharts
+* **백엔드 사이드카:** Python 3.11+, FastAPI (동적 포트 0 바인딩), SQLAlchemy
+* **데이터베이스:** SQLite (WAL 모드, Foreign Keys 활성화), ChromaDB (Cosine Similarity)
+* **AI 추론 엔진:** Apple MLX & PyTorch MPS (SigLIP 2, Gemma 4 12B-it-8bit, UniPercept 8B)
+* **미디어 처리:** rawpy (메모리 내 디코딩, 세마포어=3 제어), Pillow
+
+---
+
+## 📦 문서 보관함 및 연구 자료 (Archive & Research)
+
+* 🗄️ **[레거시 상세 명세 아카이브](./archive/legacy_specs/)** (기존 Phase 1~21 상세 명세 및 함수 인벤토리)
+* 🔬 **[UniPercept RAM 점유 분석 및 최적화 리포트](./research/UniPercept_Memory_Analysis.md)**
+* 📑 **[UniPercept 논문 한국어 완역본](./research/UniPercept_Paper_Korean.md)**

@@ -1,10 +1,8 @@
 import os
 import gc
-import json
 import time
 import threading
-from typing import Any, Dict, Optional, Tuple
-from PIL import Image
+from typing import Any, Optional, Tuple
 
 
 # For Gemma 4 (MLX)
@@ -269,10 +267,6 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
             with self.lock:
                 self.last_used_time = time.time()
                 self.active_requests -= 1
-
-    def _safe_parse_json(self, output: str) -> dict:
-        from services.ai_parser import parse_gemma_json_output
-        return parse_gemma_json_output(output)
 
     def generate_deep_critique(self, image_path: str, metadata: dict = None, photo_id: str = None) -> str:
         from services.critique_status import critique_status_manager, CritiqueCancelledException

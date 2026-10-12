@@ -1,7 +1,8 @@
 import os
+import io
 import datetime
 import mimetypes
-from typing import Optional, Any
+from typing import Optional
 from PIL import Image, ImageOps
 import rawpy
 import exifread
@@ -39,7 +40,6 @@ def get_mime_type(file_path: str) -> str:
         return "image/webp"
     mime, _ = mimetypes.guess_type(file_path)
     return mime or "image/jpeg"
-import io
 
 def decode_raw_to_pil(file_path: str, min_dimension: Optional[int] = None) -> Image.Image:
     """

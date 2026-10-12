@@ -76,9 +76,6 @@ GEMMA_TRANSLATE_STEP2_SYSTEM_PROMPT = (
     "7. 텍스트 본문에 이모티콘(이모지)을 일체 사용하지 마십시오."
 )
 
-# Backward compatibility alias
-GEMMA_TRANSLATE_CRITIQUE_SYSTEM_PROMPT = GEMMA_TRANSLATE_STEP1_SYSTEM_PROMPT
-
 GEMMA_DOCUMENT_FORMATTING_SYSTEM_PROMPT = (
     "당신은 최고 권위의 국제 사진 예술 매거진 수석 편집장(Managing Editor)이자 사진학 수석 평론가입니다.\n"
     "제공된 사진 비평 초안(Draft Critique)과 EXIF 메타데이터를 정밀 검토하여, 최고 수준의 가독성과 격조를 갖춘 '전문 사진 비평 공식 리포트 마크다운(Markdown) 문서'로 정돈하십시오.\n\n"
@@ -130,8 +127,6 @@ UNIPERCEPT_VQA_ISTA_PROMPT = (
     "4. Geometric Composition: Evaluate 2D planar contours (shapes) and 3D volumetric forms (e.g., cuboid, cylinder, sphere) constructing tangible tactile depth.\n"
     "5. Semantic Perception: Assess stylistic classification (e.g., Minimalist, Classical, Modern, Cyberpunk) and functional/symbolic textural implications."
 )
-
-UNIPERCEPT_CRITIQUE_PROMPT = UNIPERCEPT_VQA_IAA_PROMPT
 
 def format_score_info_text(scores_dict: dict | None = None, quality_score: int | None = None) -> str:
     if scores_dict and isinstance(scores_dict, dict):
@@ -186,8 +181,6 @@ def format_unipercept_translate_step2_user_prompt(
         "4. 각 섹션은 1~2문장의 핵심 총평 문단과 세부 분석 불릿 리스트('- ')로 분할하고, 핵심 용어는 볼드('**단어**') 처리하십시오.\n"
         "5. 원문에 없는 새로운 촬영 조언이나 개인적 감상을 일체 지어내지 마십시오. 텍스트에 이모티콘(이모지)은 절대 사용하지 마십시오."
     )
-
-format_unipercept_translate_user_prompt = format_unipercept_translate_step1_user_prompt
 
 def format_critique_document_structuring_user_prompt(
     draft_critique: str,

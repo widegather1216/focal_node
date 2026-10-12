@@ -22,9 +22,6 @@ class PhotoRepository:
             return results
         return self.db.query(models.Image).options(joinedload(models.Image.metadata_rel)).filter(models.Image.id.in_(photo_ids)).all()
 
-    def get_by_path(self, file_path: str) -> Optional[models.Image]:
-        return self.db.query(models.Image).options(joinedload(models.Image.metadata_rel)).filter(models.Image.file_path == file_path).first()
-
     def list_photos(self, limit: int = 50, offset: int = 0, parent_dir: Optional[str] = None) -> List[models.Image]:
         query = self.db.query(models.Image).options(joinedload(models.Image.metadata_rel)).outerjoin(models.ImageMetadata)
         if parent_dir:

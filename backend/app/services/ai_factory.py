@@ -1,5 +1,5 @@
 import threading
-from core.ports import ImageEmbeddingPort, TextEmbeddingPort, ImageCaptioningPort
+from core.ports import ImageEmbeddingPort, ImageCaptioningPort
 
 _siglip_adapter = None
 _gemma_adapter = None

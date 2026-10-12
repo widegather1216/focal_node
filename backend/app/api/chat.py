@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 
-import models
 import schemas
 from database import get_db
+from repositories.photo_repository import PhotoRepository
 from services.chat_service import ChatService
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -42,8 +42,6 @@ def cancel_photo_critique(photo_id: str):
         message="비평 생성이 사용자에 의해 중단되었습니다."
     )
 
-
-from repositories.photo_repository import PhotoRepository
 
 @router.get("/critiques", response_model=List[schemas.CritiqueItemResponse])
 def get_all_critiques(db: Session = Depends(get_db)):

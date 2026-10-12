@@ -5,9 +5,6 @@ import time
 import torch
 import threading
 from typing import Dict, Any, Optional
-from PIL import Image
-import torchvision.transforms as T
-from torchvision.transforms.functional import InterpolationMode
 
 from services.base_model import BaseKeepAliveModel, GPU_LOCK
 from services.unipercept_utils import build_transform, score2aestoken, AESTHETICS_TOKEN_LIST
