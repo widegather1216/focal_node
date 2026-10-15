@@ -10,6 +10,8 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+dist_release/
+*.dmg
 *.local
 
 # Editor directories and files
@@ -38,6 +40,7 @@ __pycache__/
 build/
 backend/build/
 backend/dist/
+backend/.pyinstaller_cache/
 focal_node_backend.spec
 
 # Tauri Binaries
