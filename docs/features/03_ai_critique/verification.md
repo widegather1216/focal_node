@@ -1,0 +1,68 @@
+# 🧪 [03_ai_critique] Verification & Ticket Logs
+
+- **검증 상태**: `🩹 Open Issues (AC 검증 완료 / REFACTOR 2건 대기)`
+- **인수 조건 통과율**: `2 / 2 (100%)`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 2건`
+
+---
+
+## 🎯 1. Given-When-Then 인수 조건 (Acceptance Criteria)
+
+### AC 1. 2단계 온디맨드 AI 비평 생성 및 Polling 상태 추적 `[As-Is]`
+* **Given:** 갤러리에서 특정 사진의 상세 패널을 열고 `[AI 비평 생성]`을 요청했을 때,
+* **When:** 백엔드에서 `UniPercept 8B` 또는 `Gemma 4` 비평 추론이 진행되면,
+* **Then:**
+  1. 프론트엔드가 `GET /api/chat/critique/status/{photo_id}` JSON Polling을 통해 실시간 진행 단계(`step`, `progress`)를 프로그레스 위젯과 전역 토스트에 표시해야 한다.
+  2. 생성이 완료되면 결과가 SQLite `ai_analysis.critique` 컬럼에 영구 캐싱되어 재진입 시 즉시 열람되어야 한다.
+  3. `UniPercept 8B` 추론 완료 직후 모델 가중치가 즉시 메모리에서 언로드되어야 한다.
+
+### AC 2. 에디토리얼 문서 모달 열람 및 Markdown/PDF 내보내기 `[As-Is]`
+* **Given:** 비평이 생성된 사진에서 `[매거진 문서 보기]` 모달(`CritiqueDocumentModal`)을 열었을 때,
+* **When:** `[Markdown 저장]` 또는 `[PDF 저장]` 버튼을 클릭하면,
+* **Then:** 촬영 EXIF 메타데이터와 비평 본문이 결합된 `.md` 또는 `.pdf` 파일이 클라이언트 사이드에서 생성되어 로컬 디스크에 다운로드되어야 한다.
+
+---
+
+## 🧪 2. 테스트 시나리오 매트릭스 (Test Matrix)
+
+| 구분 | 테스트 ID | 시나리오 설명 | 입력 / 조작 조건 | 기대 결과 | 상태 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Happy** | `TC-CRT-01` | 온디맨드 비평 생성 및 캐싱 | 사진 상세 -> 비평 생성 클릭 | Polling 진행률 표시 후 `ai_analysis.critique` 저장 | `PASS` |
+| **Happy** | `TC-CRT-02` | 에디토리얼 MD/PDF 내보내기 | 문서 모달 -> MD 및 PDF 저장 클릭 | EXIF 포함 정형화된 문서 파일 생성 | `PASS` |
+| **Boundary**| `TC-CRT-03` | 비평 추론 도중 취소 | 생성 중 `[취소]` 버튼 클릭 | `POST /critique/cancel/{id}` 호출 및 즉시 중단 | `PASS` |
+
+---
+
+## 🚨 3. 결함 리포트 (Defect Logs)
+
+*(현재 등록된 OPEN 결함 없음)*
+
+---
+
+## 🧐 4. 코드 품질 감사 리포트 (Audit & Refactoring Logs)
+
+### [REFACTOR-01] `CritiqueDocumentModal.tsx` 및 비평 UI 거대 컴포넌트 SRP 모듈 분할
+- **심각도**: 🟡 Should Fix (권장)
+- **위치**: `src/components/critique/CritiqueDocumentModal.tsx#L1-L1745`, `src/components/critique/CritiqueContentRenderer.tsx#L1-L675`, `src/components/detail/PhotoCritiqueView.tsx#L1-L439`
+- **위반 규칙**: Single Responsibility Principle (단일 UI 파일 300줄 가이드 초과)
+- **발견된 문제**:
+  - `CritiqueDocumentModal.tsx`(1,745줄) 내부에 매거진 뷰어 UI, A4 프린트 HTML 템플릿 생성(`generatePrintHtml`), Markdown 직렬화 로직, `html2canvas`/`jsPDF` 렌더링 엔진이 모두 결합되어 유지보수 복잡도가 높음.
+- **권장 개선안 (Suggested Diff)**:
+  ```text
+  - PDF/Markdown 내보내기 순수 유틸리티 및 프린트 HTML 템플릿을 src/utils/critiqueExporter.ts로 분리
+  - 스코어보드 파서 및 서브 섹션을 분리하여 모달 본체를 300줄 이내로 축소
+  ```
+- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+
+### [REFACTOR-02] 비평 추론 어댑터 내 Silent Fail(`except: pass`) 제거 및 장문 메서드 분리
+- **심각도**: 🟡 Should Fix (권장)
+- **위치**: `backend/app/services/chat_service.py#L49-L57`, `backend/app/services/mlx_adapters.py#L323-L620`, `backend/app/services/unipercept_adapter.py#L60-L497`
+- **위반 규칙**: Rule 4.1 (함수 30줄 이내) & Rule 4.3 (예외 묵인 `except: pass` 금지)
+- **발견된 문제**:
+  - `chat_service.py`, `mlx_adapters.py`, `unipercept_adapter.py`의 모델 언로드 및 스트리밍 루프에 `except Exception: pass`가 다수 존재하며, `format_and_structure_critique`(87줄) 및 `generate_vqa_critiques_3way`(90줄)가 30줄 가이드를 초과함.
+- **권장 개선안 (Suggested Diff)**:
+  ```text
+  - 프롬프트 생성 빌더 함수를 별도 헬퍼로 추출하여 추론 메서드 길이를 30줄 이내로 축소
+  - 빈 except 블록에 명시적 경고 로그(print/logger) 추가
+  ```
+- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)

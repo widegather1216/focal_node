@@ -73,10 +73,10 @@ self.model = self.model.to("mps")
 Focal Node는 단일 모델만 사용하는 것이 아니라 3개의 AI 모델이 유기적으로 협업합니다:
 
 1. **SigLIP 2 (Keep-alive 상주):** 시각 검색 임베딩 추출 (~1.5 GB)
-2. **Gemma 4 E4B-it (MLX):** 캡셔닝 및 비평 한국어 번역 (~4.5 GB)
+2. **Gemma 4 12B-it-8bit (MLX):** 캡셔닝 및 비평 한국어 번역 (~12.7 GB)
 3. **UniPercept (PyTorch MPS):** 14B 지각/화질/미학 평가 (~28.0 GB)
 
-* **결과:** UniPercept가 구동되는 순간, 시스템에는 **28GB + 4.5GB + 1.5GB = 약 34GB의 AI 모델 메모리**가 동시에 올라가게 됩니다.
+* **결과:** UniPercept와 Gemma 4가 동시에 메모리에 상주할 경우, 시스템에는 **28GB + 12.7GB + 1.5GB = 약 42.2GB의 AI 모델 메모리**가 동시에 올라가게 됩니다.
 
 ---
 
@@ -136,7 +136,7 @@ self.model = AutoModel.from_pretrained(
 비평 생성 파이프라인에서 UniPercept와 Gemma가 동시에 RAM에 머무르지 않도록 제어합니다:
 1. **[1단계]** UniPercept 로드 ➔ 점수(VR) 및 영문 비평(VQA) 생성 ➔ **UniPercept 즉시 언로드(`del self.model`, `torch.mps.empty_cache()`)**
 2. **[2단계]** Gemma 로드 ➔ 한국어 번역 및 정제 ➔ Gemma 완료
-* **효과:** 28GB + 4.5GB의 동시 점유를 방지하여 최대 피크 메모리를 안전하게 억제.
+* **효과:** 28GB + 12.7GB의 동시 점유를 방지하여 최대 피크 메모리를 안전하게 억제.
 
 ---
 

@@ -35,7 +35,7 @@ Apple Silicon(M 시리즈)의 GPU 자원을 활용하여, 수만 장의 사진 �
 
 ```bash
 # 1. 저장소 클론
-git clone https://github.com/your-username/focal_node.git
+git clone https://github.com/widegather1216/focal_node.git
 cd focal_node
 
 # 2. Python 백엔드 설정 (가상환경)
@@ -58,7 +58,8 @@ npm run tauri dev
 
 단, 앱 내에서 구동되는 **AI 모델 가중치(Weights)**는 본 저장소에 포함되어 있지 않으며, 구동 시 로컬로 다운로드 됩니다. 각 모델은 다음의 라이선스를 따릅니다:
 
-* **SigLIP 2** (Google): [Apache 2.0 License](https://github.com/google-research/big_vision/blob/main/LICENSE)
-* **Gemma** (Google): [Gemma Terms of Use](https://ai.google.dev/gemma/terms) (상업적 이용 및 연구 목적 허용, 약관 준수 필수)
+* **SigLIP 2** (`google/siglip2-base-patch16-224`): [Apache 2.0 License](https://github.com/google-research/big_vision/blob/main/LICENSE)
+* **Gemma 4** (`mlx-community/gemma-4-12B-it-8bit`): [Gemma Terms of Use](https://ai.google.dev/gemma/terms) (상업적 이용 및 연구 목적 허용, 약관 준수 필수)
+* **UniPercept 8B** (`widegather/unipercept-mirror`, InternVL2.5-8B 기반): [UniPercept / InternVL License](https://github.com/thunderbolt215/UniPercept) (원본 모델 및 백본 라이선스 정책 준수)
 
 Focal Node는 모델 자체를 재배포하지 않으며, 사용자의 로컬 환경에서 Hugging Face 허브를 통해 모델을 다운로드하여 사용합니다.
