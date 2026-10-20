@@ -1,8 +1,8 @@
 # 🧪 [04_studio_ui_analytics] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Open Issues (AC 검증 완료 / REFACTOR 1건 대기)`
-- **인수 조건 통과율**: `2 / 2 (100%)`
-- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건`
+- **검증 상태**: `🩹 Open Issues (Baseline AC 검증 완료 / 차트 드릴다운 AC 1건 대기 / REFACTOR 2건 대기)`
+- **인수 조건 통과율**: `2 / 3 (Baseline 100%)`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 2건`
 
 ---
 
@@ -20,6 +20,13 @@
 * **When:** 사이드바 `[Insights]` 탭에 진입하여 `[35mm 환산]` / `[실제 초점거리]` 토글을 전환하면,
 * **Then:** `focal_lengths_35mm` 또는 `focal_lengths` 기준으로 화각 막대 차트가 즉시 전환되고 카메라/렌즈 도넛 차트가 정확히 렌더링되어야 한다.
 
+### AC 3. 통계 차트 클릭 갤러리 인터랙티브 드릴다운 (`Click-to-Filter`) `[To-Be]`
+* **Given:** `[Insights]` 탭의 장비/화각/조리개 차트가 렌더링된 상태에서,
+* **When:** 사용자가 특정 카메라/렌즈 도넛 섹션이나 `[35mm 환산]` 모드의 `"35mm"` 화각 막대를 클릭하면,
+* **Then:**
+  1. `useAppStore.applyAnalyticsDrilldown`이 호출되어 해당 EXIF 조건(`use_35mm_equivalent` 모드 포함)이 `searchFilters`에 즉시 반영되어야 한다.
+  2. `activeTab`이 `'gallery'`로 전환되며 해당 조건에 부합하는 사진들만 필터링되어 표시되어야 한다.
+
 ---
 
 ## 🧪 2. 테스트 시나리오 매트릭스 (Test Matrix)
@@ -29,6 +36,7 @@
 | **Happy** | `TC-UI-01` | 가상 스크롤 갤러리 렌더링 | 1,000장 목록 스크롤 | DOM 노드 최소화 및 360px 캐시 바인딩 | `PASS` |
 | **Happy** | `TC-UI-02` | 35mm 환산 통계 토글 | Insights 탭 -> 35mm 토글 | 환산 화각 기준 막대 차트 즉시 갱신 | `PASS` |
 | **Boundary**| `TC-UI-03` | 검색/폴더 0개 Empty State | 사진이 없는 상태 | `"일치하는 사진이 없습니다"` Empty State 노출 | `PASS` |
+| **Happy** | `TC-UI-04` | 차트 클릭 갤러리 드릴다운 (`[To-Be]`) | Insights 차트에서 `"35mm"` 막대 클릭 | 갤러리 탭 전환 + 35mm 화각 필터 자동 적용 | `⏳ Pending` |
 
 ---
 
@@ -51,5 +59,19 @@
   ```text
   - useAppStore.ts의 직접 fetch 호출을 api.cancelPhotoCritique, api.getFolders, api.removeFolder 호출로 일원화
   - src/hooks/usePhotosQuery.ts에서 미사용 usePhotosQuery 함수 제거
+  ```
+- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+ 
+### [REFACTOR-02] API 클라이언트(`api.ts`) 및 Analytics/Fullscreen 컴포넌트 내 `any` 타입 구체화
+- **심각도**: 🟡 Should Fix (권장 조치)
+- **위치**: `src/services/api.ts#L33,L46,L156,L258`, `src/components/analytics/AnalyticsKpiGrid.tsx#L8-L10`, `src/components/analytics/ExifBarCharts.tsx#L6-L8`, `src/components/analytics/GearDonutCharts.tsx#L6-L7`, `src/components/fullscreen/FullscreenMetadataOverlay.tsx#L6`, `src/hooks/usePhotoDetail.ts#L77,L88`
+- **위반 규칙**: Type Safety & Defensive Coding (무분별한 `any` 지양 및 명시적 모델 인터페이스 바인딩)
+- **발견된 문제**:
+  - `api.ts`의 주요 API 응답 반환 타입이 `Promise<any[]>` 또는 `Promise<any>`로 정의되어 있어 하위 컴포넌트 및 커스텀 훅(`usePhotosQuery`, `usePhotoDetail`, `AnalyticsKpiGrid`)으로 `any` 타입 누수가 전파됨.
+  - `FullscreenMetadataOverlay.tsx`의 props 인터페이스가 `photo: any`로 단언되어 메타데이터 프로퍼티 접근 시 컴파일 타임 검증이 무력화됨.
+- **권장 개선안 (Suggested Diff)**:
+  ```text
+  - api.ts 메서드 반환형을 PhotoListResponse[], FolderResponse[], CritiqueItem[] 등 구체적 인터페이스로 지정
+  - Analytics 컴포넌트 및 FullscreenMetadataOverlay의 props를 PhotoDetail/GearStats 인터페이스로 엄격하게 바인딩
   ```
 - **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)

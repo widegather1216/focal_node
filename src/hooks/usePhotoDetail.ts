@@ -34,6 +34,11 @@ export interface PhotoDetail {
     aesthetic_tags?: string[];
     is_user_edited: boolean;
     critique?: string | null;
+    critique_en?: string | null;
+    overall_score?: number | null;
+    iaa_score?: number | null;
+    iqa_score?: number | null;
+    ista_score?: number | null;
     critique_updated_at?: string | null;
   };
 }

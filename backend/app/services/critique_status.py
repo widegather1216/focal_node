@@ -20,7 +20,12 @@ class CritiqueStatusManager:
         progress: int,
         status: str = "processing",
         critique: Optional[str] = None,
-        critique_updated_at: Optional[str] = None
+        critique_updated_at: Optional[str] = None,
+        critique_en: Optional[str] = None,
+        overall_score: Optional[float] = None,
+        iaa_score: Optional[float] = None,
+        iqa_score: Optional[float] = None,
+        ista_score: Optional[float] = None,
     ):
         with self._lock:
             # If already cancelled, do not overwrite status unless explicitly resetting
@@ -34,6 +39,11 @@ class CritiqueStatusManager:
                 "progress": progress,
                 "status": status,
                 "critique": critique,
+                "critique_en": critique_en,
+                "overall_score": overall_score,
+                "iaa_score": iaa_score,
+                "iqa_score": iqa_score,
+                "ista_score": ista_score,
                 "critique_updated_at": critique_updated_at,
             }
 
@@ -59,10 +69,15 @@ class CritiqueStatusManager:
                         "progress": 100,
                         "status": "completed",
                         "critique": ai.critique,
-                        "critique_updated_at": updated_at_str
+                        "critique_en": ai.critique_en,
+                        "overall_score": ai.overall_score,
+                        "iaa_score": ai.iaa_score,
+                        "iqa_score": ai.iqa_score,
+                        "ista_score": ai.ista_score,
+                        "critique_updated_at": updated_at_str,
                     }
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[CritiqueStatus] DB fallback query notice: {e}", flush=True)
 
         return {
             "photo_id": photo_id,
@@ -72,7 +87,12 @@ class CritiqueStatusManager:
             "progress": 0,
             "status": "idle",
             "critique": None,
-            "critique_updated_at": None
+            "critique_en": None,
+            "overall_score": None,
+            "iaa_score": None,
+            "iqa_score": None,
+            "ista_score": None,
+            "critique_updated_at": None,
         }
 
 

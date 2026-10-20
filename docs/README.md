@@ -1,29 +1,29 @@
 # 🧭 Focal Node: Master Control Tower (Living Wiki Hub)
 
 > 외부 클라우드 전송 없이 Mac Native(Apple MLX & PyTorch MPS)로 구동되는 **프라이버시 보호 로컬 사진 관리 및 AI 시맨틱 검색/비평 데스크탑 플랫폼**입니다.
-> **최종 업데이트**: 2026-10-17 (by `clean-code-auditor` & `interactive-feature-planner`)
+> **최종 업데이트**: 2026-10-17 (by `interactive-feature-planner` & `clean-code-auditor`)
 
 ---
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
-- **Active 도메인**: [`02_search_curation`](./features/02_search_curation/README.md) / [`01_indexing_storage`](./features/01_indexing_storage/README.md)
-- **현재 단계 (Stage)**: `📐 Planning Complete` (신규 기능 구현 대기) & `🩹 Debugging` (클린코드 리팩토링 티켓 등록 완료)
-- **직전 완료 작업**: 레거시 문서(`docs/archive/`) 일괄 정리, 전 도메인 코드-문서 정합성(Drift) 100% 교정 및 정적 코드 감사(`REFACTOR` 티켓 발권) 완료
+- **Active 도메인**: [`03_ai_critique`](./features/03_ai_critique/README.md)
+- **현재 단계 (Stage)**: `🛠️ Implementing` (`03_ai_critique` Step 1 완료 / Step 2 대기) & `🩹 Debugging` (`REFACTOR` 7건 대기)
+- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) Step 1 [DB & Types] 구현 완료 (`ai_analysis` 정규화 컬럼, DDL/인덱스 생성, 6-Way 스코어보드 자동 백필, Pydantic/TypeScript 타입 확장, 신규 8종 포함 도메인 테스트 31종 전수 통과)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"02_search_curation 도메인 Step 1 개발 진행해줘"` *(또는 리팩토링 우선 시: `"03_ai_critique 도메인의 REFACTOR-01 티켓 해결해줘"`)*
+  > `"03_ai_critique 도메인 Step 2 개발 진행해줘"` *(PhotoRepository 및 GET /api/chat/critiques 정렬 연동)*
 
 ---
 
 ## 📊 2. 전체 도메인 진행 현황판 (Master Progress Matrix)
 
-| 도메인 (Bounded Context) | 생명주기 상태 | 구현 진척도 (Step 1~4) | QA 인수 통과율 | 미해결 티켓 (`🚨D` / `🧐R`) | 최근 작업 요약 |
+| 도메인 (Bounded Context) | 생명주기 상태 | 구현 진척도 (Active Step 1~4) | QA 인수 통과율 | 미해결 티켓 (`🚨D` / `🧐R`) | 최근 작업 요약 |
 | :--- | :---: | :---: | :---: | :---: | :--- |
-| 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `3/3 (100%)` | `0 / 1` | 동적 포트/IPC/모델 로더 검증 완료 (`REFACTOR-01` 등록) |
-| 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 📐 Planning | `[□□□□] 0/4` | `3/4 (75%)` | `0 / 1` | Baseline 완료, 스마트 오프라인(`is_offline`) Step 1~4 대기 |
-| 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 📐 Planning | `[□□□□] 0/4` | `2/5 (40%)` | `0 / 1` | 하이브리드 검색 완료, **M4. 스마트 앨범 Step 1~4 대기** |
-| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `3/3 (100%)` | `0 / 2` | 2-모델 비평 및 MD/PDF 내보내기 완료 (`REFACTOR-01, 02` 대기) |
-| 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `3/3 (100%)` | `0 / 1` | 가상 스크롤 갤러리 및 35mm 통계 완료 (`REFACTOR-01` 대기) |
+| 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `3/3 (100%)` | `0 / 1` | 동적 포트/IPC/모델 로더 검증 완료 (`REFACTOR-01` 대기) |
+| 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 📐 Planning | `[□□□□] 0/4` | `3/6 (50%)` | `0 / 1` | 스마트 오프라인 + SHA-256 Relocation + 2-Pass 인덱싱 Step 1~4 대기 |
+| 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 📐 Planning | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 거리 임계값 + RRF 랭킹 + 35mm/점수 필터 + 스마트 앨범 Step 1~4 대기 |
+| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🛠️ Implementing | `[■□□□] 1/4` | `4/5 (80%)` | `0 / 2` | Step 1 [DB & Types] 완료 (Step 2 Repo/API 정렬 대기) |
+| 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 📐 Planning | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 2` | 통계 차트 클릭 갤러리 드릴다운(`Click-to-Filter`) Step 3~4 대기 |
 
 *(※ 상태 범례: `📐 Planning` | `🛠️ Implementing` | `🧐 Auditing` | `🧪 QA Testing` | `🩹 Debugging` | `🟢 Sign-Off`)*
 *(※ 미해결 티켓: `🚨D` = Open `DEFECT-xx` 개수, `🧐R` = Open `REFACTOR-xx` 개수)*
@@ -32,8 +32,10 @@
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
 
+- **`[2026-10-20]` `[clean-code-developer]` [`03_ai_critique`]**: Step 1 [DB & Types] 구현 완료 (`ai_analysis` 정규화 컬럼 추가, `run_migrations()` DDL/인덱스 생성 및 6-Way 스코어보드 자동 백필, Pydantic/TS 타입 확장, 단위 테스트 8종 작성 및 회귀 31종 전수 통과).
+- **`[2026-10-17]` `[interactive-feature-planner]` [`01~04`]**: 5대 핵심 로직·스펙 발전안(SHA-256 Relocation, 2-Pass 점진적 인덱싱, 코사인 임계값+RRF 랭킹, 비평 평점 DB 정규화, 35mm 환산 필터 및 차트 드릴다운) 설계 및 위키 전수 반영.
+- **`[2026-10-17]` `[clean-code-auditor]` [`ALL`]**: 전 도메인 7대 감사 매트릭스 전수 정적 분석(tsc, pytest 65건 전수 통과 확인), Silent Fail/`any` 타입/거대 컴포넌트 식별 및 `REFACTOR` 티켓 최신화.
 - **`[2026-10-17]` `[clean-code-auditor]` [`ALL`]**: 전 도메인 위키-코드 불일치(API 경로, 스키마, 파일 트리, CSS 토큰) 교정, 레거시 문서(`docs/archive/`) 폐기 및 도메인별 `REFACTOR` 티켓 발권.
-- **`[2026-10-17]` `[interactive-feature-planner]` [`01_indexing_storage`, `02_search_curation`]**: 스마트 오프라인(`is_offline`) 및 M4 스마트 앨범(`smart_albums`) 4단계 구현 로드맵 수립.
 
 ---
 

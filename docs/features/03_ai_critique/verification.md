@@ -1,7 +1,7 @@
 # 🧪 [03_ai_critique] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Open Issues (AC 검증 완료 / REFACTOR 2건 대기)`
-- **인수 조건 통과율**: `2 / 2 (100%)`
+- **검증 상태**: `🩹 Open Issues (Baseline AC 검증 완료 / 평점 정규화 AC 1건 대기 / REFACTOR 2건 대기)`
+- **인수 조건 통과율**: `2 / 3 (Baseline 100%)`
 - **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 2건`
 
 ---
@@ -21,6 +21,13 @@
 * **When:** `[Markdown 저장]` 또는 `[PDF 저장]` 버튼을 클릭하면,
 * **Then:** 촬영 EXIF 메타데이터와 비평 본문이 결합된 `.md` 또는 `.pdf` 파일이 클라이언트 사이드에서 생성되어 로컬 디스크에 다운로드되어야 한다.
 
+### AC 3. 정량 평점(`overall`/`iaa`/`iqa`/`ista`)·영문 원문 DB 정규화 및 평점순 정렬 `[To-Be]`
+* **Given:** `UniPercept 8B` 6-Way 앙상블 비평이 생성되거나 기존 비평 DB가 마이그레이션될 때,
+* **When:** 비평 저장 또는 `GET /api/chat/critiques?sort_by=overall_score`가 호출되면,
+* **Then:**
+  1. `ai_analysis` 테이블의 `overall_score`, `iaa_score`, `iqa_score`, `ista_score` 및 `critique_en` 컬럼에 정규화된 값들이 저장(또는 기존 텍스트에서 자동 백필)되어야 한다.
+  2. 비평 아카이브 탭(`CritiqueView.tsx`)에서 `[최신순 / 종합평점순 / 미학점수순]` 정렬 전환 및 한/영 원문 즉시 토글이 동작해야 한다.
+
 ---
 
 ## 🧪 2. 테스트 시나리오 매트릭스 (Test Matrix)
@@ -30,6 +37,8 @@
 | **Happy** | `TC-CRT-01` | 온디맨드 비평 생성 및 캐싱 | 사진 상세 -> 비평 생성 클릭 | Polling 진행률 표시 후 `ai_analysis.critique` 저장 | `PASS` |
 | **Happy** | `TC-CRT-02` | 에디토리얼 MD/PDF 내보내기 | 문서 모달 -> MD 및 PDF 저장 클릭 | EXIF 포함 정형화된 문서 파일 생성 | `PASS` |
 | **Boundary**| `TC-CRT-03` | 비평 추론 도중 취소 | 생성 중 `[취소]` 버튼 클릭 | `POST /critique/cancel/{id}` 호출 및 즉시 중단 | `PASS` |
+| **Happy** | `TC-CRT-04` | 정량 평점 DB 정규화 및 아카이브 정렬 (`[To-Be]`) | 비평 생성 후 `sort_by=overall_score` 조회 | 4종 점수 컬럼 저장 및 고득점 순 반환 | `⏳ Pending` |
+| **Boundary**| `TC-CRT-05` | 기존 비평 텍스트 자동 백필 (`[To-Be]`) | 레거시 스코어보드 문자열 보유 DB 기동 | `run_migrations()`에서 4종 점수 컬럼 자동 백필 | `PASS` |
 
 ---
 

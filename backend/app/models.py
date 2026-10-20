@@ -86,6 +86,11 @@ class Image(Base):
             "aesthetic_tags": _parse_json_list(ai.aesthetic_tags if ai else None),
             "is_user_edited": ai.is_user_edited if ai else False,
             "critique": ai.critique if ai else None,
+            "critique_en": ai.critique_en if ai else None,
+            "overall_score": ai.overall_score if ai else None,
+            "iaa_score": ai.iaa_score if ai else None,
+            "iqa_score": ai.iqa_score if ai else None,
+            "ista_score": ai.ista_score if ai else None,
             "critique_updated_at": ai.critique_updated_at.isoformat() if ai and ai.critique_updated_at else None
         }
         
@@ -133,6 +138,11 @@ class AIAnalysis(Base):
     is_user_edited = Column(Boolean, default=False, nullable=False)
     critique = Column(String, nullable=True)
     critique_updated_at = Column(DateTime, nullable=True)
+    overall_score = Column(Float, index=True, nullable=True)
+    iaa_score = Column(Float, index=True, nullable=True)
+    iqa_score = Column(Float, nullable=True)
+    ista_score = Column(Float, nullable=True)
+    critique_en = Column(String, nullable=True)
 
     # Relationships
     image = relationship("Image", back_populates="ai_analysis_rel")

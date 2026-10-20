@@ -20,7 +20,7 @@
 
 ---
 
-## 💻 2. 프론트엔드 전역 상태 계약 (`src/store/useAppStore.ts`) `[As-Is 기구현]`
+## 💻 2. 프론트엔드 전역 상태 및 드릴다운 계약 (`src/store/useAppStore.ts`)
 
 ```typescript
 interface AppState {
@@ -36,8 +36,17 @@ interface AppState {
   critiqueDocumentPhotoId: string | null;
   openCritiqueDocument: (photoId: string | null) => void;
   closeCritiqueDocument: () => void;
+
+  // [To-Be] 통계 차트 클릭 갤러리 드릴다운 액션
+  applyAnalyticsDrilldown: (filterPatch: Partial<SearchFilters>) => void;
 }
 ```
+
+### 2.1. `[To-Be]` 차트 항목별 드릴다운 매핑 규격 (`applyAnalyticsDrilldown`)
+* **카메라 도넛 차트 클릭 (`GearDonutCharts.tsx`)**: `{ camera_model: entry.name }` 세팅 후 `activeTab = 'gallery'` 전환
+* **렌즈 도넛 차트 클릭 (`GearDonutCharts.tsx`)**: `{ lens_model: entry.name }` 세팅 후 `activeTab = 'gallery'` 전환
+* **초점거리 막대 차트 클릭 (`ExifBarCharts.tsx`)**: `entry.name`(예: `"35mm"`)에서 수치 `val = 35`를 파싱하여 `{ focal_length_min: val, focal_length_max: val, use_35mm_equivalent: is35mmMode }` 세팅 후 `activeTab = 'gallery'` 전환
+* **조리개 막대 차트 클릭 (`ExifBarCharts.tsx`)**: `entry.name`(예: `"f/1.4"`)에서 수치 `val = 1.4`를 파싱하여 `{ f_number_min: val, f_number_max: val }` 세팅 후 `activeTab = 'gallery'` 전환
 
 ---
 

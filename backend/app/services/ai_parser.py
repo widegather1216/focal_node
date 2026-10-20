@@ -1,4 +1,5 @@
 import json
+import re
 
 GEMMA_SYSTEM_PROMPT = (
     "당신은 인디펜던트 사진작가이자 깊이 있는 시각적 미학 분석을 전문으로 하는 senior AI 시각 평론가입니다.\n"
@@ -144,6 +145,49 @@ def format_score_info_text(scores_dict: dict | None = None, quality_score: int |
     elif quality_score is not None:
         return f"[품질/미학 점수: {quality_score}점 / 100점]\n\n"
     return ""
+
+def _extract_float_score(pattern: str, text: str) -> float | None:
+    """Extracts a floating point score matching the given regex pattern."""
+    match = re.search(pattern, text)
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except (ValueError, TypeError):
+        return None
+
+def parse_scoreboard_scores(text: str | None) -> dict[str, float | None]:
+    """
+    Parses [6-Way 앙상블 비평 스코어보드] block from critique text.
+    Returns a dictionary with 'overall', 'iaa', 'iqa', 'ista' scores as float or None.
+    """
+    empty_scores: dict[str, float | None] = {
+        "overall": None,
+        "iaa": None,
+        "iqa": None,
+        "ista": None,
+    }
+    if not text or not isinstance(text, str):
+        return empty_scores
+
+    scoreboard_match = re.search(
+        r"\[(?:📊\s*)?6-Way\s*앙상블\s*비평\s*스코어보드\]([\s\S]*?)(?=(?:\n\s*#{1,4}\s*|\n\s*\d+\.\s*\[|\n\s*>\s*|$))",
+        text,
+        re.IGNORECASE,
+    )
+    if not scoreboard_match:
+        fallback_score = _extract_float_score(r"\[품질/미학 점수:\s*([0-9]+(?:\.[0-9]+)?)점", text)
+        if fallback_score is not None:
+            empty_scores["overall"] = fallback_score
+        return empty_scores
+
+    block = scoreboard_match.group(1)
+    return {
+        "overall": _extract_float_score(r"최종\s*종합\s*평점:\s*([0-9]+(?:\.[0-9]+)?)", block),
+        "iaa": _extract_float_score(r"(?:미학\s*(?:및\s*구도)?|IAA)[\s\S]*?:\s*([0-9]+(?:\.[0-9]+)?)", block),
+        "iqa": _extract_float_score(r"(?:화질\s*(?:및\s*선명도|및\s*광학\s*기술)?|IQA)[\s\S]*?:\s*([0-9]+(?:\.[0-9]+)?)", block),
+        "ista": _extract_float_score(r"(?:구조\s*(?:및\s*질감)?|ISTA)[\s\S]*?:\s*([0-9]+(?:\.[0-9]+)?)", block),
+    }
 
 def format_unipercept_translate_step1_user_prompt(
     raw_en_critique: str,

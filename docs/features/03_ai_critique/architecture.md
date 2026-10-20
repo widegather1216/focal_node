@@ -2,7 +2,7 @@
 
 ---
 
-## 🏛️ 1. 2단계 온디맨드 AI 비평 및 에디토리얼 내보내기 흐름도
+## 🏛️ 1. 2단계 온디맨드 AI 비평, 정규화 저장 및 에디토리얼 내보내기 흐름도
 
 ```mermaid
 flowchart TD
@@ -17,7 +17,7 @@ flowchart TD
     UniPercept -->|2단계: 번역 및 에디토리얼 구조화| Gemma4["GemmaAdapter (Gemma 4 12B-it MLX)\n2-Pass 한국어 직역/정제 & 60초 Keep-alive"]
     GPULock -->|단독: engine='gemma4'| Gemma4
     
-    ChatSvc -->|영구 캐싱| PhotoRepo["PhotoRepository\n(SQLite ai_analysis 테이블)"]
+    ChatSvc -->|정규화 저장: critique + critique_en + 4종 평점| PhotoRepo["PhotoRepository\n(SQLite ai_analysis 테이블)"]
     UI -->|모달/팝아웃 열람 및 MD/PDF 생성| DocModal["CritiqueDocumentModal.tsx\n(html2canvas + jsPDF + save_binary_file IPC)"]
 ```
 
@@ -27,28 +27,30 @@ flowchart TD
 
 ```text
 backend/app/
-├── api/chat.py                        # [기존] 비평 생성, 상태 Polling, 취소, 삭제, 전체 비평 목록, 종합 총평 라우터
+├── models.py                          # [수정대상] AIAnalysis에 overall_score, iaa_score, iqa_score, ista_score, critique_en 컬럼 추가
+├── database.py                        # [수정대상] run_migrations()에 정규화 컬럼 추가 및 기존 텍스트 스코어보드 자동 백필(Backfill)
+├── api/chat.py                        # [수정대상] 비평 생성/Polling/취소/삭제/총평 및 평점 정렬 지원 전체 비평 목록 라우터
 ├── services/
-│   ├── chat_service.py                # [기존] UniPercept -> Gemma 4 순차 비평 파이프라인 오케스트레이션 및 DB 영구 저장
+│   ├── chat_service.py                # [수정대상] UniPercept -> Gemma 4 순차 비평 파이프라인 및 정규화 컬럼/원문 영구 저장
 │   ├── critique_status.py             # [기존] 사진별 4단계 비평 진행률(step/progress), 취소 플래그 및 DB Self-Healing 조회
 │   ├── mlx_adapters.py                # [기존] GemmaAdapter (MLX 60초 Keep-alive, 2-Pass 번역/구조화 및 종합 총평)
 │   ├── unipercept_adapter.py          # [기존] UniPerceptAdapter (PyTorch MPS IAA/IQA/ISTA 채점/비평 및 즉시 언로드)
 │   └── unipercept_utils.py            # [기존] InternVL 동적 패치 타일링 및 이미지 전처리 유틸리티
 
 src/
-├── types/critique.ts                  # [기존] CritiqueItem, CritiqueSummaryResponse, CritiqueStatus 타입 정의
+├── types/critique.ts                  # [수정대상] CritiqueItem(overall_score, iaa_score, iqa_score, ista_score, critique_en 포함)
 ├── hooks/
 │   ├── usePhotoDetail.ts              # [기존] 상세 패널 상태, 비평 Polling/취소/삭제 및 재분석 제어 훅
 │   └── usePhotoDetailQuery.ts         # [기존] 단일 사진 상세 정보 TanStack Query 훅
 └── components/
-    ├── CritiqueView.tsx               # [기존] 전체 비평 아카이브 대시보드 탭
+    ├── CritiqueView.tsx               # [수정대상] 전체 비평 아카이브 대시보드 탭 (최신순 / 종합평점순 / 미학점수순 정렬 지원)
     ├── detail/
     │   ├── PhotoCritiqueView.tsx      # [기존] 우측 패널 내 비평 요청/취소/점수 HUD 뷰
     │   └── PhotoAiAnalysisView.tsx    # [기존] AI 캡션 및 태그 수동 편집 폼
     └── critique/
-        ├── CritiqueCard.tsx           # [기존] 개별 비평 요약 카드
+        ├── CritiqueCard.tsx           # [수정대상] 개별 비평 요약 카드 및 정규화 평점 배지 표시
         ├── CritiqueSummaryCard.tsx    # [기존] 다중 사진 포트폴리오 종합 비평 카드
-        ├── CritiqueContentRenderer.tsx# [기존] 마크다운 비평 본문 및 IAA/IQA/ISTA 스코어보드 렌더러
+        ├── CritiqueContentRenderer.tsx# [수정대상] 정규화 점수/영문 원문 props 우선 렌더링 (레거시 텍스트 파싱 폴백 유지)
         ├── CritiqueProgressWidget.tsx # [기존] 4단계 비평 생성 프로그레스 위젯
         ├── GlobalCritiqueToast.tsx    # [기존] 백그라운드 비평 진행 전역 플로팅 토스트
         └── CritiqueDocumentModal.tsx  # [기존/리팩토링대상] 매거진 뷰어(모달/독립 팝아웃 창) 및 MD/PDF 익스포터
@@ -60,8 +62,9 @@ src/
 
 * **참조하는 외부 도메인 (Inbound/Read)**:
   - `00_core_foundation`: `GPU_LOCK`, `ai_factory.get_gemma_adapter()`, Tauri `save_binary_file` 및 `reveal_in_finder` IPC 참조.
-  - `01_indexing_storage`: `PhotoRepository`(`get_photo_by_id`, `update_critique`, `delete_critique`, `get_all_critiqued_photos`)를 통해 `ai_analysis` 레코드 읽기/쓰기 수행.
+  - `01_indexing_storage`: `PhotoRepository`를 통해 `ai_analysis` 레코드 읽기/쓰기 수행.
 * **외부 도메인에 노출하는 계약 (Outbound/Expose)**:
+  - `02_search_curation`: `ai_analysis`의 정규화 평점 컬럼(`overall_score`, `iaa_score`, `iqa_score`, `ista_score`)을 노출하여 점수 기반 검색 및 스마트 앨범 조건 설정을 지원합니다.
   - `04_studio_ui_analytics`: 우측 상세 패널(`DetailPanel.tsx`) 내 탭 뷰(`PhotoCritiqueView`, `PhotoAiAnalysisView`) 및 전역 플로팅 토스트(`GlobalCritiqueToast`)를 제공합니다.
 
 ---
@@ -71,5 +74,5 @@ src/
 1. **비평 엔진 상호 배타적 메모리 수명주기**:
    - `UniPercept 8B`는 3-Way VR 채점 및 VQA 영문 비평 직후 `finally` 블록에서 즉시 가중치를 언로드하고 `torch.mps.empty_cache()`를 실행한 뒤 `Gemma 4` 한국어 번역 단계로 진입해야 합니다.
    - `Gemma 4 (MLX)`는 연속 요청 최적화를 위해 60초 Keep-alive 후 언로드하며, 비평 도중 사용자 취소 또는 예외 발생 시에는 두 모델 모두 즉시 언로드(`_unload_critique_models`)합니다.
-2. **거대 모달 컴포넌트 SRP 분할 지침**:
-   - `CritiqueDocumentModal.tsx`는 단일 UI 300줄 가이드를 준수하도록 헤더/본문/PDF 익스포터 모듈로 단계적 분리를 지향합니다(`REFACTOR-01`).
+2. **정량 평점 및 한/영 원문 정규화 원칙**:
+   - 산출된 6-Way 앙상블 평점(`overall_score`, `iaa_score`, `iqa_score`, `ista_score`)과 UniPercept 영문 원문(`critique_en`)은 문자열 파싱에 의존하지 않도록 전용 DB 컬럼에 분리 저장하며, 기존 사용자의 데이터를 위해 기동 마이그레이션 시 레거시 비평 본문에서 점수를 자동 추출해 백필합니다.

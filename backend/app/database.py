@@ -55,12 +55,19 @@ def run_migrations(bind_engine=None):
         "ALTER TABLE image_metadata ADD COLUMN sensor_format VARCHAR(50)",
         "ALTER TABLE ai_analysis ADD COLUMN critique TEXT",
         "ALTER TABLE ai_analysis ADD COLUMN critique_updated_at DATETIME",
+        "ALTER TABLE ai_analysis ADD COLUMN overall_score FLOAT",
+        "ALTER TABLE ai_analysis ADD COLUMN iaa_score FLOAT",
+        "ALTER TABLE ai_analysis ADD COLUMN iqa_score FLOAT",
+        "ALTER TABLE ai_analysis ADD COLUMN ista_score FLOAT",
+        "ALTER TABLE ai_analysis ADD COLUMN critique_en TEXT",
         "CREATE INDEX IF NOT EXISTS idx_images_is_favorite ON images (is_favorite)",
         "CREATE INDEX IF NOT EXISTS idx_image_metadata_camera_model ON image_metadata (camera_model)",
         "CREATE INDEX IF NOT EXISTS idx_image_metadata_lens_model ON image_metadata (lens_model)",
         "CREATE INDEX IF NOT EXISTS idx_image_metadata_iso ON image_metadata (iso)",
         "CREATE INDEX IF NOT EXISTS idx_image_metadata_f_number ON image_metadata (f_number)",
-        "CREATE INDEX IF NOT EXISTS idx_image_metadata_focal_length ON image_metadata (focal_length)"
+        "CREATE INDEX IF NOT EXISTS idx_image_metadata_focal_length ON image_metadata (focal_length)",
+        "CREATE INDEX IF NOT EXISTS idx_ai_analysis_overall_score ON ai_analysis (overall_score)",
+        "CREATE INDEX IF NOT EXISTS idx_ai_analysis_iaa_score ON ai_analysis (iaa_score)"
     ]
     
     for col_sql in migrations:
@@ -73,6 +80,63 @@ def run_migrations(bind_engine=None):
                 print(f"[Database] Migration note for '{col_sql}': {op_err}", flush=True)
         except Exception as err:
             print(f"[Database] Migration error executing '{col_sql}': {err}", flush=True)
+
+    _backfill_critique_scores(target_engine)
+
+
+def _backfill_critique_scores(target_engine):
+    """
+    Backfills overall_score, iaa_score, iqa_score, and ista_score
+    from existing legacy critique text for rows where critique IS NOT NULL and overall_score IS NULL.
+    """
+    from sqlalchemy import text
+    try:
+        from services.ai_parser import parse_scoreboard_scores
+    except ImportError:
+        try:
+            from app.services.ai_parser import parse_scoreboard_scores
+        except ImportError as import_err:
+            print(f"[Database] Notice: Skipping critique backfill (ai_parser import unavailable): {import_err}", flush=True)
+            return
+
+    try:
+        with target_engine.begin() as conn:
+            rows = conn.execute(
+                text("SELECT image_id, critique FROM ai_analysis WHERE critique IS NOT NULL AND critique != '' AND overall_score IS NULL")
+            ).fetchall()
+
+            if not rows:
+                return
+
+            update_count = 0
+            for row in rows:
+                image_id = row[0]
+                critique_text = row[1]
+                scores = parse_scoreboard_scores(critique_text)
+
+                if any(v is not None for v in scores.values()):
+                    conn.execute(
+                        text(
+                            "UPDATE ai_analysis SET "
+                            "overall_score = :overall, "
+                            "iaa_score = :iaa, "
+                            "iqa_score = :iqa, "
+                            "ista_score = :ista "
+                            "WHERE image_id = :image_id"
+                        ),
+                        {
+                            "overall": scores.get("overall"),
+                            "iaa": scores.get("iaa"),
+                            "iqa": scores.get("iqa"),
+                            "ista": scores.get("ista"),
+                            "image_id": image_id,
+                        }
+                    )
+                    update_count += 1
+            if update_count > 0:
+                print(f"[Database] Successfully backfilled scores for {update_count} critique records.", flush=True)
+    except Exception as err:
+        print(f"[Database] Warning: Failed to backfill critique scores: {err}", flush=True)
 
 
 

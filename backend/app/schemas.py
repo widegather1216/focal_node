@@ -33,6 +33,11 @@ class AIAnalysisSchema(BaseModel):
     aesthetic_tags: List[str] = []
     is_user_edited: bool = False
     critique: Optional[str] = None
+    critique_en: Optional[str] = None
+    overall_score: Optional[float] = None
+    iaa_score: Optional[float] = None
+    iqa_score: Optional[float] = None
+    ista_score: Optional[float] = None
     critique_updated_at: Optional[str] = None
 
 class PhotoDetailResponse(BaseModel):
@@ -100,6 +105,11 @@ class CritiqueRequest(BaseModel):
 
 class CritiqueResponse(BaseModel):
     critique: str
+    critique_en: Optional[str] = None
+    overall_score: Optional[float] = None
+    iaa_score: Optional[float] = None
+    iqa_score: Optional[float] = None
+    ista_score: Optional[float] = None
     critique_updated_at: Optional[str] = None
     engine_used: Optional[str] = "unipercept"
     status: Optional[str] = "completed"
@@ -120,6 +130,11 @@ class CritiqueItemResponse(BaseModel):
     shutter_speed: Optional[str] = None
     iso: Optional[int] = None
     critique: str
+    critique_en: Optional[str] = None
+    overall_score: Optional[float] = None
+    iaa_score: Optional[float] = None
+    iqa_score: Optional[float] = None
+    ista_score: Optional[float] = None
     critique_updated_at: Optional[str] = None
 
 class CritiqueSummaryRequest(BaseModel):
@@ -138,6 +153,11 @@ class CritiqueStatusResponse(BaseModel):
     progress: int
     status: str
     critique: Optional[str] = None
+    critique_en: Optional[str] = None
+    overall_score: Optional[float] = None
+    iaa_score: Optional[float] = None
+    iqa_score: Optional[float] = None
+    ista_score: Optional[float] = None
     critique_updated_at: Optional[str] = None
 
 

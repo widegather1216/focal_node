@@ -2,7 +2,7 @@
 
 ---
 
-## 🏛️ 1. 프론트엔드 뷰 계층 및 통계 데이터 흐름도
+## 🏛️ 1. 프론트엔드 뷰 계층 및 통계 차트 드릴다운 흐름도
 
 ```mermaid
 flowchart TD
@@ -23,6 +23,9 @@ flowchart TD
     App --> GalleryFlow
     App --> AnalyticsFlow
     Analytics -->|GET /api/analytics/stats| AnalyticsAPI["backend/app/api/analytics.py"]
+    Donut -->|Click-to-Filter 드릴다운| Store["useAppStore.ts\n(applyAnalyticsDrilldown ➔ activeTab='gallery')"]
+    Bar -->|Click-to-Filter (35mm 모드 연동)| Store
+    Store --> Gallery
 ```
 
 ---
@@ -35,14 +38,14 @@ backend/app/
 
 src/
 ├── App.css                            # [기존] 전역 다크룸 CSS 변수(--bg-canvas, --accent-focal 등) 및 유틸리티
-├── store/useAppStore.ts               # [기존] activeTab, selectedPhotoId, isFullscreenOpen, selectedPhotoIds 전역 상태
+├── store/useAppStore.ts               # [수정대상] activeTab, selectedPhotoId 및 applyAnalyticsDrilldown 액션 추가
 ├── utils/
 │   ├── exif.ts                        # [기존] EXIF 셔터스피드/조리개/화각 포맷팅 유틸리티
 │   └── formatters.ts                  # [기존] 파일 크기, 날짜, 시간 포맷팅 유틸리티
 ├── hooks/
 │   ├── useAnalyticsQuery.ts           # [기존] 장비 통계 TanStack Query 훅
 │   ├── useFullscreenControls.ts       # [기존] 풀스크린 줌/패닝/키보드 네비게이션 제어 훅
-│   └── usePhotosQuery.ts              # [기존] 즐겨찾기 낙관적 업데이트 뮤테이션 훅
+│   └── usePhotosQuery.ts              # [기존/리팩토링대상] 즐겨찾기 낙관적 업데이트 뮤테이션 훅
 └── components/
     ├── PhotoGallery.tsx               # [기존] 반응형 가상화 그리드 계산 및 무한 스크롤
     ├── DetailPanel.tsx                # [기존] 우측 슬라이드 인 상세 컨테이너
@@ -56,8 +59,8 @@ src/
     │   └── FullscreenMetadataOverlay.tsx # [기존] 풀스크린 플로팅 EXIF 오버레이
     └── analytics/
         ├── AnalyticsKpiGrid.tsx       # [기존] 총 사진 수, 카메라 기종 수, 렌즈 라인업 수, 최다 활용 조리개 KPI 카드
-        ├── GearDonutCharts.tsx        # [기존] 카메라 바디 및 렌즈 점유율 Recharts 도넛 차트
-        └── ExifBarCharts.tsx          # [기존] 물리 화각 vs 35mm 환산 화각 토글 및 조리개 분포 막대 차트
+        ├── GearDonutCharts.tsx        # [수정대상] 카메라 바디 및 렌즈 점유율 도넛 차트 (섹션 클릭 드릴다운 지원)
+        └── ExifBarCharts.tsx          # [수정대상] 물리 vs 35mm 환산 화각 토글 및 조리개 막대 차트 (막대 클릭 드릴다운 지원)
 ```
 
 ---
@@ -66,7 +69,7 @@ src/
 
 * **참조하는 외부 도메인 (Inbound/Read)**:
   - `01_indexing_storage`: `PhotoRepository.get_analytics()`를 통해 장비/화각/조리개 집계 조회 및 `/api/photos/{id}/thumbnail`, `/api/photos/{id}/original` 스트림 바인딩.
-  - `02_search_curation`: `useAppStore`의 `searchQuery` 및 `searchFilters`를 구독하여 `PhotoGallery.tsx` 뷰포트 목록 갱신.
+  - `02_search_curation`: `useAppStore`의 `searchQuery`, `searchFilters`(`use_35mm_equivalent` 포함)를 구독하여 `PhotoGallery.tsx` 뷰포트 목록을 갱신하고, 통계 차트 클릭 시 검색 필터를 역방향으로 주입합니다.
   - `03_ai_critique`: `DetailPanel.tsx` 내부에 `PhotoCritiqueView` 및 `PhotoAiAnalysisView` 마운트.
 * **외부 도메인에 노출하는 계약 (Outbound/Expose)**:
   - 전역 디자인 시스템 CSS 변수(`src/App.css`)와 선택/탭/모달 상태(`useAppStore`)를 전 도메인 UI 컴포넌트에 제공합니다.

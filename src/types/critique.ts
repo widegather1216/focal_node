@@ -9,6 +9,11 @@ export interface CritiqueItem {
   shutter_speed?: string | null;
   iso?: number | null;
   critique: string;
+  critique_en?: string | null;
+  overall_score?: number | null;
+  iaa_score?: number | null;
+  iqa_score?: number | null;
+  ista_score?: number | null;
   critique_updated_at?: string | null;
 }
 
@@ -26,7 +31,22 @@ export interface CritiqueStatus {
   progress: number;
   status: 'idle' | 'processing' | 'completed' | 'error' | 'cancelled';
   critique?: string | null;
+  critique_en?: string | null;
+  overall_score?: number | null;
+  iaa_score?: number | null;
+  iqa_score?: number | null;
+  ista_score?: number | null;
   critique_updated_at?: string | null;
 }
 
-
+export interface CritiqueResponse {
+  critique: string;
+  critique_en?: string | null;
+  overall_score?: number | null;
+  iaa_score?: number | null;
+  iqa_score?: number | null;
+  ista_score?: number | null;
+  critique_updated_at?: string | null;
+  engine_used?: string;
+  status?: string;
+}
