@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Literal, Optional
+import models
 
 import schemas
 from database import get_db
@@ -43,33 +44,47 @@ def cancel_photo_critique(photo_id: str):
     )
 
 
+def _to_critique_item_response(
+    ai: models.AIAnalysis,
+    img: models.Image,
+    meta: Optional[models.ImageMetadata]
+) -> schemas.CritiqueItemResponse:
+    capture_date_str = meta.capture_date.isoformat() if meta and meta.capture_date else None
+    updated_at_str = ai.critique_updated_at.isoformat() if ai.critique_updated_at else None
+    return schemas.CritiqueItemResponse(
+        photo_id=img.id,
+        file_name=img.file_name,
+        file_path=img.file_path,
+        capture_date=capture_date_str,
+        camera_model=meta.camera_model if meta else None,
+        lens_model=meta.lens_model if meta else None,
+        f_number=meta.f_number if meta else None,
+        shutter_speed=meta.shutter_speed if meta else None,
+        iso=meta.iso if meta else None,
+        critique=ai.critique,
+        critique_en=ai.critique_en,
+        overall_score=ai.overall_score,
+        iaa_score=ai.iaa_score,
+        iqa_score=ai.iqa_score,
+        ista_score=ai.ista_score,
+        critique_updated_at=updated_at_str,
+    )
+
+
 @router.get("/critiques", response_model=List[schemas.CritiqueItemResponse])
-def get_all_critiques(db: Session = Depends(get_db)):
+def get_all_critiques(
+    sort_by: Literal["recent", "overall_score", "iaa_score"] = Query(
+        "recent",
+        description="비평 목록 정렬 기준 (recent: 최신순, overall_score: 종합평점순, iaa_score: 미학점수순)"
+    ),
+    db: Session = Depends(get_db)
+):
     """
-    Returns list of all photos that have generated critiques, ordered by most recent critique date.
+    Returns list of all photos that have generated critiques, ordered by sort_by.
     """
     photo_repo = PhotoRepository(db)
-    results = photo_repo.list_critiques()
-    items = []
-    for ai, img, meta in results:
-        capture_date_str = meta.capture_date.isoformat() if meta and meta.capture_date else None
-        updated_at_str = ai.critique_updated_at.isoformat() if ai.critique_updated_at else None
-        items.append(
-            schemas.CritiqueItemResponse(
-                photo_id=img.id,
-                file_name=img.file_name,
-                file_path=img.file_path,
-                capture_date=capture_date_str,
-                camera_model=meta.camera_model if meta else None,
-                lens_model=meta.lens_model if meta else None,
-                f_number=meta.f_number if meta else None,
-                shutter_speed=meta.shutter_speed if meta else None,
-                iso=meta.iso if meta else None,
-                critique=ai.critique,
-                critique_updated_at=updated_at_str,
-            )
-        )
-    return items
+    results = photo_repo.list_critiques(sort_by=sort_by)
+    return [_to_critique_item_response(ai, img, meta) for ai, img, meta in results]
 
 @router.delete("/critique/{photo_id}")
 def delete_photo_critique(photo_id: str, db: Session = Depends(get_db)):

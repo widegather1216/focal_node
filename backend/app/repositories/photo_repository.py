@@ -157,9 +157,13 @@ class PhotoRepository:
         self.db.refresh(db_image)
         return db_image
 
-    def list_critiques(self) -> List[tuple]:
+    def list_critiques(self, sort_by: str = "recent") -> List[tuple]:
         """
         Returns list of (AIAnalysis, Image, ImageMetadata) tuples with non-empty critiques.
+        Supports sorting by:
+        - 'recent': ordered by critique_updated_at DESC
+        - 'overall_score': ordered by overall_score DESC, then critique_updated_at DESC
+        - 'iaa_score': ordered by iaa_score DESC, then critique_updated_at DESC
         """
         query = (
             self.db.query(models.AIAnalysis, models.Image, models.ImageMetadata)
@@ -167,21 +171,35 @@ class PhotoRepository:
             .outerjoin(models.ImageMetadata, models.Image.id == models.ImageMetadata.image_id)
             .filter(models.AIAnalysis.critique.isnot(None))
             .filter(models.AIAnalysis.critique != "")
-            .order_by(models.AIAnalysis.critique_updated_at.desc().nullslast())
         )
-        return query.all()
+        if sort_by == "overall_score":
+            return query.order_by(
+                models.AIAnalysis.overall_score.desc().nullslast(),
+                models.AIAnalysis.critique_updated_at.desc().nullslast(),
+            ).all()
+        if sort_by == "iaa_score":
+            return query.order_by(
+                models.AIAnalysis.iaa_score.desc().nullslast(),
+                models.AIAnalysis.critique_updated_at.desc().nullslast(),
+            ).all()
+        return query.order_by(models.AIAnalysis.critique_updated_at.desc().nullslast()).all()
 
     def delete_critique(self, photo_id: str) -> bool:
         """
-        Clears stored critique for a photo.
+        Clears stored critique and normalized score data for a photo.
         """
         ai = self.db.query(models.AIAnalysis).filter(models.AIAnalysis.image_id == photo_id).first()
-        if ai:
-            ai.critique = None
-            ai.critique_updated_at = None
-            self.db.commit()
-            return True
-        return False
+        if not ai:
+            return False
+        ai.critique = None
+        ai.critique_en = None
+        ai.overall_score = None
+        ai.iaa_score = None
+        ai.iqa_score = None
+        ai.ista_score = None
+        ai.critique_updated_at = None
+        self.db.commit()
+        return True
 
     def _aggregate_field_stats(self, column, limit: int = 10, asc: bool = False, format_fn=None, filter_empty_str: bool = False) -> list[dict]:
         q = self.db.query(column, func.count(models.ImageMetadata.image_id)).filter(column.isnot(None))

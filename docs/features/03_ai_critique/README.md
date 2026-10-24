@@ -1,7 +1,7 @@
 # 🤖 [03_ai_critique] On-Demand AI Critique & Editorial Export
 
-- **현재 상태 (Lifecycle)**: `🛠️ Implementing (평점·영문원문 DB 정규화 Step 1 완료 / Step 2 대기 / REFACTOR 2건 대기)`
-- **구현 진척도**: `[■□□□] 1/4 Steps (Active Iteration)`
+- **현재 상태 (Lifecycle)**: `🛠️ Implementing (평점·영문원문 DB 정규화 Step 2 완료 / Step 3 대기 / REFACTOR 2건 대기)`
+- **구현 진척도**: `[■■□□] 2/4 Steps (Active Iteration)`
 - **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 2건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
@@ -28,7 +28,8 @@
 ### 🚀 Active Iteration: UniPercept 3대 정량 평점 & 영문 원문 DB 정규화 `[To-Be]`
 - [x] **Step 1 [DB & Types]**: `models.py`의 `AIAnalysis`에 `overall_score`, `iaa_score`, `iqa_score`, `ista_score`(`Float`), `critique_en`(`String`) 추가, `database.py` 자동 마이그레이션/기존 텍스트 점수 백필(Backfill) 및 `schemas.py`/`src/types/critique.ts` 확장
   - 📂 구현: [`models.py`](../../../backend/app/models.py), [`database.py`](../../../backend/app/database.py), [`ai_parser.py`](../../../backend/app/services/ai_parser.py), [`schemas.py`](../../../backend/app/schemas.py), [`critique.ts`](../../../src/types/critique.ts) | 🧪 테스트: [`test_critique_score_normalization.py`](../../../backend/tests/test_critique_score_normalization.py) (`PASS`)
-- [ ] **Step 2 [Repo & API]**: `PhotoRepository.list_critiques(sort_by)`에 평점순 정렬(`overall_score`, `iaa_score`) 지원 추가 및 `GET /api/chat/critiques` 응답에 정규화 평점/`critique_en` 반영
+- [x] **Step 2 [Repo & API]**: `PhotoRepository.list_critiques(sort_by)`에 평점순 정렬(`overall_score`, `iaa_score`) 및 `delete_critique` 정규화 초기화 구현, `GET /api/chat/critiques` 응답에 정규화 평점/`critique_en` 연동, 프론트엔드 `ApiClient.getCritiques(sortBy?)` 타입 확장
+  - 📂 구현: [`photo_repository.py`](../../../backend/app/repositories/photo_repository.py), [`chat.py`](../../../backend/app/api/chat.py), [`api.ts`](../../../src/services/api.ts) | 🧪 테스트: [`test_critique_repository_and_api.py`](../../../backend/tests/test_critique_repository_and_api.py) (`PASS`)
 - [ ] **Step 3 [Service & State]**: `ChatService._save_critique_to_db`에서 `scores_dict`와 `raw_en`을 정규화 컬럼에 직접 저장하도록 개선
 - [ ] **Step 4 [UI & Integration]**: `CritiqueContentRenderer.tsx`에서 정규화 점수/영문 원문 props를 우선 바인딩(레거시 정규식 폴백 유지)하고 `CritiqueView.tsx`에 `[최신순 / 종합평점순 / 미학점수순]` 정렬 토글 추가
 
@@ -36,18 +37,14 @@
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-10-20 / clean-code-developer / Step 1 [DB & Types] 완료: ai_analysis 정규화 컬럼 추가, run_migrations DDL/인덱스 생성 및 6-Way 스코어보드 자동 백필(Backfill), Pydantic/TypeScript 타입 확장, 단위 테스트 8종 작성 및 도메인 회귀 31종 전수 통과`
+- **직전 완료 작업**: `2026-10-24 / clean-code-developer / Step 2 [Repo & API] 완료: PhotoRepository.list_critiques(sort_by) 평점순 정렬 지원 및 delete_critique 정규화 초기화, GET /api/chat/critiques 응답에 정규화 4종 평점/critique_en 반영, ApiClient.getCritiques(sortBy) 타입 세분화, 신규 단위 테스트 9종 작성 및 도메인 회귀 40종·백엔드 82종 전수 통과`
 - **생성/수정된 핵심 파일**:
-  - `backend/app/models.py`: `AIAnalysis`에 `overall_score`, `iaa_score`, `iqa_score`, `ista_score`, `critique_en` 추가 및 `to_detail_dict()` 반영
-  - `backend/app/services/ai_parser.py`: `parse_scoreboard_scores` 스코어보드 정규식 파서 추가
-  - `backend/app/database.py`: `run_migrations()` DDL 확장 및 `_backfill_critique_scores` 자동 백필 로직 구현
-  - `backend/app/schemas.py`: `AIAnalysisSchema`, `CritiqueResponse`, `CritiqueItemResponse`, `CritiqueStatusResponse` 확장
-  - `backend/app/services/critique_status.py`: 비평 진행/완료 상태에 정규화 점수 및 영문 원문 반영
-  - `src/types/critique.ts`: `CritiqueItem`, `CritiqueStatus`, `CritiqueResponse` 인터페이스 확장
-  - `src/hooks/usePhotoDetail.ts`: `ai_analysis` 상태 인터페이스 확장
-  - `backend/tests/test_critique_score_normalization.py`: 파서, 마이그레이션, 자동 백필, 직렬화 단위 테스트 8종 신규 작성
+  - `backend/app/repositories/photo_repository.py`: `list_critiques(sort_by)` 정렬 분기 및 `delete_critique` 정규화 컬럼 동시 초기화
+  - `backend/app/api/chat.py`: `sort_by` Query 파라미터(`Literal["recent", "overall_score", "iaa_score"]`) 검증, `_to_critique_item_response` 헬퍼 추출 및 정규화 평점/영문원문 매핑
+  - `src/services/api.ts`: `getCritiques(sortBy?: 'recent' | 'overall_score' | 'iaa_score'): Promise<CritiqueItem[]>` 타입 안전성 강화
+  - `backend/tests/test_critique_repository_and_api.py`: 신규 단위 테스트 9종 작성
 - **검증 완료된 테스트 실행 명령어**:
-  - `./venv/bin/pytest backend/tests/test_critique_score_normalization.py backend/tests/test_unipercept.py backend/tests/test_ensemble_math.py backend/tests/test_critique_cancellation.py backend/tests/test_critique_sleep_recovery.py -v`
+  - `./venv/bin/pytest backend/tests/test_critique_repository_and_api.py backend/tests/test_critique_score_normalization.py backend/tests/test_unipercept.py backend/tests/test_ensemble_math.py backend/tests/test_critique_cancellation.py backend/tests/test_critique_sleep_recovery.py -v`
   - `npx tsc --noEmit && npm run build`
 - **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - 다음은 **Step 2 [Repo & API]** 차례임: `backend/app/repositories/photo_repository.py`의 `list_critiques(sort_by="recent"|"overall_score"|"iaa_score")` 구현 및 `backend/app/api/chat.py`의 `GET /api/chat/critiques` 응답에 정규화 평점/`critique_en` 연동할 것.
+  - 다음은 **Step 3 [Service & State]** 차례임: `backend/app/services/chat_service.py`의 `_save_critique_to_db`에서 `scores_dict`(`overall`, `iaa`, `iqa`, `ista`)와 `raw_en`을 `ai_analysis` 테이블의 정규화 컬럼(`overall_score`, `iaa_score`, `iqa_score`, `ista_score`, `critique_en`)에 직접 저장하도록 개선할 것.

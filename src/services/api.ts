@@ -255,8 +255,9 @@ class ApiClient {
     return res.json();
   }
 
-  async getCritiques(): Promise<any[]> {
-    const res = await fetch(`${this.baseUrl}/api/chat/critiques`);
+  async getCritiques(sortBy?: 'recent' | 'overall_score' | 'iaa_score'): Promise<CritiqueItem[]> {
+    const url = sortBy ? `${this.baseUrl}/api/chat/critiques?sort_by=${sortBy}` : `${this.baseUrl}/api/chat/critiques`;
+    const res = await fetch(url);
     if (!res.ok) {
       const err = await this.parseError(res, "Failed to fetch critiques");
       throw new Error(err);
