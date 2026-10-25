@@ -205,6 +205,11 @@ export function DetailPanel() {
                     onRequestCritique={handleRequestCritique}
                     onCancelCritique={handleCancelCritique}
                     onDeleteCritique={handleDeleteCritique}
+                    overallScore={photo.ai_analysis?.overall_score}
+                    iaaScore={photo.ai_analysis?.iaa_score}
+                    iqaScore={photo.ai_analysis?.iqa_score}
+                    istaScore={photo.ai_analysis?.ista_score}
+                    critiqueEn={photo.ai_analysis?.critique_en}
                   />
                 </>
               )}

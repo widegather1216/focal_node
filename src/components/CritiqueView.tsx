@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Search, Wand2, FileText, Loader2 } from 'lucide-react';
+import { Sparkles, Search, Wand2, FileText, Loader2, Clock, Award } from 'lucide-react';
 import { api } from '../services/api';
 import { CritiqueItem, CritiqueSummaryResponse } from '../types/critique';
 import { useAppStore } from '../store/useAppStore';
@@ -9,10 +9,13 @@ import { CritiqueSummaryCard } from './critique/CritiqueSummaryCard';
 import { CritiqueCard } from './critique/CritiqueCard';
 import { LoadingSpinner } from './common/LoadingSpinner';
 
+type CritiqueSortBy = 'recent' | 'overall_score' | 'iaa_score';
+
 export const CritiqueView: React.FC = () => {
   const queryClient = useQueryClient();
   const { apiPort, setSelectedPhotoId, setActiveTab, openFullscreen } = useAppStore();
   
+  const [sortBy, setSortBy] = useState<CritiqueSortBy>('recent');
   const [filterQuery, setFilterQuery] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -24,8 +27,8 @@ export const CritiqueView: React.FC = () => {
   const [isSummaryExpanded, setIsSummaryExpanded] = useState(true);
 
   const { data: critiques = [], isLoading } = useQuery<CritiqueItem[]>({
-    queryKey: ['critiques'],
-    queryFn: () => api.getCritiques(),
+    queryKey: ['critiques', sortBy],
+    queryFn: () => api.getCritiques(sortBy),
     enabled: !!apiPort,
   });
 
@@ -142,6 +145,56 @@ export const CritiqueView: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           {critiques.length > 0 && (
             <>
+              {/* Sort By Segmented Toggle */}
+              <div
+                style={{
+                  display: 'inline-flex',
+                  backgroundColor: 'var(--bg-card)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '6px',
+                  padding: '2px',
+                  gap: '2px',
+                  alignItems: 'center',
+                  flexShrink: 0
+                }}
+              >
+                {(
+                  [
+                    { id: 'recent', label: '최신순', icon: <Clock size={12} /> },
+                    { id: 'overall_score', label: '종합평점순', icon: <Award size={12} /> },
+                    { id: 'iaa_score', label: '미학점수순', icon: <Sparkles size={12} /> },
+                  ] as const
+                ).map((opt) => {
+                  const isActive = sortBy === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      onClick={() => setSortBy(opt.id)}
+                      style={{
+                        border: 'none',
+                        borderRadius: '4px',
+                        padding: '4px 9px',
+                        fontSize: '11.5px',
+                        fontWeight: isActive ? 600 : 500,
+                        cursor: 'pointer',
+                        backgroundColor: isActive ? 'var(--accent-focal-subtle)' : 'transparent',
+                        color: isActive ? 'var(--accent-focal-hover)' : 'var(--text-secondary)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        transition: 'all 0.15s ease',
+                        outline: 'none',
+                        whiteSpace: 'nowrap'
+                      }}
+                      title={`${opt.label}으로 정렬`}
+                    >
+                      {opt.icon}
+                      <span>{opt.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
               <div style={{ position: 'relative', width: '220px' }}>
                 <Search size={13} color="var(--text-muted)" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
                 <input

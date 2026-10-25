@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Sparkles, 
   AlertTriangle, 
@@ -6,7 +6,10 @@ import {
   Camera, 
   Layers, 
   Sliders,
-  Quote
+  Quote,
+  Globe,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 export interface ParsedScores {
@@ -21,6 +24,17 @@ export interface CritiqueContentRendererProps {
   mode?: 'compact' | 'document';
   hideScoreboard?: boolean;
   hideExecutiveSummary?: boolean;
+  overallScore?: number | null;
+  iaaScore?: number | null;
+  iqaScore?: number | null;
+  istaScore?: number | null;
+  critiqueEn?: string | null;
+  // Aliases for snake_case compatibility
+  overall_score?: number | null;
+  iaa_score?: number | null;
+  iqa_score?: number | null;
+  ista_score?: number | null;
+  critique_en?: string | null;
 }
 
 /**
@@ -646,18 +660,137 @@ function renderBlock(block: MarkdownBlock, idx: number, isCompact: boolean): Rea
 }
 
 /**
+ * Dedicated Card for UniPercept 8B VQA English Original Feedback.
+ */
+export const OriginalEnglishCritiqueCard: React.FC<{
+  critiqueEn: string;
+  isCompact?: boolean;
+}> = ({ critiqueEn, isCompact = false }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  if (!critiqueEn || !critiqueEn.trim()) return null;
+
+  return (
+    <div
+      style={{
+        background: 'rgba(255, 255, 255, 0.02)',
+        border: '1px solid var(--border-subtle)',
+        borderRadius: isCompact ? '6px' : '8px',
+        overflow: 'hidden',
+        marginTop: isCompact ? '6px' : '14px'
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: isCompact ? '8px 10px' : '10px 14px',
+          background: 'rgba(255, 255, 255, 0.03)',
+          border: 'none',
+          color: 'var(--text-secondary)',
+          cursor: 'pointer',
+          textAlign: 'left',
+          transition: 'background 0.15s ease'
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.06)')}
+        onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)')}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <Globe size={isCompact ? 13 : 15} color="var(--accent-focal-hover)" />
+          <span style={{ fontSize: isCompact ? '12px' : '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
+            UniPercept 8B VQA 영문 원문
+          </span>
+          <span
+            className="font-mono"
+            style={{
+              fontSize: '10px',
+              background: 'var(--accent-focal-subtle)',
+              color: 'var(--accent-focal-hover)',
+              border: '1px solid rgba(225, 29, 72, 0.25)',
+              padding: '1px 5px',
+              borderRadius: '4px',
+              fontWeight: 600
+            }}
+          >
+            RAW EN
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-muted)', fontSize: '11px' }}>
+          <span>{isOpen ? '접기' : '원문 보기'}</span>
+          {isOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+        </div>
+      </button>
+
+      {isOpen && (
+        <div
+          style={{
+            padding: isCompact ? '10px 12px' : '14px 18px',
+            borderTop: '1px solid var(--border-subtle)',
+            fontSize: isCompact ? '12px' : '13.5px',
+            lineHeight: '1.65',
+            color: '#d4d4d8',
+            fontFamily: 'var(--font-mono)',
+            whiteSpace: 'pre-wrap',
+            backgroundColor: 'rgba(0, 0, 0, 0.25)'
+          }}
+        >
+          {critiqueEn.trim()}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/**
  * Universal Markdown Report Renderer for Critique and AI Documents.
  */
 export const CritiqueContentRenderer: React.FC<CritiqueContentRendererProps> = ({
   content,
   mode = 'document',
   hideScoreboard = false,
-  hideExecutiveSummary = false
+  hideExecutiveSummary = false,
+  overallScore,
+  iaaScore,
+  iqaScore,
+  istaScore,
+  critiqueEn,
+  overall_score,
+  iaa_score,
+  iqa_score,
+  ista_score,
+  critique_en,
 }) => {
   if (!content) return null;
 
   const isCompact = mode === 'compact';
-  const { scores, remainingText } = extractScoreboard(content);
+  const { scores: extractedScores, remainingText } = extractScoreboard(content);
+
+  // Normalize scores: prioritize explicit normalized props, fallback to extracted regex scores
+  const effOverall = overallScore !== undefined ? overallScore : overall_score;
+  const effIaa = iaaScore !== undefined ? iaaScore : iaa_score;
+  const effIqa = iqaScore !== undefined ? iqaScore : iqa_score;
+  const effIsta = istaScore !== undefined ? istaScore : ista_score;
+  const effCritiqueEn = critiqueEn !== undefined ? critiqueEn : critique_en;
+
+  const hasNormalizedScores =
+    (effOverall !== undefined && effOverall !== null) ||
+    (effIaa !== undefined && effIaa !== null) ||
+    (effIqa !== undefined && effIqa !== null) ||
+    (effIsta !== undefined && effIsta !== null);
+
+  const scores: ParsedScores | null = hasNormalizedScores
+    ? {
+        overall: effOverall != null ? Math.round(effOverall) : null,
+        iaa: effIaa != null ? Math.round(effIaa) : null,
+        iqa: effIqa != null ? Math.round(effIqa) : null,
+        ista: effIsta != null ? Math.round(effIsta) : null,
+      }
+    : extractedScores;
+
   let blocks = parseMarkdownToBlocks(remainingText);
   if (hideExecutiveSummary) {
     blocks = blocks.filter(b => b.type !== 'executive_summary');
@@ -665,11 +798,16 @@ export const CritiqueContentRenderer: React.FC<CritiqueContentRendererProps> = (
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: isCompact ? '12px' : '18px' }}>
-      {/* 1. Scoreboard (if extracted and not hidden) */}
+      {/* 1. Scoreboard (prioritizing normalized scores, fallback to regex parsed) */}
       {!hideScoreboard && scores && <CritiqueScoreboardCard scores={scores} isCompact={isCompact} />}
 
       {/* 2. Structured Markdown Blocks */}
       {blocks.map((block, idx) => renderBlock(block, idx, isCompact))}
+
+      {/* 3. UniPercept 8B VQA English Original Feedback */}
+      {effCritiqueEn && (
+        <OriginalEnglishCritiqueCard critiqueEn={effCritiqueEn} isCompact={isCompact} />
+      )}
     </div>
   );
 };

@@ -128,22 +128,47 @@ export const CritiqueCard: React.FC<CritiqueCardProps> = ({
           overflow: 'hidden'
         }}>
           <div>
-            <h4 
-              onClick={() => onSelectPhoto(item.photo_id)}
-              style={{
-                margin: '0 0 6px 0',
-                fontSize: '14px',
-                fontWeight: 600,
-                color: '#f4f4f5',
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                cursor: 'pointer'
-              }}
-              title={item.file_name}
-            >
-              {item.file_name}
-            </h4>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+              <h4 
+                onClick={() => onSelectPhoto(item.photo_id)}
+                style={{
+                  margin: '0 0 6px 0',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  color: '#f4f4f5',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  cursor: 'pointer',
+                  flex: 1
+                }}
+                title={item.file_name}
+              >
+                {item.file_name}
+              </h4>
+
+              {item.overall_score !== null && item.overall_score !== undefined && (
+                <div
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    background: 'rgba(225, 29, 72, 0.12)',
+                    border: '1px solid rgba(225, 29, 72, 0.3)',
+                    borderRadius: '6px',
+                    padding: '2px 7px',
+                    fontSize: '11px',
+                    fontWeight: 700,
+                    color: 'var(--accent-focal-hover)',
+                    flexShrink: 0
+                  }}
+                  title={`종합 평점: ${item.overall_score}점${item.iaa_score != null ? ` (미학 IAA: ${item.iaa_score}점)` : ''}`}
+                >
+                  <span style={{ fontSize: '9px', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>SCORE</span>
+                  <span className="font-mono">{Math.round(item.overall_score)}</span>
+                </div>
+              )}
+            </div>
 
             {/* Metadata Tags */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', color: '#a1a1aa' }}>
@@ -194,7 +219,15 @@ export const CritiqueCard: React.FC<CritiqueCardProps> = ({
             paddingRight: '6px'
           }}
         >
-          <CritiqueContentRenderer content={item.critique} mode="compact" />
+          <CritiqueContentRenderer
+            content={item.critique}
+            mode="compact"
+            overallScore={item.overall_score}
+            iaaScore={item.iaa_score}
+            iqaScore={item.iqa_score}
+            istaScore={item.ista_score}
+            critiqueEn={item.critique_en}
+          />
         </div>
 
         {/* Card Action Footer */}

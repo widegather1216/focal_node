@@ -27,6 +27,11 @@ interface PhotoCritiqueViewProps {
   onRequestCritique: () => void;
   onCancelCritique?: () => void;
   onDeleteCritique?: () => void;
+  overallScore?: number | null;
+  iaaScore?: number | null;
+  iqaScore?: number | null;
+  istaScore?: number | null;
+  critiqueEn?: string | null;
 }
 
 /**
@@ -106,7 +111,12 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
   loadingCritique,
   onRequestCritique,
   onCancelCritique,
-  onDeleteCritique
+  onDeleteCritique,
+  overallScore,
+  iaaScore,
+  iqaScore,
+  istaScore,
+  critiqueEn
 }) => {
   const { openCritiqueDocument } = useAppStore();
   const [status, setStatus] = useState<CritiqueStatus | null>(null);
@@ -168,13 +178,29 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
   // Structured critique parsing (scores, executive summary, sections)
   const parsedCritique = useMemo(() => {
     if (!critique) return null;
-    const { scores, remainingText } = extractScoreboard(critique);
+    const { scores: extractedScores, remainingText } = extractScoreboard(critique);
+
+    const hasNormalized =
+      (overallScore !== undefined && overallScore !== null) ||
+      (iaaScore !== undefined && iaaScore !== null) ||
+      (iqaScore !== undefined && iqaScore !== null) ||
+      (istaScore !== undefined && istaScore !== null);
+
+    const scores: ParsedScores | null = hasNormalized
+      ? {
+          overall: overallScore != null ? Math.round(overallScore) : null,
+          iaa: iaaScore != null ? Math.round(iaaScore) : null,
+          iqa: iqaScore != null ? Math.round(iqaScore) : null,
+          ista: istaScore != null ? Math.round(istaScore) : null,
+        }
+      : extractedScores;
+
     const blocks = parseMarkdownToBlocks(remainingText);
     const summaryBlock = blocks.find((b) => b.type === 'executive_summary');
     const summary = summaryBlock && 'summary' in summaryBlock ? summaryBlock.summary : null;
     const sectionCount = blocks.filter((b) => b.type === 'section').length;
     return { scores, summary, sectionCount, remainingText };
-  }, [critique]);
+  }, [critique, overallScore, iaaScore, iqaScore, istaScore]);
 
   return (
     <div
@@ -415,6 +441,11 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
                     mode="compact"
                     hideScoreboard
                     hideExecutiveSummary
+                    overallScore={overallScore}
+                    iaaScore={iaaScore}
+                    iqaScore={iqaScore}
+                    istaScore={istaScore}
+                    critiqueEn={critiqueEn}
                   />
                 </div>
               )}
@@ -422,7 +453,15 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
           ) : !parsedCritique?.scores && !parsedCritique?.summary ? (
             /* Fallback for unformatted generic critique text */
             <div style={{ marginTop: '4px' }}>
-              <CritiqueContentRenderer content={critique} mode="compact" />
+              <CritiqueContentRenderer
+                content={critique}
+                mode="compact"
+                overallScore={overallScore}
+                iaaScore={iaaScore}
+                iqaScore={iqaScore}
+                istaScore={istaScore}
+                critiqueEn={critiqueEn}
+              />
             </div>
           ) : null}
         </div>

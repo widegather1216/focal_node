@@ -1,8 +1,8 @@
 # 🧪 [03_ai_critique] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Open Issues (Baseline AC 검증 완료 / 평점 정규화 AC 1건 대기 / REFACTOR 2건 대기)`
-- **인수 조건 통과율**: `2 / 3 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 2건`
+- **검증 상태**: `🩹 Debugging (품질 감사 완료 / REFACTOR 3건 대기)`
+- **인수 조건 통과율**: `3 / 3 (100%)`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 3건`
 
 ---
 
@@ -21,7 +21,7 @@
 * **When:** `[Markdown 저장]` 또는 `[PDF 저장]` 버튼을 클릭하면,
 * **Then:** 촬영 EXIF 메타데이터와 비평 본문이 결합된 `.md` 또는 `.pdf` 파일이 클라이언트 사이드에서 생성되어 로컬 디스크에 다운로드되어야 한다.
 
-### AC 3. 정량 평점(`overall`/`iaa`/`iqa`/`ista`)·영문 원문 DB 정규화 및 평점순 정렬 `[To-Be]`
+### AC 3. 정량 평점(`overall`/`iaa`/`iqa`/`ista`)·영문 원문 DB 정규화 및 평점순 정렬 `[As-Is]`
 * **Given:** `UniPercept 8B` 6-Way 앙상블 비평이 생성되거나 기존 비평 DB가 마이그레이션될 때,
 * **When:** 비평 저장 또는 `GET /api/chat/critiques?sort_by=overall_score`가 호출되면,
 * **Then:**
@@ -37,8 +37,8 @@
 | **Happy** | `TC-CRT-01` | 온디맨드 비평 생성 및 캐싱 | 사진 상세 -> 비평 생성 클릭 | Polling 진행률 표시 후 `ai_analysis.critique` 저장 | `PASS` |
 | **Happy** | `TC-CRT-02` | 에디토리얼 MD/PDF 내보내기 | 문서 모달 -> MD 및 PDF 저장 클릭 | EXIF 포함 정형화된 문서 파일 생성 | `PASS` |
 | **Boundary**| `TC-CRT-03` | 비평 추론 도중 취소 | 생성 중 `[취소]` 버튼 클릭 | `POST /critique/cancel/{id}` 호출 및 즉시 중단 | `PASS` |
-| **Happy** | `TC-CRT-04` | 정량 평점 DB 정규화 및 아카이브 정렬 (`[To-Be]`) | 비평 생성 후 `sort_by=overall_score` 조회 | 4종 점수 컬럼 저장 및 고득점 순 반환 | `⏳ Pending` |
-| **Boundary**| `TC-CRT-05` | 기존 비평 텍스트 자동 백필 (`[To-Be]`) | 레거시 스코어보드 문자열 보유 DB 기동 | `run_migrations()`에서 4종 점수 컬럼 자동 백필 | `PASS` |
+| **Happy** | `TC-CRT-04` | 정량 평점 DB 정규화 및 아카이브 정렬 | 비평 생성 후 `sort_by=overall_score` 조회 | 4종 점수 컬럼 저장 및 고득점 순 반환 | `PASS` |
+| **Boundary**| `TC-CRT-05` | 기존 비평 텍스트 자동 백필 | 레거시 스코어보드 문자열 보유 DB 기동 | `run_migrations()`에서 4종 점수 컬럼 자동 백필 | `PASS` |
 
 ---
 
@@ -52,26 +52,44 @@
 
 ### [REFACTOR-01] `CritiqueDocumentModal.tsx` 및 비평 UI 거대 컴포넌트 SRP 모듈 분할
 - **심각도**: 🟡 Should Fix (권장)
-- **위치**: `src/components/critique/CritiqueDocumentModal.tsx#L1-L1745`, `src/components/critique/CritiqueContentRenderer.tsx#L1-L675`, `src/components/detail/PhotoCritiqueView.tsx#L1-L439`
+- **위치**: `src/components/critique/CritiqueDocumentModal.tsx#L1-L1766`, `src/components/critique/CritiqueContentRenderer.tsx#L1-L813`, `src/components/detail/PhotoCritiqueView.tsx#L1-L478`, `src/components/CritiqueView.tsx#L1-L375`
 - **위반 규칙**: Single Responsibility Principle (단일 UI 파일 300줄 가이드 초과)
 - **발견된 문제**:
-  - `CritiqueDocumentModal.tsx`(1,745줄) 내부에 매거진 뷰어 UI, A4 프린트 HTML 템플릿 생성(`generatePrintHtml`), Markdown 직렬화 로직, `html2canvas`/`jsPDF` 렌더링 엔진이 모두 결합되어 유지보수 복잡도가 높음.
+  - `CritiqueDocumentModal.tsx`(1,766줄) 내부에 매거진 뷰어 UI, A4 프린트 HTML 템플릿 생성(`generatePrintHtml`), Markdown 직렬화 로직, `html2canvas`/`jsPDF` 렌더링 엔진이 모두 결합되어 유지보수 복잡도가 높음.
+  - `CritiqueContentRenderer.tsx`(813줄) 및 `PhotoCritiqueView.tsx`(478줄)에 AST 파서, 스코어보드/영문원문 카드, LCD HUD 등이 결합되어 컴포넌트 분할이 필요함.
 - **권장 개선안 (Suggested Diff)**:
   ```text
   - PDF/Markdown 내보내기 순수 유틸리티 및 프린트 HTML 템플릿을 src/utils/critiqueExporter.ts로 분리
-  - 스코어보드 파서 및 서브 섹션을 분리하여 모달 본체를 300줄 이내로 축소
+  - 스코어보드 파서/서브 섹션(ScoreHudStrip, OriginalEnglishCritiqueCard)을 분리하여 모달/컴포넌트 본체를 300줄 이내로 축소
   ```
 - **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
 
 ### [REFACTOR-02] 비평 추론 어댑터 내 Silent Fail(`except: pass`) 제거 및 장문 메서드 분리
 - **심각도**: 🟡 Should Fix (권장)
-- **위치**: `backend/app/services/chat_service.py#L49-L57`, `backend/app/services/mlx_adapters.py#L323-L620`, `backend/app/services/unipercept_adapter.py#L60-L497`
+- **위치**: `backend/app/services/chat_service.py#L80-L120`, `backend/app/services/mlx_adapters.py#L323-L640`, `backend/app/services/unipercept_adapter.py#L55-L498`
 - **위반 규칙**: Rule 4.1 (함수 30줄 이내) & Rule 4.3 (예외 묵인 `except: pass` 금지)
 - **발견된 문제**:
-  - `chat_service.py`, `mlx_adapters.py`, `unipercept_adapter.py`의 모델 언로드 및 스트리밍 루프에 `except Exception: pass`가 다수 존재하며, `format_and_structure_critique`(87줄) 및 `generate_vqa_critiques_3way`(90줄)가 30줄 가이드를 초과함.
+  - `chat_service.py`, `mlx_adapters.py`, `unipercept_adapter.py`의 모델 언로드 및 캐시 클리어 블록에 `except Exception: pass`가 다수 존재하며, `format_and_structure_critique`(87줄) 및 `generate_vqa_critiques_3way`(90줄)가 30줄 가이드를 초과함.
 - **권장 개선안 (Suggested Diff)**:
   ```text
   - 프롬프트 생성 빌더 함수를 별도 헬퍼로 추출하여 추론 메서드 길이를 30줄 이내로 축소
   - 빈 except 블록에 명시적 경고 로그(print/logger) 추가
+  ```
+- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+
+### [REFACTOR-03] 비평 Polling 빈 catch 블록 예외 묵인(Rule 4.3) 교정 및 ApiClient 반환 타입 강화
+- **심각도**: 🟡 Should Fix (권장)
+- **위치**: `src/components/detail/PhotoCritiqueView.tsx#L146-L148`, `src/components/critique/GlobalCritiqueToast.tsx#L53-L55`, `src/hooks/usePhotoDetail.ts#L207-L209`, `src/services/api.ts#L233-L277`, `src/components/CritiqueView.tsx#L56`
+- **위반 규칙**: Rule 4.3 (예외 묵인 빈 catch 금지) & Rule 4.2 / 타입 안전성 (`Promise<any>` 지양)
+- **발견된 문제**:
+  - 백그라운드 비평 Polling 및 sleep/resume 복구 핸들러(`PhotoCritiqueView`, `GlobalCritiqueToast`, `usePhotoDetail`)에서 네트워크/서버 오류 발생 시 빈 `catch {}` 블록으로 예외를 묵인(Silent Fail)하여 백엔드 에러 원인 추적이 차단됨.
+  - `src/services/api.ts`의 `getPhotoCritique`, `cancelCritique`, `deleteCritique` 반환 타입이 `Promise<any>`로 느슨하게 정의되어 있으며, `CritiqueView.tsx#L56`에 `catch (err: any)`가 잔재함.
+- **권장 개선안 (Suggested Diff)**:
+  ```text
+  // 빈 catch 블록에 디버그/경고 로깅 추가
+  } catch (pollErr) {
+    console.debug('[CritiquePolling] Transient status polling notice:', pollErr);
+  }
+  // api.ts: Promise<any> -> Promise<CritiqueResponse>, Promise<CritiqueCancelResponse>, Promise<{ status: string; photo_id: string }>
   ```
 - **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)

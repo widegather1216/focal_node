@@ -27,30 +27,30 @@ flowchart TD
 
 ```text
 backend/app/
-├── models.py                          # [수정대상] AIAnalysis에 overall_score, iaa_score, iqa_score, ista_score, critique_en 컬럼 추가
-├── database.py                        # [수정대상] run_migrations()에 정규화 컬럼 추가 및 기존 텍스트 스코어보드 자동 백필(Backfill)
-├── api/chat.py                        # [수정대상] 비평 생성/Polling/취소/삭제/총평 및 평점 정렬 지원 전체 비평 목록 라우터
+├── models.py                          # [기존] AIAnalysis에 overall_score, iaa_score, iqa_score, ista_score, critique_en 컬럼
+├── database.py                        # [기존] run_migrations()에 정규화 컬럼 추가 및 기존 텍스트 스코어보드 자동 백필(Backfill)
+├── api/chat.py                        # [기존] 비평 생성/Polling/취소/삭제/총평 및 평점 정렬 지원 전체 비평 목록 라우터
 ├── services/
-│   ├── chat_service.py                # [수정대상] UniPercept -> Gemma 4 순차 비평 파이프라인 및 정규화 컬럼/원문 영구 저장
+│   ├── chat_service.py                # [기존] UniPercept -> Gemma 4 순차 비평 파이프라인 및 정규화 컬럼/원문 영구 저장
 │   ├── critique_status.py             # [기존] 사진별 4단계 비평 진행률(step/progress), 취소 플래그 및 DB Self-Healing 조회
 │   ├── mlx_adapters.py                # [기존] GemmaAdapter (MLX 60초 Keep-alive, 2-Pass 번역/구조화 및 종합 총평)
 │   ├── unipercept_adapter.py          # [기존] UniPerceptAdapter (PyTorch MPS IAA/IQA/ISTA 채점/비평 및 즉시 언로드)
 │   └── unipercept_utils.py            # [기존] InternVL 동적 패치 타일링 및 이미지 전처리 유틸리티
 
 src/
-├── types/critique.ts                  # [수정대상] CritiqueItem(overall_score, iaa_score, iqa_score, ista_score, critique_en 포함)
+├── types/critique.ts                  # [기존] CritiqueItem(overall_score, iaa_score, iqa_score, ista_score, critique_en 포함)
 ├── hooks/
 │   ├── usePhotoDetail.ts              # [기존] 상세 패널 상태, 비평 Polling/취소/삭제 및 재분석 제어 훅
 │   └── usePhotoDetailQuery.ts         # [기존] 단일 사진 상세 정보 TanStack Query 훅
 └── components/
-    ├── CritiqueView.tsx               # [수정대상] 전체 비평 아카이브 대시보드 탭 (최신순 / 종합평점순 / 미학점수순 정렬 지원)
+    ├── CritiqueView.tsx               # [기존] 전체 비평 아카이브 대시보드 탭 (최신순 / 종합평점순 / 미학점수순 정렬 지원)
     ├── detail/
     │   ├── PhotoCritiqueView.tsx      # [기존] 우측 패널 내 비평 요청/취소/점수 HUD 뷰
     │   └── PhotoAiAnalysisView.tsx    # [기존] AI 캡션 및 태그 수동 편집 폼
     └── critique/
-        ├── CritiqueCard.tsx           # [수정대상] 개별 비평 요약 카드 및 정규화 평점 배지 표시
+        ├── CritiqueCard.tsx           # [기존] 개별 비평 요약 카드 및 정규화 평점 배지 표시
         ├── CritiqueSummaryCard.tsx    # [기존] 다중 사진 포트폴리오 종합 비평 카드
-        ├── CritiqueContentRenderer.tsx# [수정대상] 정규화 점수/영문 원문 props 우선 렌더링 (레거시 텍스트 파싱 폴백 유지)
+        ├── CritiqueContentRenderer.tsx# [기존] 정규화 점수/영문 원문 props 우선 렌더링 (레거시 텍스트 파싱 폴백 유지)
         ├── CritiqueProgressWidget.tsx # [기존] 4단계 비평 생성 프로그레스 위젯
         ├── GlobalCritiqueToast.tsx    # [기존] 백그라운드 비평 진행 전역 플로팅 토스트
         └── CritiqueDocumentModal.tsx  # [기존/리팩토링대상] 매거진 뷰어(모달/독립 팝아웃 창) 및 MD/PDF 익스포터

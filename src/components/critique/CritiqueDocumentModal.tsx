@@ -23,7 +23,7 @@ import html2canvas from 'html2canvas';
 import { useAppStore } from '../../store/useAppStore';
 import { usePhotoDetailQuery } from '../../hooks/usePhotoDetailQuery';
 import { api } from '../../services/api';
-import { CritiqueContentRenderer, extractScoreboard, parseMarkdownToBlocks } from './CritiqueContentRenderer';
+import { CritiqueContentRenderer, extractScoreboard, parseMarkdownToBlocks, ParsedScores } from './CritiqueContentRenderer';
 import { PhotoDetail } from '../../hooks/usePhotoDetail';
 
 interface CritiqueDocumentModalProps {
@@ -400,12 +400,28 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
   const critiqueText = photo?.ai_analysis?.critique || '';
   const mastheadData = useMemo(() => {
     if (!critiqueText) return { scores: null, summary: null };
-    const { scores, remainingText } = extractScoreboard(critiqueText);
+    const { scores: extractedScores, remainingText } = extractScoreboard(critiqueText);
+
+    const hasNormalized =
+      photo?.ai_analysis?.overall_score != null ||
+      photo?.ai_analysis?.iaa_score != null ||
+      photo?.ai_analysis?.iqa_score != null ||
+      photo?.ai_analysis?.ista_score != null;
+
+    const scores: ParsedScores | null = hasNormalized
+      ? {
+          overall: photo?.ai_analysis?.overall_score != null ? Math.round(photo.ai_analysis.overall_score) : null,
+          iaa: photo?.ai_analysis?.iaa_score != null ? Math.round(photo.ai_analysis.iaa_score) : null,
+          iqa: photo?.ai_analysis?.iqa_score != null ? Math.round(photo.ai_analysis.iqa_score) : null,
+          ista: photo?.ai_analysis?.ista_score != null ? Math.round(photo.ai_analysis.ista_score) : null,
+        }
+      : extractedScores;
+
     const blocks = parseMarkdownToBlocks(remainingText);
     const summaryBlock = blocks.find((b) => b.type === 'executive_summary');
     const summary = summaryBlock && 'summary' in summaryBlock ? summaryBlock.summary : null;
     return { scores, summary };
-  }, [critiqueText]);
+  }, [critiqueText, photo?.ai_analysis]);
 
   if (!critiqueDocumentPhotoId) return null;
 
@@ -1540,6 +1556,11 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
                       mode="document"
                       hideScoreboard={!!mastheadData.scores}
                       hideExecutiveSummary={!!mastheadData.summary}
+                      overallScore={photo?.ai_analysis?.overall_score}
+                      iaaScore={photo?.ai_analysis?.iaa_score}
+                      iqaScore={photo?.ai_analysis?.iqa_score}
+                      istaScore={photo?.ai_analysis?.ista_score}
+                      critiqueEn={photo?.ai_analysis?.critique_en}
                     />
                   </div>
                 ) : (

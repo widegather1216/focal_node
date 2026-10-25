@@ -26,19 +26,82 @@ def _get_photo_and_metadata(photo_id: str) -> tuple[str, dict]:
         }
         return img.file_path, meta_data
 
-def _save_critique_to_db(photo_id: str, critique_text: str, updated_at) -> None:
+def _extract_score_floats(
+    scores_dict: Optional[Dict[str, Any]],
+    critique_text: Optional[str]
+) -> tuple[Optional[float], Optional[float], Optional[float], Optional[float]]:
+    """
+    Safely resolves overall, iaa, iqa, and ista scores as floats from scores_dict,
+    falling back to parsing scoreboard block in critique_text if missing.
+    """
+    from services.ai_parser import parse_scoreboard_scores
+
+    def _to_float(score_val: Any) -> Optional[float]:
+        if score_val is None or score_val == "":
+            return None
+        try:
+            return float(score_val)
+        except (ValueError, TypeError):
+            return None
+
+    overall = _to_float(scores_dict.get("overall")) if scores_dict else None
+    iaa = _to_float(scores_dict.get("iaa")) if scores_dict else None
+    iqa = _to_float(scores_dict.get("iqa")) if scores_dict else None
+    ista = _to_float(scores_dict.get("ista")) if scores_dict else None
+
+    # Defensive fallback: if any metric is missing, try parsing critique_text scoreboard
+    if (overall is None or iaa is None or iqa is None or ista is None) and critique_text:
+        parsed_scores = parse_scoreboard_scores(critique_text)
+        overall = overall if overall is not None else parsed_scores.get("overall")
+        iaa = iaa if iaa is not None else parsed_scores.get("iaa")
+        iqa = iqa if iqa is not None else parsed_scores.get("iqa")
+        ista = ista if ista is not None else parsed_scores.get("ista")
+
+    return overall, iaa, iqa, ista
+
+def _save_critique_to_db(
+    photo_id: str,
+    critique_text: str,
+    updated_at: Any,
+    scores_dict: Optional[Dict[str, Any]] = None,
+    raw_en: Optional[str] = None
+) -> None:
+    """
+    Persists critique text, raw english critique, and normalized 4-dimension scores to SQLite ai_analysis table.
+    """
+    overall_score, iaa_score, iqa_score, ista_score = _extract_score_floats(scores_dict, critique_text)
+    critique_en = raw_en.strip() if (raw_en and isinstance(raw_en, str) and raw_en.strip()) else None
+
+    # Defensive datetime normalization
+    if isinstance(updated_at, str):
+        try:
+            import datetime
+            updated_at = datetime.datetime.fromisoformat(updated_at)
+        except Exception:
+            pass
+
     with SessionLocal() as db:
-        ai = db.query(models.AIAnalysis).filter(models.AIAnalysis.image_id == photo_id).first()
-        if not ai:
-            ai = models.AIAnalysis(
+        ai_record = db.query(models.AIAnalysis).filter(models.AIAnalysis.image_id == photo_id).first()
+        if not ai_record:
+            ai_record = models.AIAnalysis(
                 image_id=photo_id,
                 critique=critique_text,
+                critique_en=critique_en,
+                overall_score=overall_score,
+                iaa_score=iaa_score,
+                iqa_score=iqa_score,
+                ista_score=ista_score,
                 critique_updated_at=updated_at
             )
-            db.add(ai)
+            db.add(ai_record)
         else:
-            ai.critique = critique_text
-            ai.critique_updated_at = updated_at
+            ai_record.critique = critique_text
+            ai_record.critique_en = critique_en
+            ai_record.overall_score = overall_score
+            ai_record.iaa_score = iaa_score
+            ai_record.iqa_score = iqa_score
+            ai_record.ista_score = ista_score
+            ai_record.critique_updated_at = updated_at
         db.commit()
 
 def _clear_device_caches() -> None:
@@ -128,7 +191,9 @@ def _build_scoreboard_header(scores_dict: dict) -> str:
         f"- 구조 및 질감 (ISTA): {scores_dict.get('ista')}점\n\n"
     )
 
-async def _execute_unipercept_critique_pipeline(file_path: str, meta_data: dict, photo_id: str) -> str:
+async def _execute_unipercept_critique_pipeline(
+    file_path: str, meta_data: dict, photo_id: str
+) -> tuple[str, Optional[dict], Optional[str]]:
     from services.unipercept_adapter import get_unipercept_adapter
     from services.critique_status import critique_status_manager, CritiqueCancelledException
 
@@ -145,6 +210,8 @@ async def _execute_unipercept_critique_pipeline(file_path: str, meta_data: dict,
         raw_en = res_dict.get("critique", "")
         scores_dict = res_dict.get("scores", {})
         quality_score = res_dict.get("quality_score")
+        if scores_dict and scores_dict.get("overall") is None and quality_score is not None:
+            scores_dict["overall"] = quality_score
     finally:
         # Guarantee UniPercept model is immediately unloaded from memory
         # even if execution was cancelled or threw an error
@@ -164,14 +231,16 @@ async def _execute_unipercept_critique_pipeline(file_path: str, meta_data: dict,
         critique_status_manager.check_cancelled(photo_id)
         if scores_dict and "앙상블 비평 스코어보드" not in critique_text:
             critique_text = f"{_build_scoreboard_header(scores_dict)}{critique_text}"
-        return critique_text
+        return critique_text, scores_dict, raw_en
     except CritiqueCancelledException:
         raise
     except Exception as tr_err:
         print(f"[ChatService] Gemma 4 translation fallback: {tr_err}", flush=True)
-        return raw_en
+        return raw_en, scores_dict, raw_en
 
-async def _execute_gemma_critique_pipeline(file_path: str, meta_data: dict, photo_id: str) -> str:
+async def _execute_gemma_critique_pipeline(
+    file_path: str, meta_data: dict, photo_id: str
+) -> tuple[str, Optional[dict], Optional[str]]:
     from services.critique_status import critique_status_manager, CritiqueCancelledException
 
     print("[ChatService] Starting Gemma 4 VLM direct critique generation...", flush=True)
@@ -194,12 +263,12 @@ async def _execute_gemma_critique_pipeline(file_path: str, meta_data: dict, phot
             photo_id
         )
         critique_status_manager.check_cancelled(photo_id)
-        return critique_text
+        return critique_text, None, None
     except CritiqueCancelledException:
         raise
     except Exception as fmt_err:
         print(f"[ChatService] Document structuring fallback to draft: {fmt_err}", flush=True)
-        return critique_text
+        return critique_text, None, None
 
 
 _critique_tasks: Dict[str, asyncio.Task] = {}
@@ -217,14 +286,38 @@ async def _run_critique_pipeline(payload: schemas.CritiqueRequest) -> Dict[str, 
         critique_status_manager.check_cancelled(payload.photo_id)
 
         if payload.engine == "unipercept":
-            critique_text = await _execute_unipercept_critique_pipeline(file_path, meta_data, payload.photo_id)
+            pipeline_result = await _execute_unipercept_critique_pipeline(file_path, meta_data, payload.photo_id)
         else:
-            critique_text = await _execute_gemma_critique_pipeline(file_path, meta_data, payload.photo_id)
+            pipeline_result = await _execute_gemma_critique_pipeline(file_path, meta_data, payload.photo_id)
 
         critique_status_manager.check_cancelled(payload.photo_id)
 
+        # Flexible unpacking supporting (critique_text, scores_dict, raw_en), dict, or plain str
+        if isinstance(pipeline_result, tuple):
+            critique_text = pipeline_result[0]
+            scores_dict = pipeline_result[1] if len(pipeline_result) > 1 else None
+            raw_en = pipeline_result[2] if len(pipeline_result) > 2 else None
+        elif isinstance(pipeline_result, dict):
+            critique_text = pipeline_result.get("critique", "")
+            scores_dict = pipeline_result.get("scores")
+            raw_en = pipeline_result.get("raw_en")
+        else:
+            critique_text = str(pipeline_result or "")
+            scores_dict = None
+            raw_en = None
+
+        overall_score, iaa_score, iqa_score, ista_score = _extract_score_floats(scores_dict, critique_text)
+        critique_en = raw_en.strip() if (raw_en and isinstance(raw_en, str) and raw_en.strip()) else None
+
         now_utc = models.utcnow()
-        await asyncio.to_thread(_save_critique_to_db, payload.photo_id, critique_text, now_utc)
+        await asyncio.to_thread(
+            _save_critique_to_db,
+            payload.photo_id,
+            critique_text,
+            now_utc,
+            scores_dict,
+            raw_en
+        )
 
         critique_status_manager.update(
             payload.photo_id,
@@ -234,11 +327,21 @@ async def _run_critique_pipeline(payload: schemas.CritiqueRequest) -> Dict[str, 
             100,
             status="completed",
             critique=critique_text,
+            critique_en=critique_en,
+            overall_score=overall_score,
+            iaa_score=iaa_score,
+            iqa_score=iqa_score,
+            ista_score=ista_score,
             critique_updated_at=now_utc.isoformat()
         )
 
         return {
             "critique": critique_text,
+            "critique_en": critique_en,
+            "overall_score": overall_score,
+            "iaa_score": iaa_score,
+            "iqa_score": iqa_score,
+            "ista_score": ista_score,
             "critique_updated_at": now_utc.isoformat(),
             "engine_used": payload.engine,
             "status": "completed"
@@ -249,6 +352,11 @@ async def _run_critique_pipeline(payload: schemas.CritiqueRequest) -> Dict[str, 
         await asyncio.to_thread(_unload_critique_models)
         return {
             "critique": "",
+            "critique_en": None,
+            "overall_score": None,
+            "iaa_score": None,
+            "iqa_score": None,
+            "ista_score": None,
             "critique_updated_at": None,
             "engine_used": payload.engine,
             "status": "cancelled"
@@ -264,6 +372,25 @@ async def _run_critique_pipeline(payload: schemas.CritiqueRequest) -> Dict[str, 
         raise
 
 class ChatService:
+    @staticmethod
+    def _save_critique_to_db(
+        photo_id: str,
+        critique_text: str,
+        updated_at: Any,
+        scores_dict: Optional[Dict[str, Any]] = None,
+        raw_en: Optional[str] = None
+    ) -> None:
+        """
+        Persists critique text, raw english critique, and normalized 4-dimension scores to SQLite ai_analysis table.
+        """
+        return _save_critique_to_db(
+            photo_id=photo_id,
+            critique_text=critique_text,
+            updated_at=updated_at,
+            scores_dict=scores_dict,
+            raw_en=raw_en
+        )
+
     @staticmethod
     def cancel_critique(photo_id: str) -> None:
         """
