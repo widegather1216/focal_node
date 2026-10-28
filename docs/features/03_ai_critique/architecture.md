@@ -28,13 +28,14 @@ flowchart TD
 ```text
 backend/app/
 ├── models.py                          # [기존] AIAnalysis에 overall_score, iaa_score, iqa_score, ista_score, critique_en 컬럼
-├── database.py                        # [기존] run_migrations()에 정규화 컬럼 추가 및 기존 텍스트 스코어보드 자동 백필(Backfill)
+├── database.py                        # [기존] run_migrations()에 EXIF 조인 기반 overall_score 적응형 일괄 재계산 백필 로직 추가
 ├── api/chat.py                        # [기존] 비평 생성/Polling/취소/삭제/총평 및 평점 정렬 지원 전체 비평 목록 라우터
 ├── services/
+│   ├── scoring.py                     # [기존] EXIF 적응형 4대 가중치, 미학적 탁월성 보너스 및 종합 평점 산출 순수 연산 모듈
 │   ├── chat_service.py                # [기존] UniPercept -> Gemma 4 순차 비평 파이프라인 및 정규화 컬럼/원문 영구 저장
 │   ├── critique_status.py             # [기존] 사진별 4단계 비평 진행률(step/progress), 취소 플래그 및 DB Self-Healing 조회
 │   ├── mlx_adapters.py                # [기존] GemmaAdapter (MLX 60초 Keep-alive, 2-Pass 번역/구조화 및 종합 총평)
-│   ├── unipercept_adapter.py          # [기존] UniPerceptAdapter (PyTorch MPS IAA/IQA/ISTA 채점/비평 및 즉시 언로드)
+│   ├── unipercept_adapter.py          # [기존] UniPerceptAdapter (_resolve_perceptual_weights, _calculate_aesthetic_bonus, _calculate_overall_vr_score 개편 완료)
 │   └── unipercept_utils.py            # [기존] InternVL 동적 패치 타일링 및 이미지 전처리 유틸리티
 
 src/
@@ -50,7 +51,8 @@ src/
     └── critique/
         ├── CritiqueCard.tsx           # [기존] 개별 비평 요약 카드 및 정규화 평점 배지 표시
         ├── CritiqueSummaryCard.tsx    # [기존] 다중 사진 포트폴리오 종합 비평 카드
-        ├── CritiqueContentRenderer.tsx# [기존] 정규화 점수/영문 원문 props 우선 렌더링 (레거시 텍스트 파싱 폴백 유지)
+        ├── CritiqueContentRenderer.tsx# [기존] 스코어보드 상단에 [?] 점수 산출 가이드 버튼 및 ScoringGuideModal 연동 완료
+        ├── ScoringGuideModal.tsx      # [기존] 3대 지각 지표 정의, 4대 적응형 가중치 및 미학 보너스 안내 모달
         ├── CritiqueProgressWidget.tsx # [기존] 4단계 비평 생성 프로그레스 위젯
         ├── GlobalCritiqueToast.tsx    # [기존] 백그라운드 비평 진행 전역 플로팅 토스트
         └── CritiqueDocumentModal.tsx  # [기존/리팩토링대상] 매거진 뷰어(모달/독립 팝아웃 창) 및 MD/PDF 익스포터

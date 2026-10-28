@@ -1,7 +1,7 @@
 # 🧪 [03_ai_critique] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (품질 감사 완료 / REFACTOR 3건 대기)`
-- **인수 조건 통과율**: `3 / 3 (100%)`
+- **검증 상태**: `🟢 Completed (Step 1~4 전 계층 구현 및 3단 검증 완료, 품질 감사 대기)`
+- **인수 조건 통과율**: `4 / 4 (100%, AC 1~4 전 시나리오 및 UI/모달 검증 완료)`
 - **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 3건`
 
 ---
@@ -28,6 +28,15 @@
   1. `ai_analysis` 테이블의 `overall_score`, `iaa_score`, `iqa_score`, `ista_score` 및 `critique_en` 컬럼에 정규화된 값들이 저장(또는 기존 텍스트에서 자동 백필)되어야 한다.
   2. 비평 아카이브 탭(`CritiqueView.tsx`)에서 `[최신순 / 종합평점순 / 미학점수순]` 정렬 전환 및 한/영 원문 즉시 토글이 동작해야 한다.
 
+### AC 4. 미학 주도형 EXIF 적응적 종합 평점 및 점수 가이드 모달 `[As-Is]`
+* **Given:** 특정 사진의 비평이 생성되거나 마이그레이션이 실행될 때,
+* **When:** `_calculate_overall_vr_score`가 호출되거나 프론트엔드에서 `[?] 점수 산출 가이드` 버튼이 클릭되면,
+* **Then:**
+  1. 사진의 EXIF(조리개 F값, ISO)에 따라 [인물/감성], [풍경/건축], [야경/스트리트], [표준] 4대 적응형 가중치가 적용되어야 한다.
+  2. $\text{IAA} \ge 75$ 및 $\text{IAA} > \text{IQA}$ 조건에서 미학적 탁월성 보너스($\Delta_{\text{aesthetic}}$)가 정확히 산출 및 가산되어야 한다.
+  3. 기존 DB 사진들의 `overall_score`가 `run_migrations()`에서 새 수식으로 일괄 자동 재계산(Backfill)되어야 한다.
+  4. 프론트엔드 스코어보드 헤더의 `[?] 점수 산출 가이드` 클릭 시 `ScoringGuideModal`이 오픈되어 4대 가중치 표와 보너스 공식이 안내되어야 한다.
+
 ---
 
 ## 🧪 2. 테스트 시나리오 매트릭스 (Test Matrix)
@@ -39,6 +48,10 @@
 | **Boundary**| `TC-CRT-03` | 비평 추론 도중 취소 | 생성 중 `[취소]` 버튼 클릭 | `POST /critique/cancel/{id}` 호출 및 즉시 중단 | `PASS` |
 | **Happy** | `TC-CRT-04` | 정량 평점 DB 정규화 및 아카이브 정렬 | 비평 생성 후 `sort_by=overall_score` 조회 | 4종 점수 컬럼 저장 및 고득점 순 반환 | `PASS` |
 | **Boundary**| `TC-CRT-05` | 기존 비평 텍스트 자동 백필 | 레거시 스코어보드 문자열 보유 DB 기동 | `run_migrations()`에서 4종 점수 컬럼 자동 백필 | `PASS` |
+| **Happy** | `TC-CRT-06` | EXIF 적응형 가중치 및 미학 보너스 검증 | F1.4 인물, F8 풍경, ISO 3200 스트리트 | 모드별 가중치 및 미학 보너스 정확 계산 | `PASS` |
+| **Boundary**| `TC-CRT-07` | EXIF 누락/비정상값 시 표준 폴백 및 클램핑 | EXIF 없음, 극단값(IAA 100, IQA 0 등) | 표준 모드 가중치 폴백 및 0~100 클램핑 | `PASS` |
+| **Happy** | `TC-CRT-08` | 기존 DB 사진 overall_score 자동 재계산 백필 | 기존 iaa/iqa/ista 보유 DB 기동 | run_migrations()에서 EXIF 조인 후 새 점수 백필 | `PASS` |
+| **Happy** | `TC-CRT-09` | 점수 가이드 모달 열람 및 닫기 | 스코어보드 [?] 버튼 클릭 | ScoringGuideModal 열림, ESC/닫기 동작 (`tsc & build`) | `PASS` |
 
 ---
 

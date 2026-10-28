@@ -4,10 +4,15 @@ import re
 import time
 import torch
 import threading
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 
 from services.base_model import BaseKeepAliveModel, GPU_LOCK
 from services.unipercept_utils import build_transform, score2aestoken, AESTHETICS_TOKEN_LIST
+from services.scoring import (
+    resolve_perceptual_weights,
+    calculate_aesthetic_bonus,
+    calculate_overall_vr_score,
+)
 
 class UniPerceptAdapter(BaseKeepAliveModel):
     def __init__(self):
@@ -250,9 +255,34 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             return transformed.to(self.device)
 
     @staticmethod
-    def _calculate_overall_vr_score(iaa: float, iqa: float, ista: float) -> int:
-        overall = round((0.4 * iaa) + (0.3 * iqa) + (0.3 * ista))
-        return min(100, max(0, overall))
+    def _resolve_perceptual_weights(
+        f_number: Optional[float] = None,
+        iso: Optional[float] = None
+    ) -> Tuple[float, float, float]:
+        """Resolves optical weights by delegating to services.scoring.resolve_perceptual_weights."""
+        return resolve_perceptual_weights(f_number=f_number, iso=iso)
+
+    @staticmethod
+    def _calculate_aesthetic_bonus(iaa: float, iqa: float) -> float:
+        """Calculates aesthetic bonus by delegating to services.scoring.calculate_aesthetic_bonus."""
+        return calculate_aesthetic_bonus(iaa=iaa, iqa=iqa)
+
+    @staticmethod
+    def _calculate_overall_vr_score(
+        iaa: float,
+        iqa: float,
+        ista: float,
+        f_number: Optional[float] = None,
+        iso: Optional[float] = None
+    ) -> int:
+        """Calculates final clamped overall score by delegating to services.scoring.calculate_overall_vr_score."""
+        return calculate_overall_vr_score(
+            iaa=iaa,
+            iqa=iqa,
+            ista=ista,
+            f_number=f_number,
+            iso=iso
+        )
 
     def _compute_single_vr_domain_score(
         self,
@@ -286,14 +316,17 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         image_path: str,
         metadata: Optional[Dict[str, Any]] = None,
         photo_id: Optional[str] = None,
-        max_retries: int = 3
+        max_retries: int = 3,
+        f_number: Optional[float] = None,
+        iso: Optional[float] = None,
+        **kwargs: Any
     ) -> Dict[str, Any]:
         """
         Runs 3-Way VR Scoring with precise step-by-step logging & status updates:
         Step 1: IAA Score (Aesthetics)
         Step 2: IQA Score (Quality)
         Step 3: ISTA Score (Structure & Texture)
-        Overall = round(0.4*IAA + 0.3*IQA + 0.3*ISTA)
+        Overall = EXIF-adaptive fusion (Mode A/B/C/D weights + aesthetic bonus)
         """
         with GPU_LOCK:
             with self.lock:
@@ -327,7 +360,25 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             iaa_val = scores.get("iaa", 70.0)
             iqa_val = scores.get("iqa", 70.0)
             ista_val = scores.get("ista", 70.0)
-            overall_val = self._calculate_overall_vr_score(iaa_val, iqa_val, ista_val)
+
+            eff_f_number = f_number if f_number is not None else (metadata.get("f_number") if metadata else None)
+            eff_iso = iso if iso is not None else (metadata.get("iso") if metadata else None)
+            try:
+                eff_f_number = float(eff_f_number) if eff_f_number is not None else None
+            except (ValueError, TypeError):
+                eff_f_number = None
+            try:
+                eff_iso = float(eff_iso) if eff_iso is not None else None
+            except (ValueError, TypeError):
+                eff_iso = None
+
+            overall_val = self._calculate_overall_vr_score(
+                iaa_val,
+                iqa_val,
+                ista_val,
+                f_number=eff_f_number,
+                iso=eff_iso
+            )
 
             vr_total_elapsed = time.time() - vr_start_time
             print(f"[UniPercept] 📊 [VR 모드 종료] 3개 점수 산출 완료 (총 소요시간: {vr_total_elapsed:.2f}초)", flush=True)
@@ -743,12 +794,15 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         self,
         image_path: str,
         metadata: Optional[Dict[str, Any]] = None,
-        photo_id: Optional[str] = None
+        photo_id: Optional[str] = None,
+        f_number: Optional[float] = None,
+        iso: Optional[float] = None,
+        **kwargs: Any
     ) -> Dict[str, Any]:
         """
         Executes 2-Stage Pipeline (Option 1):
         - Stage 1: VR Mode -> Fast inference for 3 official metrics (IAA, IQA, ISTA)
-        - Stage 1 Math: Overall = round(0.4*IAA + 0.3*IQA + 0.3*ISTA)
+        - Stage 1 Math: Overall = EXIF-adaptive fusion (services.scoring)
         - Stage 2: VQA Mode -> Pure deep photographic critique without score constraints
         - Merges scores scoreboard and VQA critique for translation by Gemma.
         """
@@ -756,9 +810,19 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             from services.critique_status import critique_status_manager
             critique_status_manager.check_cancelled(photo_id)
 
+        eff_f_number = f_number if f_number is not None else (metadata.get("f_number") if metadata else None)
+        eff_iso = iso if iso is not None else (metadata.get("iso") if metadata else None)
+
         print("[UniPerceptAdapter] [Stage 1/2] Computing 3-Way VR scores (IAA / IQA / ISTA)...", flush=True)
         # 1. Stage 1: VR Mode (Fast 3-Metric Score Extraction)
-        vr_result = self.generate_vr_scores(image_path, metadata=metadata, photo_id=photo_id, max_retries=3)
+        vr_result = self.generate_vr_scores(
+            image_path,
+            metadata=metadata,
+            photo_id=photo_id,
+            max_retries=3,
+            f_number=eff_f_number,
+            iso=eff_iso
+        )
         if photo_id:
             critique_status_manager.check_cancelled(photo_id)
         final_overall = vr_result["overall"]

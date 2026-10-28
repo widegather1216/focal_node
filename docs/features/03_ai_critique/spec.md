@@ -2,9 +2,9 @@
 
 ---
 
-## 💾 1. 데이터베이스 스키마 명세 (`backend/app/models.py`)
+## 💾 1. 데이터베이스 스키마 및 적응형 평점 명세 (`backend/app/models.py`, `services/scoring.py`)
 
-### 1.1. `[As-Is 기구현]` `ai_analysis` 테이블 (정량 평점 및 영문 원문 정규화 완료)
+### 1.1. `[As-Is 기구현]` `ai_analysis` 테이블
 ```sql
 CREATE TABLE ai_analysis (
     image_id VARCHAR(64) PRIMARY KEY REFERENCES images(id) ON DELETE CASCADE,
@@ -21,46 +21,33 @@ CREATE TABLE ai_analysis (
     critique_en TEXT                         -- UniPercept 8B VQA 영문 비평 원문
 );
 ```
-* **자동 백필(Backfill) 마이그레이션 규칙**: 앱 기동 시 `run_migrations()`에서 컬럼 추가 및 인덱스 생성 후 `critique IS NOT NULL AND overall_score IS NULL`인 기존 레코드를 조회하여 `[6-Way 앙상블 비평 스코어보드]` 헤더의 점수를 정규식으로 파싱해 4개 점수 컬럼에 비파괴적으로 자동 백필합니다.
 
-### 1.2. `[To-Be]` 추가 예정 스펙
-* 현재 예정된 추가 변경사항 없음 (Active Iteration Step 1~4 전수 완료).
-
----
-
-## 🌐 2. 백엔드 REST API 계약 (`/api/chat`, `/api/photos`)
-
-* `POST /api/chat/critique` `[As-Is 기구현]`
-  - **Request:** `{ "photo_id": "sha256...", "engine"?: "unipercept" | "gemma4" }` (기본값 `"unipercept"`)
-  - **Response 200:**
-    ```json
-    {
-      "critique": "...",
-      "critique_en": "...",
-      "overall_score": 84.5,
-      "iaa_score": 88.0,
-      "iqa_score": 81.2,
-      "ista_score": 84.3,
-      "critique_updated_at": "2026-10-17T12:00:00Z",
-      "engine_used": "unipercept",
-      "status": "completed"
-    }
-    ```
-* `GET /api/chat/critique/status/{photo_id}` `[As-Is 기구현]` *(비동기 4단계 상태 JSON Polling)*
-  - **Response 200:** `{ "photo_id": "...", "step": 2, "total_steps": 4, "message": "심층 비평 추론 중...", "progress": 45, "status": "idle" | "processing" | "completed" | "cancelled" | "error", "critique": null, "critique_updated_at": null }`
-* `POST /api/chat/critique/cancel/{photo_id}` *(별칭: `POST /api/chat/critique/{photo_id}/cancel`)* `[As-Is 기구현]`
-  - **Response 200:** `{ "status": "cancelled", "photo_id": "...", "message": "비평 생성이 사용자에 의해 중단되었습니다." }`
-* `DELETE /api/chat/critique/{photo_id}` `[As-Is 기구현]`
-  - **Response 200:** `{ "status": "ok", "photo_id": "..." }` (`critique`, `critique_en`, 4종 평점 및 `critique_updated_at`을 모두 `NULL`로 동시 초기화)
-* `GET /api/chat/critiques?sort_by=recent|overall_score|iaa_score` `[As-Is 기구현]`
-  - **Response 200:** `CritiqueItemResponse[]` (비평이 존재하는 모든 사진 목록, 정규화 4종 평점 및 `critique_en` 포함)
-* `POST /api/chat/critique-summary` `[As-Is 기구현]`
-  - **Request:** `{ "photo_ids": ["sha256...", ...] }`
-  - **Response 200:** `{ "summary": "포트폴리오 종합 총평...", "total_critiques_analyzed": 5, "created_at": "..." }`
+### 1.2. `[As-Is 기구현]` 미학 주도형 EXIF 적응적 종합 평점 모델 수식
+* **EXIF 기반 4대 모드 동적 가중치 분배 (`_resolve_perceptual_weights`)**:
+  - [모드 A] 浅심도 인물/감성 ($F \le 2.8$): $w_{\text{iaa}} = 0.65, \; w_{\text{iqa}} = 0.25, \; w_{\text{ista}} = 0.10$
+  - [모드 B] 팬포커스 풍경/건축 ($F \ge 5.6$): $w_{\text{iaa}} = 0.45, \; w_{\text{iqa}} = 0.30, \; w_{\text{ista}} = 0.25$
+  - [모드 C] 야경/스트리트 스냅 ($\text{ISO} \ge 1600$): $w_{\text{iaa}} = 0.70, \; w_{\text{iqa}} = 0.20, \; w_{\text{ista}} = 0.10$
+  - [모드 D] 일반 스냅 (표준 모드) (그 외 및 EXIF 누락): $w_{\text{iaa}} = 0.55, \; w_{\text{iqa}} = 0.30, \; w_{\text{ista}} = 0.15$
+* **기저 점수**: $S_{\text{base}} = (w_{\text{iaa}} \cdot \text{IAA}) + (w_{\text{iqa}} \cdot \text{IQA}) + (w_{\text{ista}} \cdot \text{ISTA})$
+* **미학적 탁월성 보너스 (`_calculate_aesthetic_bonus`)**:
+  $$\Delta_{\text{aesthetic}} = (\text{IAA} - \text{IQA}) \times 0.25 \times (\text{IAA} / 100) \quad (\text{단, } \text{IAA} > \text{IQA} \text{ and } \text{IAA} \ge 75)$$
+* **최종 클램핑**: $\text{overall\_score} = \min(100, \; \max(0, \; \text{round}(S_{\text{base}} + \Delta_{\text{aesthetic}})))$
+* **자동 백필 정책**: `run_migrations()`에서 `iaa_score IS NOT NULL`인 기존 레코드를 EXIF 메타데이터와 조인하여 새 수식으로 자동 재계산 완료.
 
 ---
 
-## 💻 3. 프론트엔드 타입 및 에디토리얼 내보내기 계약 (`src/types/critique.ts`)
+## 🌐 2. 백엔드 REST API 계약 (`/api/chat`, `/api/photos`) `[As-Is 기구현]`
+
+* `POST /api/chat/critique`: `{ "photo_id": "sha256...", "engine"?: "unipercept" | "gemma4" }` ➔ `CritiqueResponse` (4종 점수, 번역문, 영문원문 반환)
+* `GET /api/chat/critique/status/{photo_id}`: 비동기 4단계 진행률(`step`, `progress`, `status`) Polling
+* `POST /api/chat/critique/cancel/{photo_id}`: 진행 중인 비평 생성 중단 및 모델 즉시 언로드
+* `DELETE /api/chat/critique/{photo_id}`: 비평 텍스트 및 4종 평점 `NULL` 초기화
+* `GET /api/chat/critiques?sort_by=recent|overall_score|iaa_score`: 평점순 정렬 지원 비평 목록 반환
+* `POST /api/chat/critique-summary`: 다중 사진 포트폴리오 에디토리얼 종합 총평 생성
+
+---
+
+## 💻 3. 프론트엔드 타입 및 UI 계약 (`src/types/critique.ts`) `[As-Is 기구현]`
 
 ```typescript
 export interface CritiqueItem {
@@ -82,9 +69,16 @@ export interface CritiqueItem {
   critique_updated_at?: string | null;
 }
 ```
-* **클라이언트 사이드 문서 생성 및 멀티윈도우 (`CritiqueDocumentModal.tsx`)**:
-  - **독립 팝아웃 윈도우**: Tauri `WebviewWindow` (`/?popout=critique&photoId=...`)를 통해 별도 OS 창으로 에디토리얼 리포트를 분리 열람 가능.
-  - **Markdown (`.md`) & PDF (`.pdf`)**: EXIF 메타데이터, 정규화 4종 평점 스코어보드, AI 비평 전문을 결합하여 Tauri `save_binary_file` IPC로 저장.
-* **클라이언트 사이드 문서 생성 및 멀티윈도우 (`CritiqueDocumentModal.tsx`)**:
-  - **독립 팝아웃 윈도우**: Tauri `WebviewWindow` (`/?popout=critique&photoId=...`)를 통해 별도 OS 창으로 에디토리얼 리포트를 분리 열람 가능.
-  - **Markdown (`.md`) & PDF (`.pdf`)**: EXIF 메타데이터, 정규화 4종 평점 스코어보드, AI 비평 전문을 결합하여 Tauri `save_binary_file` IPC로 저장.
+
+### 3.1. 에디토리얼 내보내기 & 팝아웃 (`CritiqueDocumentModal.tsx`)
+* Tauri 멀티윈도우 팝아웃(`/?popout=critique&photoId=...`) 및 Markdown/PDF 내보내기 지원.
+
+### 3.2. 점수 산출 기준 안내 모달 (`ScoringGuideModal.tsx`)
+* `CritiqueContentRenderer.tsx` 스코어보드 헤더 우측의 `[?] 점수 산출 가이드` 버튼 클릭 시 오픈.
+* 3대 지각 지표(IAA, IQA, ISTA 정의 및 ISTA 텍스처 밀도 안내), EXIF 적응형 4대 가중치 표, 미학적 탁월성 보너스 공식 제공. `ESC` 키 및 백드롭 클릭 닫기 지원.
+
+---
+
+## 🟡 4. [To-Be] 추가 예정 스펙
+
+*(현재 예정된 추가 변경사항 없음 — 전 계층 Step 1~4 구현 완료)*

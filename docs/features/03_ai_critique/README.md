@@ -1,7 +1,7 @@
 # 🤖 [03_ai_critique] On-Demand AI Critique & Editorial Export
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (품질 감사 완료 / REFACTOR 3건 대기)`
-- **구현 진척도**: `[■■■■] 4/4 Steps (Active Iteration 완료)`
+- **현재 상태 (Lifecycle)**: `🟢 Sign-Off 대기 (미학 주도형 EXIF 적응적 평점 개편 Step 1~4 완료)`
+- **구현 진척도**: `[■■■■] 4/4 Steps (Active Iteration Step 1~4 전 계층 구현 완료)`
 - **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 3건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
@@ -9,7 +9,7 @@
 
 ## 🎯 1. 도메인 개요 (Overview)
 
-2단계 온디맨드 AI 비평(UniPercept 8B 3-Way 채점/비평 ➔ Gemma 4 12B-it 한국어 번역/구조화), 정량 평점(`overall`/`iaa`/`iqa`/`ista`) 및 영문 원문(`critique_en`) DB 정규화, 캡션/태그 수동 편집, 백그라운드 비평 상태 Polling/취소/삭제, 포트폴리오 종합 총평 및 에디토리얼 매거진(Markdown/PDF) 내보내기를 담당하는 도메인입니다.
+2단계 온디맨드 AI 비평(UniPercept 8B 3-Way 채점/비평 ➔ Gemma 4 12B-it 한국어 번역/구조화), 미학 주도형 EXIF 적응적 종합 평점 모델, 정량 평점(`overall`/`iaa`/`iqa`/`ista`) 및 영문 원문(`critique_en`) DB 정규화, 캡션/태그 수동 편집, 백그라운드 비평 상태 Polling/취소/삭제, 포트폴리오 종합 총평 및 에디토리얼 매거진(Markdown/PDF) 내보내기를 담당하는 도메인입니다.
 
 ---
 
@@ -24,29 +24,34 @@
   - 📂 구현: [`chat_service.py`](../../../backend/app/services/chat_service.py), [`critique_status.py`](../../../backend/app/services/critique_status.py), [`unipercept_adapter.py`](../../../backend/app/services/unipercept_adapter.py), [`mlx_adapters.py`](../../../backend/app/services/mlx_adapters.py) | 🧪 테스트: [`test_unipercept.py`](../../../backend/tests/test_unipercept.py), [`test_ensemble_math.py`](../../../backend/tests/test_ensemble_math.py) (`PASS`)
 - [x] 상세 패널 비평 뷰, 전체 비평 대시보드, 에디토리얼 매거진 모달/독립 팝아웃 창 및 `html2canvas`+`jsPDF` 내보내기
   - 📂 구현: [`PhotoCritiqueView.tsx`](../../../src/components/detail/PhotoCritiqueView.tsx), [`PhotoAiAnalysisView.tsx`](../../../src/components/detail/PhotoAiAnalysisView.tsx), [`CritiqueView.tsx`](../../../src/components/CritiqueView.tsx), [`CritiqueContentRenderer.tsx`](../../../src/components/critique/CritiqueContentRenderer.tsx), [`CritiqueDocumentModal.tsx`](../../../src/components/critique/CritiqueDocumentModal.tsx)
-
-### 🚀 Active Iteration: UniPercept 3대 정량 평점 & 영문 원문 DB 정규화 `(완료)`
-- [x] **Step 1 [DB & Types]**: `models.py`의 `AIAnalysis`에 `overall_score`, `iaa_score`, `iqa_score`, `ista_score`(`Float`), `critique_en`(`String`) 추가, `database.py` 자동 마이그레이션/기존 텍스트 점수 백필(Backfill) 및 `schemas.py`/`src/types/critique.ts` 확장
-  - 📂 구현: [`models.py`](../../../backend/app/models.py), [`database.py`](../../../backend/app/database.py), [`ai_parser.py`](../../../backend/app/services/ai_parser.py), [`schemas.py`](../../../backend/app/schemas.py), [`critique.ts`](../../../src/types/critique.ts) | 🧪 테스트: [`test_critique_score_normalization.py`](../../../backend/tests/test_critique_score_normalization.py) (`PASS`)
-- [x] **Step 2 [Repo & API]**: `PhotoRepository.list_critiques(sort_by)`에 평점순 정렬(`overall_score`, `iaa_score`) 및 `delete_critique` 정규화 초기화 구현, `GET /api/chat/critiques` 응답에 정규화 평점/`critique_en` 연동, 프론트엔드 `ApiClient.getCritiques(sortBy?)` 타입 확장
-  - 📂 구현: [`photo_repository.py`](../../../backend/app/repositories/photo_repository.py), [`chat.py`](../../../backend/app/api/chat.py), [`api.ts`](../../../src/services/api.ts) | 🧪 테스트: [`test_critique_repository_and_api.py`](../../../backend/tests/test_critique_repository_and_api.py) (`PASS`)
-- [x] **Step 3 [Service & State]**: `ChatService._save_critique_to_db`에서 `scores_dict`와 `raw_en`을 정규화 컬럼(`overall_score`, `iaa_score`, `iqa_score`, `ista_score`, `critique_en`)에 직접 영구 저장하고 비평 응답/상태 객체 연동 완료
-  - 📂 구현: [`chat_service.py`](../../../backend/app/services/chat_service.py) | 🧪 테스트: [`test_critique_service_save.py`](../../../backend/tests/test_critique_service_save.py) (`PASS`)
-- [x] **Step 4 [UI & Integration]**: `CritiqueContentRenderer.tsx`에서 정규화 점수/영문 원문 props를 우선 바인딩(레거시 정규식 폴백 유지) 및 `OriginalEnglishCritiqueCard` 영문 원문 토글 렌더링, `CritiqueCard.tsx` 평점 배지 표시 및 `CritiqueView.tsx`에 `[최신순 / 종합평점순 / 미학점수순]` 정렬 토글 추가
-  - 📂 구현: [`CritiqueContentRenderer.tsx`](../../../src/components/critique/CritiqueContentRenderer.tsx), [`CritiqueCard.tsx`](../../../src/components/critique/CritiqueCard.tsx), [`CritiqueView.tsx`](../../../src/components/CritiqueView.tsx), [`PhotoCritiqueView.tsx`](../../../src/components/detail/PhotoCritiqueView.tsx), [`DetailPanel.tsx`](../../../src/components/DetailPanel.tsx), [`CritiqueDocumentModal.tsx`](../../../src/components/critique/CritiqueDocumentModal.tsx) | 🧪 검증: `npx tsc --noEmit && npm run build` (`PASS`)
+- [x] UniPercept 3대 정량 평점(`overall`/`iaa`/`iqa`/`ista`) 및 영문 원문(`critique_en`) DB 정규화 & 아카이브 정렬
+  - 📂 구현: [`models.py`](../../../backend/app/models.py), [`database.py`](../../../backend/app/database.py), [`photo_repository.py`](../../../backend/app/repositories/photo_repository.py), [`chat_service.py`](../../../backend/app/services/chat_service.py), [`CritiqueCard.tsx`](../../../src/components/critique/CritiqueCard.tsx) | 🧪 테스트: [`test_critique_score_normalization.py`](../../../backend/tests/test_critique_score_normalization.py), [`test_critique_repository_and_api.py`](../../../backend/tests/test_critique_repository_and_api.py), [`test_critique_service_save.py`](../../../backend/tests/test_critique_service_save.py) (`PASS`)
+- [x] **Step 1 [DB & Migration]**: `database.py`의 `run_migrations()`에 `image_metadata` 연계 `overall_score` 적응형 일괄 재계산 백필 로직 추가 및 `scoring.py` 순수 연산 모듈 분리
+  - 📂 구현: [`database.py`](../../../backend/app/database.py), [`scoring.py`](../../../backend/app/services/scoring.py) | 🧪 테스트: [`test_adaptive_scoring.py`](../../../backend/tests/test_adaptive_scoring.py) (`TC-CRT-08`, `PASS`)
+- [x] **Step 2 [Repo & API]**: `[N/A - 기존 API 및 리포지토리 계약 그대로 재사용]`
+  - 📂 사유: DB 컬럼 및 REST 엔드포인트 규격 변경 없이 내부 계산식만 정밀화되므로 계층 변경 없음
+- [x] **Step 3 [Domain Service]**: `unipercept_adapter.py`의 `_resolve_perceptual_weights`, `_calculate_aesthetic_bonus`, `_calculate_overall_vr_score` 구현 및 `chat_service.py` 연동 단위 테스트 작성
+  - 📂 구현: [`unipercept_adapter.py`](../../../backend/app/services/unipercept_adapter.py), [`chat_service.py`](../../../backend/app/services/chat_service.py) | 🧪 테스트: [`test_adaptive_scoring.py`](../../../backend/tests/test_adaptive_scoring.py) (`TC-CRT-06~07`, `PASS`)
+- [x] **Step 4 [UI & Integration]**: `ScoringGuideModal.tsx` 컴포넌트 추가 및 `CritiqueContentRenderer.tsx` 스코어보드 헤더에 `[?] 점수 산출 가이드` 버튼 연결
+  - 📂 구현: [`ScoringGuideModal.tsx`](../../../src/components/critique/ScoringGuideModal.tsx), [`CritiqueContentRenderer.tsx`](../../../src/components/critique/CritiqueContentRenderer.tsx) | 🧪 검증: `npx tsc --noEmit && npm run build` (`TC-CRT-09`, `PASS`)
 
 ---
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-10-25 / clean-code-auditor / 03_ai_critique 도메인 3개 계층 [데이터 모델/Repo ➔ 도메인 서비스/API ➔ 클라이언트 상태/UI] 전수 클린코드 품질 감사 완료: tsc & build 통과, pytest 50종 도메인 테스트 전수 통과, REFACTOR-01(UI 거대 컴포넌트 분할), REFACTOR-02(추론 어댑터 Silent Fail/장문 메서드) 최신화 및 REFACTOR-03(비평 Polling 빈 catch 블록 예외 묵인 교정 및 ApiClient 반환 타입 구체화) 신규 발권 (총 3건 대기)`
+- **직전 완료 작업**: `2026-10-28 / clean-code-developer / 03_ai_critique 도메인 Step 4 [UI & Integration] 구현 완료 (ScoringGuideModal.tsx 컴포넌트 신규 구현 - 3대 지각 지표 정의 및 ISTA 밀도 안내, 4대 EXIF 가중치 표, 미학 보너스 안내, ESC/백드롭 닫기 지원; CritiqueContentRenderer.tsx 스코어보드 헤더 우측에 [?] 점수 산출 가이드 버튼 및 모달 렌더링 연결; TC-CRT-09 검증 완료; npx tsc --noEmit 및 npm run build 통과; 도메인 회귀 56종 및 백엔드 98종 전수 통과; Step 1~4 전 계층 구현 완료로 spec.md/architecture.md As-Is 승격 병합 완료)`
 - **생성/수정된 핵심 파일**:
-  - `docs/features/03_ai_critique/verification.md`: AC 3 및 TC-CRT-04~05 [As-Is] 승격, REFACTOR-01~02 라인수/상태 최신화, REFACTOR-03 신규 발권
-  - `docs/features/03_ai_critique/README.md`: 생명주기 배지 `🩹 Debugging` 갱신 및 Handoff 기록
-  - `docs/README.md`: Master Control Tower 진행 현황판(`03_ai_critique: 0/3`), Spotlight 및 최근 세션 타임라인 동기화
+  - `src/components/critique/ScoringGuideModal.tsx`: [신규] 3대 지각 지표, 4대 EXIF 적응형 가중치 표, 미학적 탁월성 보너스 안내 모달 컴포넌트
+  - `src/components/critique/CritiqueContentRenderer.tsx`: [수정] 스코어보드 헤더에 `[?] 점수 산출 가이드` 버튼 및 `ScoringGuideModal` 오픈/해제 상태 연결
+  - `docs/features/03_ai_critique/spec.md`: Step 1~4 완료에 따른 To-Be ➔ As-Is 승격 병합
+  - `docs/features/03_ai_critique/architecture.md`: 컴포넌트 파일 트리 [기존] 갱신
+  - `docs/features/03_ai_critique/verification.md`: TC-CRT-09 `PASS` 및 인수 통과율 100%(4/4) 갱신
+  - `docs/features/03_ai_critique/README.md`: Step 4 [x] 완료 및 Handoff 갱신
+  - `docs/README.md`: Master Control Tower Spotlight 및 현황판 갱신
 - **검증 완료된 테스트 실행 명령어**:
-  - `npx tsc --noEmit && npm run build` (`PASS`)
-  - `./venv/bin/pytest backend/tests/test_critique_repository_and_api.py backend/tests/test_critique_service_save.py backend/tests/test_critique_score_normalization.py backend/tests/test_unipercept.py backend/tests/test_ensemble_math.py backend/tests/test_critique_cancellation.py backend/tests/test_critique_sleep_recovery.py -v` (`50 passed`)
-  - `python3 -B ~/.gemini/config/skills/interactive-feature-planner/scripts/check_wiki_health.py docs` (`exit code 0`)
-- **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - `🟡 Should Fix` 티켓 3건(`REFACTOR-01~03`)이 대기 중이므로 표준 파이프라인에 따라 `systematic-debugger`를 호출하여 최우선 티켓(`"03_ai_critique 도메인의 REFACTOR-01 티켓 해결해줘"`)을 해결할 것.
+  - `npx tsc --noEmit && npm run build` (`PASS`, Vite v7.3.6 프로덕션 번들 정상 생성)
+  - `./venv/bin/pytest backend/tests/test_adaptive_scoring.py backend/tests/test_critique_repository_and_api.py backend/tests/test_critique_service_save.py backend/tests/test_critique_cancellation.py backend/tests/test_critique_sleep_recovery.py backend/tests/test_ensemble_math.py backend/tests/test_unipercept.py backend/tests/test_critique_score_normalization.py -v` (`56 passed`)
+  - `./venv/bin/pytest backend/tests/` (`98 passed`)
+- **다음 세션 포커스 및 추천 실행 프롬프트**:
+  - `03_ai_critique` 도메인의 모든 구현 Step(Step 1~4)이 완료되었습니다. `clean-code-auditor` 스킬을 통해 전체 계층 정적 분석 및 클린코드 품질 감사를 진행합니다.
+  - 👉 추천 프롬프트: `"03_ai_critique 도메인 클린코드 품질 감사 진행해줘"`

@@ -203,7 +203,9 @@ async def _execute_unipercept_critique_pipeline(
             adapter.generate_full_ensemble_critique,
             file_path,
             meta_data,
-            photo_id
+            photo_id,
+            f_number=meta_data.get("f_number") if meta_data else None,
+            iso=meta_data.get("iso") if meta_data else None
         )
         critique_status_manager.check_cancelled(photo_id)
 

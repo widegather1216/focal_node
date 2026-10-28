@@ -82,6 +82,7 @@ def run_migrations(bind_engine=None):
             print(f"[Database] Migration error executing '{col_sql}': {err}", flush=True)
 
     _backfill_critique_scores(target_engine)
+    _backfill_adaptive_overall_scores(target_engine)
 
 
 def _backfill_critique_scores(target_engine):
@@ -138,6 +139,70 @@ def _backfill_critique_scores(target_engine):
     except Exception as err:
         print(f"[Database] Warning: Failed to backfill critique scores: {err}", flush=True)
 
+
+def _backfill_adaptive_overall_scores(target_engine):
+    """
+    Recalculates and backfills overall_score using the EXIF-adaptive perceptual scoring model
+    for all records in ai_analysis where iaa_score IS NOT NULL.
+    Joins with image_metadata to obtain f_number and iso.
+    """
+    from sqlalchemy import text
+    try:
+        from services.scoring import calculate_overall_vr_score
+    except ImportError:
+        try:
+            from app.services.scoring import calculate_overall_vr_score
+        except ImportError as import_err:
+            print(f"[Database] Notice: Skipping adaptive score backfill (scoring import unavailable): {import_err}", flush=True)
+            return
+
+    try:
+        with target_engine.begin() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT a.image_id, a.iaa_score, a.iqa_score, a.ista_score, a.overall_score, "
+                    "m.f_number, m.iso "
+                    "FROM ai_analysis a "
+                    "LEFT JOIN image_metadata m ON a.image_id = m.image_id "
+                    "WHERE a.iaa_score IS NOT NULL"
+                )
+            ).fetchall()
+
+            if not rows:
+                return
+
+            update_count = 0
+            for row in rows:
+                image_id = row[0]
+                iaa = float(row[1]) if row[1] is not None else None
+                if iaa is None:
+                    continue
+
+                iqa = float(row[2]) if row[2] is not None else iaa
+                ista = float(row[3]) if row[3] is not None else iaa
+                current_overall = float(row[4]) if row[4] is not None else None
+                f_number = float(row[5]) if row[5] is not None else None
+                iso = float(row[6]) if row[6] is not None else None
+
+                new_overall = float(calculate_overall_vr_score(
+                    iaa=iaa,
+                    iqa=iqa,
+                    ista=ista,
+                    f_number=f_number,
+                    iso=iso,
+                ))
+
+                if current_overall is None or round(current_overall, 2) != round(new_overall, 2):
+                    conn.execute(
+                        text("UPDATE ai_analysis SET overall_score = :score WHERE image_id = :id"),
+                        {"score": new_overall, "id": image_id}
+                    )
+                    update_count += 1
+
+            if update_count > 0:
+                print(f"[Database] Successfully backfilled adaptive overall_score for {update_count} critique records.", flush=True)
+    except Exception as err:
+        print(f"[Database] Warning: Failed to backfill adaptive overall scores: {err}", flush=True)
 
 
 def get_db():

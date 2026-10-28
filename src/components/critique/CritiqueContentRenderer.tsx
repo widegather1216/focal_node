@@ -9,8 +9,10 @@ import {
   Quote,
   Globe,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  HelpCircle
 } from 'lucide-react';
+import { ScoringGuideModal } from './ScoringGuideModal';
 
 export interface ParsedScores {
   overall: number | null;
@@ -305,6 +307,8 @@ export const CritiqueScoreboardCard: React.FC<{ scores: ParsedScores; isCompact?
   scores, 
   isCompact = false 
 }) => {
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
+
   return (
     <div
       style={{
@@ -325,6 +329,38 @@ export const CritiqueScoreboardCard: React.FC<{ scores: ParsedScores; isCompact?
             6-Way 지각 앙상블 평점
           </span>
         </div>
+        <button
+          type="button"
+          onClick={() => setIsGuideOpen(true)}
+          title="점수 산출 기준 가이드 열기"
+          aria-label="점수 산출 기준 가이드"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px',
+            background: 'rgba(255, 255, 255, 0.04)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: '4px',
+            padding: isCompact ? '2px 6px' : '3px 8px',
+            color: 'var(--text-secondary)',
+            fontSize: isCompact ? '10.5px' : '11.5px',
+            cursor: 'pointer',
+            transition: 'color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = 'var(--text-primary)';
+            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
+            e.currentTarget.style.borderColor = 'rgba(225, 29, 72, 0.3)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = 'var(--text-secondary)';
+            e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.04)';
+            e.currentTarget.style.borderColor = 'var(--border-subtle)';
+          }}
+        >
+          <HelpCircle size={isCompact ? 11 : 13} color="var(--accent-focal)" />
+          <span>점수 산출 가이드</span>
+        </button>
       </div>
 
       <div style={{
@@ -387,6 +423,13 @@ export const CritiqueScoreboardCard: React.FC<{ scores: ParsedScores; isCompact?
           )}
         </div>
       </div>
+
+      {isGuideOpen && (
+        <ScoringGuideModal 
+          isOpen={isGuideOpen} 
+          onClose={() => setIsGuideOpen(false)} 
+        />
+      )}
     </div>
   );
 };

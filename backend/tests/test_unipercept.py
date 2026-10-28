@@ -181,9 +181,9 @@ def test_full_ensemble_6way_pipeline(monkeypatch):
     assert res["scores"]["iaa"] == 85.5
     assert res["scores"]["iqa"] == 90.0
     assert res["scores"]["ista"] == 80.0
-    # Overall = round(0.4*85.5 + 0.3*90.0 + 0.3*80.0) = round(34.2 + 27.0 + 24.0) = round(85.2) = 85
-    assert res["scores"]["overall"] == 85
-    assert res["quality_score"] == 85
+    # Overall (Mode D standard fallback: 0.55*85.5 + 0.3*90.0 + 0.15*80.0) = round(86.025) = 86
+    assert res["scores"]["overall"] == 86
+    assert res["quality_score"] == 86
     assert "Striking aesthetic composition" in res["critique"]
     assert "Pin-sharp optical clarity" in res["critique"]
     assert "rich surface textures" in res["critique"]
