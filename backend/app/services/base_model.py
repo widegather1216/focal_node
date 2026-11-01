@@ -1,7 +1,10 @@
 import gc
 import time
+import logging
 import threading
 from typing import Optional, Any
+
+logger = logging.getLogger("focal_node.base_model")
 
 # Global lock to prevent MLX and PyTorch MPS from crashing due to concurrent GPU access
 GPU_LOCK = threading.RLock()
@@ -78,14 +81,14 @@ class BaseKeepAliveModel:
             import torch
             if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
                 torch.mps.empty_cache()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[{self.model_name}] torch.mps.empty_cache failed or torch unavailable: {e}")
 
         try:
             import mlx.core as mx
             mx.clear_cache()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"[{self.model_name}] mx.clear_cache failed or mlx unavailable: {e}")
 
     def _on_unload(self):
         """Override in subclass for custom unload steps if necessary."""

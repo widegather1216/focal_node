@@ -1,8 +1,8 @@
 # 🏛️ [00_core_foundation] Core Foundation & System Architecture
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (Baseline 검증 완료 / REFACTOR-01 등록)`
+- **현재 상태 (Lifecycle)**: `🟢 Sign-Off (Baseline 검증 및 REFACTOR-01 완료)`
 - **구현 진척도**: `[■■■■] 4/4 Steps`
-- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -29,10 +29,13 @@
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-10-17 / clean-code-auditor / 코어 아키텍처 문서-코드 정합성 교정 및 정적 감사`
+- **직전 완료 작업**: `2026-11-01 / systematic-debugger / REFACTOR-01 해결 (chromadb 지연 로딩 분리 및 Silent Fail 로깅 보강)`
 - **생성/수정된 핵심 파일**:
-  - `docs/features/00_core_foundation/*`: `focal_node.db`, `METAL_CACHE_DIR`, `/api/health`, `reveal_in_finder`, `save_binary_file` IPC 및 Tauri 이벤트 계약 반영
+  - [`chroma.py`](../../../backend/app/chroma.py): `import chromadb`를 `get_chroma_client()` 내부로 지연 이동하여 기동 시 eager import 제거
+  - [`base_model.py`](../../../backend/app/services/base_model.py): GPU 언로드 캐시 정리 예외에 디버그 로깅 적용 (`logger.debug`)
+  - [`model_downloader.py`](../../../backend/app/services/model_downloader.py): 파일 크기/해시/락/캐시 체크 내 4개 `except: pass` 블록에 디버그/경고 로깅 적용
 - **검증 완료된 테스트 실행 명령어**:
   - `./venv/bin/pytest backend/tests/test_model_downloader.py backend/tests/test_backend_hardening.py backend/tests/test_concurrency_hardening.py`
+  - `./venv/bin/pytest backend/tests/` (98 passed)
 - **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - `verification.md`에 등록된 `REFACTOR-01`(`main.py` 기동 시 `chromadb`/`rawpy` 상단 연쇄 임포트 분리 및 `base_model.py`/`model_downloader.py` 내 `except Exception: pass` 로깅 보강) 해결 시 기동 포트 출력 지연을 함께 점검할 것.
+  - 00_core_foundation의 모든 Step 및 리팩토링 티켓이 해결되어 `🟢 Sign-Off` 상태로 전환됨. 다음 단계인 `01_indexing_storage` 개발 진행 권장.

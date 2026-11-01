@@ -1,7 +1,7 @@
 # 🧭 Focal Node: Master Control Tower (Living Wiki Hub)
 
 > 외부 클라우드 전송 없이 Mac Native(Apple MLX & PyTorch MPS)로 구동되는 **프라이버시 보호 로컬 사진 관리 및 AI 시맨틱 검색/비평 데스크탑 플랫폼**입니다.
-> **최종 업데이트**: 2026-10-28 (by `clean-code-developer`)
+> **최종 업데이트**: 2026-11-01 (by `systematic-debugger`)
 
 ---
 
@@ -19,7 +19,7 @@
 
 | 도메인 (Bounded Context) | 생명주기 상태 | 구현 진척도 (Active Step 1~4) | QA 인수 통과율 | 미해결 티켓 (`🚨D` / `🧐R`) | 최근 작업 요약 |
 | :--- | :--- :---: | :---: | :---: | :---: | :--- |
-| 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `3/3 (100%)` | `0 / 1` | 동적 포트/IPC/모델 로더 검증 완료 (`REFACTOR-01` 대기) |
+| 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `3/3 (100%)` | `0 / 0` | 동적 포트/IPC/모델 로더 검증 및 REFACTOR-01 해결 완료 |
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 📐 Planning | `[□□□□] 0/4` | `3/6 (50%)` | `0 / 1` | 스마트 오프라인 + SHA-256 Relocation + 2-Pass 인덱싱 Step 1~4 대기 |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 📐 Planning | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 거리 임계값 + RRF 랭킹 + 35mm/점수 필터 + 스마트 앨범 Step 1~4 대기 |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `4/4 (100%)` | `0 / 3` | Step 4 [UI & Integration] 완료 (ScoringGuideModal 연동, 품질 감사 대기) |
@@ -32,6 +32,7 @@
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
 
+- **`[2026-11-01]` `[systematic-debugger]` [`00_core_foundation`]**: REFACTOR-01 해결 완료 (`chroma.py`의 `import chromadb`를 `get_chroma_client()` 내부로 지연 이동하여 기동 시 eager import 제거, `base_model.py` 및 `model_downloader.py` 내 빈 `except: pass`에 디버그/경고 로깅 보강하여 Silent Fail 제거, 백엔드 98종 전수 통과, 00_core_foundation `🟢 Sign-Off` 전환).
 - **`[2026-10-28]` `[clean-code-developer]` [`03_ai_critique`]**: Step 4 [UI & Integration] 구현 완료 (`ScoringGuideModal.tsx` 컴포넌트 신규 구현 및 `CritiqueContentRenderer.tsx` 스코어보드 헤더에 `[?] 점수 산출 가이드` 버튼 연결, `TC-CRT-09` 검증 완료, `npx tsc --noEmit && npm run build` 통과, 도메인 회귀 56종 및 백엔드 98종 전수 통과, Step 1~4 구현 완료로 spec.md/architecture.md As-Is 승격 병합).
 - **`[2026-10-28]` `[clean-code-developer]` [`03_ai_critique`]**: Step 3 [Domain Service] 구현 완료 (`unipercept_adapter.py`에 `_resolve_perceptual_weights`, `_calculate_aesthetic_bonus`, `_calculate_overall_vr_score` 추가 및 `scoring.py` 위임 연동, `generate_vr_scores`/`generate_full_ensemble_critique` 및 `chat_service.py` EXIF 메타데이터 연동, `TC-CRT-06/07` 단위 테스트 작성 및 통과, 도메인 회귀 56종 및 백엔드 98종 전수 통과).
 - **`[2026-10-28]` `[clean-code-developer]` [`03_ai_critique`]**: Step 1 [DB & Migration] 구현 완료 (`database.py` `run_migrations()`에 EXIF 조인 기반 `overall_score` 적응형 일괄 재계산 백필(`_backfill_adaptive_overall_scores`) 및 `services/scoring.py` 4대 모드/미학보너스/평점클램핑 순수 연산 모듈 분리, Step 2 N/A 정리, 단위 테스트 `test_adaptive_scoring.py` 4종 작성 및 통과, 도메인 회귀 54종 및 백엔드 96종 전수 통과).

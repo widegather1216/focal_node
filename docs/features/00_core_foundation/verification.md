@@ -1,8 +1,8 @@
 # 🧪 [00_core_foundation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Open Issues (AC 검증 완료 / REFACTOR 1건 대기)`
+- **검증 상태**: `🟢 Fully Verified (AC/TC 및 REFACTOR-01 완료)`
 - **인수 조건 통과율**: `2 / 2 (100%)`
-- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -50,4 +50,10 @@
   - chroma.py의 import chromadb를 get_chroma_client() 함수 내부로 지연 이동
   - base_model.py 및 model_downloader.py의 빈 except 블록에 최소 디버그/경고 로깅 추가
   ```
-- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`chroma.py`](../../../backend/app/chroma.py#L13-L37), [`base_model.py`](../../../backend/app/services/base_model.py#L81-L93), [`model_downloader.py`](../../../backend/app/services/model_downloader.py#L39-L44)
+  - **원인 및 조치**:
+    - `chroma.py`의 `import chromadb`를 `get_chroma_client()` 함수 내부로 이동하여 지연 로딩 처리, 앱 기동 시 불필요한 eager import 차단.
+    - `base_model.py` 및 `model_downloader.py`에 로거 인스턴스를 선언하고, 빈 `except: pass` 블록에 구체적 디버그/경고 로깅을 추가하여 Silent Fail 제거 (Rule 4.3 준수).
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_model_downloader.py backend/tests/test_backend_hardening.py backend/tests/test_concurrency_hardening.py` (`30 passed`), 백엔드 전수 테스트 (`98 passed`) 통과.

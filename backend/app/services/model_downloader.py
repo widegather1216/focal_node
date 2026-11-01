@@ -1,8 +1,11 @@
 import os
 import time
 import json
+import logging
 import threading
 from typing import Dict, Any, Optional
+
+logger = logging.getLogger("focal_node.model_downloader")
 
 KNOWN_MODEL_SIZES: Dict[str, int] = {
     "google/siglip2-base-patch16-224": 1539458338,
@@ -36,8 +39,8 @@ def get_repo_downloaded_bytes(repo_id: str, ttl: float = 1.5) -> int:
             if not os.path.islink(f_path):
                 try:
                     total += os.path.getsize(f_path)
-                except OSError:
-                    pass
+                except OSError as e:
+                    logger.debug(f"[Downloader] Failed to get size for {f_path}: {e}")
     with _size_cache_lock:
         _size_cache[repo_id] = (now, total)
     return total
@@ -164,8 +167,8 @@ def is_snapshot_weights_valid(snapshot_dir: str) -> bool:
                     return True
                 if size > 5 * 1024 * 1024:  # Any file larger than 5MB
                     return True
-            except OSError:
-                pass
+            except OSError as e:
+                logger.debug(f"[Downloader] Failed to inspect file size for {f_path}: {e}")
     return False
 
 def ensure_nested_safetensors_linked(snapshot_dir: str):
@@ -184,7 +187,8 @@ def ensure_nested_safetensors_linked(snapshot_dir: str):
                 if not os.path.exists(dst):
                     try:
                         os.symlink(s_path, dst)
-                    except Exception:
+                    except Exception as e:
+                        logger.debug(f"[Downloader] Symlink failed for {s_path} -> {dst}, falling back to copy: {e}")
                         shutil.copy2(s_path, dst)
 
 def download_hf_smart(repo_id: str, filename: Optional[str] = None, **kwargs):
@@ -232,8 +236,8 @@ def clear_stale_hf_locks(repo_id: str):
                 try:
                     os.remove(lock_file)
                     print(f"[Downloader] Removed stale HF lock file: {f}", flush=True)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.warning(f"[Downloader] Failed to remove stale lock file {lock_file}: {e}")
 
 def _is_model_cached(repo_id: str, label: str, ignore_patterns: list, tracker, **kwargs) -> bool:
     try:
@@ -247,8 +251,8 @@ def _is_model_cached(repo_id: str, label: str, ignore_patterns: list, tracker, *
         if is_snapshot_weights_valid(local_path):
             tracker.update_status(repo_id, label, status="cached")
             return True
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"[Downloader] Model {repo_id} ({label}) not cached or validation failed: {e}")
     return False
 
 
