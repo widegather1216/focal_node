@@ -2,7 +2,7 @@
 
 - **현재 상태 (Lifecycle)**: `📐 Planning (Baseline 완료 / 오프라인·Relocation·2-Pass 인덱싱 Step 1~4 대기)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -35,10 +35,16 @@
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-10-17 / interactive-feature-planner / 스마트 오프라인 + SHA-256 파일 이동 재연결(Relocation) + 2-Pass 점진적 인덱싱 스펙 수립`
+- **직전 완료 작업**: `2026-11-03 / systematic-debugger / REFACTOR-01 해결 완료 (PhotoMetadata 필드 일원화, IndexedFolder 레포지토리 캡슐화, 썸네일 캐시 Silent Fail 제거 및 명시적 예외 로깅)`
 - **생성/수정된 핵심 파일**:
-  - `docs/features/01_indexing_storage/*`: `is_offline` 상태 전이, 동일 해시 경로 변경 시 In-place Relocation 규칙 및 2-Pass 점진적 인덱싱 파이프라인 아키텍처/스펙 반영
+  - `src/types/photo.ts`, `src/components/gallery/PhotoCard.tsx`: `focal_length_35mm`, `shutter_speed` 필드 통일
+  - `backend/app/repositories/photo_repository.py`: `list_folders()`, `get_folder_by_path()`, `add_folder()` 레포지토리 메서드 신설
+  - `backend/app/api/folders.py`, `backend/app/api/indexing.py`: 직접 DB 쿼리 제거 및 `PhotoRepository` 캡슐화
+  - `backend/app/services/indexing_service.py`, `backend/app/services/photo.py`, `backend/app/api/photos.py`: `except Exception: pass` 제거 및 `FileNotFoundError`/`OSError` 로깅
+  - `backend/tests/test_api_folders.py`: `test_photo_repository_folder_methods` 단위 테스트 추가
 - **검증 완료된 테스트 실행 명령어**:
-  - `./venv/bin/pytest backend/tests/test_api_indexing.py backend/tests/test_api_folders.py backend/tests/test_api_photos.py backend/tests/test_siglip_zero_shot.py`
+  - `npx tsc --noEmit && npm run build`
+  - `./venv/bin/pytest backend/tests/test_api_folders.py backend/tests/test_api_indexing.py backend/tests/test_api_photos.py`
+  - `./venv/bin/pytest backend/tests/`
 - **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - Step 3 구현 시 파일 스캔/Relocation 패스를 먼저 수행한 뒤 마지막에 실종 파일을 `is_offline=True`로 마킹해야 이름 변경/이동된 파일의 비평·즐겨찾기가 유실되지 않음.
+  - 스마트 오프라인, SHA-256 Relocation & 2-Pass 점진적 인덱싱 Step 1 [DB & Types] 구현 대기. Step 3 구현 시 파일 스캔/Relocation 패스를 먼저 수행한 뒤 마지막에 실종 파일을 `is_offline=True`로 마킹해야 함.

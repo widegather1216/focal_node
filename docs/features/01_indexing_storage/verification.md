@@ -1,8 +1,8 @@
 # 🧪 [01_indexing_storage] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Open Issues (Baseline AC 검증 완료 / To-Be 3건 대기 / REFACTOR 1건 대기)`
+- **검증 상태**: `🟢 Sign-Off 대기 (Baseline AC 검증 완료 / To-Be 3건 대기 / REFACTOR 0건)`
 - **인수 조건 통과율**: `1 / 4 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -61,17 +61,12 @@
 ## 🧐 4. 코드 품질 감사 리포트 (Audit & Refactoring Logs)
 
 ### [REFACTOR-01] `PhotoMetadata` 프론트엔드 타입 필드 불일치 해소, 라우터 직접 DB 쿼리 캡슐화 및 캐시 예외 로깅
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
 - **심각도**: 🟡 Should Fix (권장 조치)
-- **위치**: `src/types/photo.ts#L15-L32`, `src/components/gallery/PhotoCard.tsx#L35-L39`, `backend/app/api/folders.py#L15`, `backend/app/api/indexing.py#L37,L54`, `backend/app/services/indexing_service.py#L101,L120`, `backend/app/services/photo.py#L57`, `backend/app/api/photos.py#L71`
-- **위반 규칙**: Spec-Code Type Consistency, Repository 계층 캡슐화 (Rule 2.2) & Rule 4.3 (예외 묵인 `except: pass` 금지)
-- **발견된 문제**:
-  - `src/types/photo.ts`의 `PhotoMetadata`가 레거시 필드명(`focal_length_in_35mm`, `exposure_time`)을 사용하여 백엔드 `PhotoMetadataSchema`(`focal_length_35mm`, `shutter_speed`) 및 `usePhotoDetail.ts`의 `PhotoDetail` 타입과 이원화되어 있음.
-  - `api/folders.py` 및 `api/indexing.py`에서 `PhotoRepository`를 거치지 않고 `db.query(IndexedFolder)`를 직접 호출함.
-  - `indexing_service.py`, `photo.py`, `api/photos.py`의 썸네일 캐시 읽기/생성/삭제 시 `except Exception: pass`로 인해 디스크 I/O 오류가 묵인됨.
-- **권장 개선안 (Suggested Diff)**:
-  ```text
-  - src/types/photo.ts의 PhotoMetadata 필드를 백엔드 PhotoMetadataSchema(focal_length_35mm, shutter_speed)로 통일하고 PhotoCard.tsx 참조 수정
-  - IndexedFolder 조회/생성 메서드를 PhotoRepository로 이전
-  - 썸네일 캐시 및 파일 삭제 블록에 명시적 FileNotFoundError 처리 및 디버그 로깅 추가
-  ```
-- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+- **해결 내역**:
+  - **수정 파일**: [`src/types/photo.ts`](file:///Users/kimbeomjun/focal_node/src/types/photo.ts#L15-L35), [`src/components/gallery/PhotoCard.tsx`](file:///Users/kimbeomjun/focal_node/src/components/gallery/PhotoCard.tsx#L32-L40), [`backend/app/repositories/photo_repository.py`](file:///Users/kimbeomjun/focal_node/backend/app/repositories/photo_repository.py#L234-L253), [`backend/app/api/folders.py`](file:///Users/kimbeomjun/focal_node/backend/app/api/folders.py#L13-L17), [`backend/app/api/indexing.py`](file:///Users/kimbeomjun/focal_node/backend/app/api/indexing.py#L36-L56), [`backend/app/services/indexing_service.py`](file:///Users/kimbeomjun/focal_node/backend/app/services/indexing_service.py#L101-L128), [`backend/app/services/photo.py`](file:///Users/kimbeomjun/focal_node/backend/app/services/photo.py#L57-L63), [`backend/app/api/photos.py`](file:///Users/kimbeomjun/focal_node/backend/app/api/photos.py#L66-L75), [`backend/tests/test_api_folders.py`](file:///Users/kimbeomjun/focal_node/backend/tests/test_api_folders.py#L48-L67)
+  - **원인 및 조치**:
+    1. `PhotoMetadata` 필드명을 백엔드 `PhotoMetadataSchema` 및 프론트엔드 `PhotoDetail`과 일치하도록 `focal_length_35mm`, `shutter_speed`로 통일하고 `PhotoCard.tsx` 참조 갱신.
+    2. `PhotoRepository`에 `list_folders()`, `get_folder_by_path()`, `add_folder()` 메서드를 추가하여 `folders.py` 및 `indexing.py`의 직접 DB 쿼리를 레포지토리 호출로 캡슐화.
+    3. 썸네일 캐시 읽기/정리/삭제 시 `except Exception: pass` 묵인을 제거하고 명시적 `FileNotFoundError` 및 `OSError` 처리와 `logger.warning`/`logger.debug` 로깅 추가.
+  - **회귀 테스트 결과**: `npx tsc --noEmit && npm run build` (PASS), `./venv/bin/pytest backend/tests/` (99 passed)

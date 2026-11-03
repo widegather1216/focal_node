@@ -1,17 +1,17 @@
 # 🧭 Focal Node: Master Control Tower (Living Wiki Hub)
 
 > 외부 클라우드 전송 없이 Mac Native(Apple MLX & PyTorch MPS)로 구동되는 **프라이버시 보호 로컬 사진 관리 및 AI 시맨틱 검색/비평 데스크탑 플랫폼**입니다.
-> **최종 업데이트**: 2026-11-01 (by `systematic-debugger`)
+> **최종 업데이트**: 2026-11-03 (by `systematic-debugger`)
 
 ---
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
-- **Active 도메인**: [`03_ai_critique`](./features/03_ai_critique/README.md)
-- **현재 단계 (Stage)**: `🟢 Sign-Off 대기` (`03_ai_critique` 미학 주도형 EXIF 적응적 종합 평점 모델 Step 1~4 전 계층 구현 완료)
-- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 Step 4 [UI & Integration] 구현 완료 (`ScoringGuideModal.tsx` 컴포넌트 추가 및 `CritiqueContentRenderer.tsx` 스코어보드 헤더에 `[?] 점수 산출 가이드` 버튼 연결, TC-CRT-09 검증 완료, `npx tsc --noEmit && npm run build` 및 백엔드 98종 전수 통과)
+- **Active 도메인**: [`01_indexing_storage`](./features/01_indexing_storage/README.md)
+- **현재 단계 (Stage)**: `📐 Planning 대기` (`01_indexing_storage` REFACTOR-01 해결 완료, To-Be Step 1~4 대기)
+- **직전 완료 작업**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) 도메인 REFACTOR-01 해결 완료 (`PhotoMetadata` `focal_length_35mm`/`shutter_speed` 필드 일원화, `IndexedFolder` 레포지토리 메서드 캡슐화, 썸네일 캐시 `except: pass` 제거 및 명시적 예외 로깅, 백엔드 99종 전수 통과 및 `tsc`/`build` PASS)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"03_ai_critique 도메인 클린코드 품질 감사 진행해줘"` *(전체 계층 정적 분석 및 클린코드 품질 감사 실행)*
+  > `"02_search_curation 도메인의 REFACTOR-01 티켓 해결해줘"` *(남은 도메인 코드 품질 감사 티켓 순차 해결)*
 
 ---
 
@@ -20,7 +20,7 @@
 | 도메인 (Bounded Context) | 생명주기 상태 | 구현 진척도 (Active Step 1~4) | QA 인수 통과율 | 미해결 티켓 (`🚨D` / `🧐R`) | 최근 작업 요약 |
 | :--- | :--- :---: | :---: | :---: | :---: | :--- |
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `3/3 (100%)` | `0 / 0` | 동적 포트/IPC/모델 로더 검증 및 REFACTOR-01 해결 완료 |
-| 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 📐 Planning | `[□□□□] 0/4` | `3/6 (50%)` | `0 / 1` | 스마트 오프라인 + SHA-256 Relocation + 2-Pass 인덱싱 Step 1~4 대기 |
+| 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 📐 Planning | `[□□□□] 0/4` | `3/6 (50%)` | `0 / 0` | REFACTOR-01 해결 완료 (타입 일원화, Repo 캡슐화, 예외 로깅) |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 📐 Planning | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 거리 임계값 + RRF 랭킹 + 35mm/점수 필터 + 스마트 앨범 Step 1~4 대기 |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `4/4 (100%)` | `0 / 3` | Step 4 [UI & Integration] 완료 (ScoringGuideModal 연동, 품질 감사 대기) |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 📐 Planning | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 2` | 통계 차트 클릭 갤러리 드릴다운(`Click-to-Filter`) Step 3~4 대기 |
@@ -32,6 +32,7 @@
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
 
+- **`[2026-11-03]` `[systematic-debugger]` [`01_indexing_storage`]**: REFACTOR-01 해결 완료 (`PhotoMetadata` `focal_length_35mm`/`shutter_speed` 프론트엔드 타입 통일, `IndexedFolder`를 `PhotoRepository` 메서드로 캡슐화, 썸네일 캐시 `except Exception: pass` 제거 및 `FileNotFoundError`/`OSError` 로깅 보강, 백엔드 99종 전수 통과 및 `tsc`/`build` PASS).
 - **`[2026-11-01]` `[systematic-debugger]` [`00_core_foundation`]**: REFACTOR-01 해결 완료 (`chroma.py`의 `import chromadb`를 `get_chroma_client()` 내부로 지연 이동하여 기동 시 eager import 제거, `base_model.py` 및 `model_downloader.py` 내 빈 `except: pass`에 디버그/경고 로깅 보강하여 Silent Fail 제거, 백엔드 98종 전수 통과, 00_core_foundation `🟢 Sign-Off` 전환).
 - **`[2026-10-28]` `[clean-code-developer]` [`03_ai_critique`]**: Step 4 [UI & Integration] 구현 완료 (`ScoringGuideModal.tsx` 컴포넌트 신규 구현 및 `CritiqueContentRenderer.tsx` 스코어보드 헤더에 `[?] 점수 산출 가이드` 버튼 연결, `TC-CRT-09` 검증 완료, `npx tsc --noEmit && npm run build` 통과, 도메인 회귀 56종 및 백엔드 98종 전수 통과, Step 1~4 구현 완료로 spec.md/architecture.md As-Is 승격 병합).
 - **`[2026-10-28]` `[clean-code-developer]` [`03_ai_critique`]**: Step 3 [Domain Service] 구현 완료 (`unipercept_adapter.py`에 `_resolve_perceptual_weights`, `_calculate_aesthetic_bonus`, `_calculate_overall_vr_score` 추가 및 `scoring.py` 위임 연동, `generate_vr_scores`/`generate_full_ensemble_critique` 및 `chat_service.py` EXIF 메타데이터 연동, `TC-CRT-06/07` 단위 테스트 작성 및 통과, 도메인 회귀 56종 및 백엔드 98종 전수 통과).
