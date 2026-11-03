@@ -8,9 +8,12 @@ atomic cleaning routines, and background photo indexing pipelines.
 import os
 import hashlib
 import asyncio
+import logging
 from typing import List, Tuple, Dict, Any, Union, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
+
+logger = logging.getLogger("focal_node.indexing_service")
 
 from database import SessionLocal
 from models import Image as DBImage, ImageMetadata as DBImageMetadata, AIAnalysis as DBAIAnalysis, IndexedFolder
@@ -98,8 +101,10 @@ def delete_photo_atomic_sync(db: Session, image_id: str):
     if os.path.exists(t_path):
         try:
             os.remove(t_path)
-        except Exception:
-            pass
+        except FileNotFoundError:
+            logger.debug("Thumbnail cache file %s already removed", t_path)
+        except OSError as e:
+            logger.warning("Failed to remove thumbnail cache %s: %s", t_path, e)
 
 
 def _purge_photo_records_batch(db: Session, photo_ids: List[str]) -> None:
@@ -117,8 +122,10 @@ def _purge_photo_records_batch(db: Session, photo_ids: List[str]) -> None:
             if os.path.exists(t_path):
                 try:
                     os.remove(t_path)
-                except Exception:
-                    pass
+                except FileNotFoundError:
+                    logger.debug("Thumbnail cache file %s already removed", t_path)
+                except OSError as e:
+                    logger.warning("Failed to remove thumbnail cache %s: %s", t_path, e)
     vector_repo.delete(photo_ids)
 
 

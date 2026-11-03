@@ -231,3 +231,24 @@ class PhotoRepository:
             "apertures": self._aggregate_field_stats(models.ImageMetadata.f_number, limit=15, asc=True, format_fn=fmt_f),
         }
 
+    def list_folders(self) -> List[models.IndexedFolder]:
+        """
+        Returns all registered indexed folders.
+        """
+        return self.db.query(models.IndexedFolder).all()
+
+    def get_folder_by_path(self, path: str) -> Optional[models.IndexedFolder]:
+        """
+        Finds an indexed folder by its exact normalized path.
+        """
+        return self.db.query(models.IndexedFolder).filter(models.IndexedFolder.path == path).first()
+
+    def add_folder(self, path: str) -> models.IndexedFolder:
+        """
+        Adds a new indexed folder to the session (caller responsible for commit).
+        """
+        new_folder = models.IndexedFolder(path=path)
+        self.db.add(new_folder)
+        return new_folder
+
+

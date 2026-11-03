@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 
 import schemas
 from database import get_db
-from models import IndexedFolder
+from repositories.photo_repository import PhotoRepository
 from services.indexing_state import indexing_state_manager
 from services.indexing_service import (
     run_indexing_background, pause_indexing, resume_indexing, cancel_indexing
@@ -33,11 +33,11 @@ def start_indexing(payload: schemas.IndexStartRequest, background_tasks: Backgro
             seen.add(real_p)
             normalized_paths.append(real_p)
 
+    photo_repo = PhotoRepository(db)
     for folder_path in normalized_paths:
-        existing = db.query(IndexedFolder).filter(IndexedFolder.path == folder_path).first()
+        existing = photo_repo.get_folder_by_path(folder_path)
         if not existing:
-            new_folder = IndexedFolder(path=folder_path)
-            db.add(new_folder)
+            photo_repo.add_folder(folder_path)
     db.commit()
 
     # Set status synchronously to prevent race conditions
@@ -51,7 +51,8 @@ def sync_database(background_tasks: BackgroundTasks, db: Session = Depends(get_d
         raise HTTPException(status_code=400, detail="Indexing is already in progress or paused.")
         
     # Get all currently indexed folders
-    folders = db.query(IndexedFolder).all()
+    photo_repo = PhotoRepository(db)
+    folders = photo_repo.list_folders()
     folder_paths = []
     seen = set()
     for folder in folders:

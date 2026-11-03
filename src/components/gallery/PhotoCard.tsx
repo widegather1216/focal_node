@@ -32,10 +32,10 @@ export const PhotoCard = memo<PhotoCardProps>(({
   const meta = photo.metadata;
   const exifBadges: string[] = [];
   if (meta?.f_number) exifBadges.push(`ƒ/${meta.f_number}`);
-  if (meta?.exposure_time) exifBadges.push(meta.exposure_time);
+  if (meta?.shutter_speed) exifBadges.push(meta.shutter_speed);
   if (meta?.iso) exifBadges.push(`ISO ${meta.iso}`);
-  if (meta?.focal_length_in_35mm || meta?.focal_length) {
-    const fl = meta.focal_length_in_35mm || meta.focal_length;
+  if (meta?.focal_length_35mm || meta?.focal_length) {
+    const fl = meta.focal_length_35mm || meta.focal_length;
     exifBadges.push(`${Math.round(fl!)}mm`);
   }
 

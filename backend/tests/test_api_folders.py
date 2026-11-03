@@ -44,3 +44,25 @@ def test_delete_folder(client, db_session):
     # Verify deletion (Cascade)
     assert db_session.query(IndexedFolder).count() == 0
     assert db_session.query(Image).count() == 0
+
+def test_photo_repository_folder_methods(db_session):
+    from repositories.photo_repository import PhotoRepository
+    repo = PhotoRepository(db_session)
+    
+    # Initially empty
+    assert repo.list_folders() == []
+    assert repo.get_folder_by_path("/test/custom_folder") is None
+    
+    # Add folder via repository
+    created = repo.add_folder("/test/custom_folder")
+    db_session.commit()
+    
+    assert created.path == "/test/custom_folder"
+    folders = repo.list_folders()
+    assert len(folders) == 1
+    assert folders[0].path == "/test/custom_folder"
+    
+    found = repo.get_folder_by_path("/test/custom_folder")
+    assert found is not None
+    assert found.path == "/test/custom_folder"
+

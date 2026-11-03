@@ -13,15 +13,20 @@ export interface SearchFilters {
 }
 
 export interface PhotoMetadata {
+  width?: number | null;
+  height?: number | null;
+  color_space?: string | null;
   capture_date?: string | null;
   camera_make?: string | null;
   camera_model?: string | null;
   lens_make?: string | null;
   lens_model?: string | null;
   focal_length?: number | null;
-  focal_length_in_35mm?: number | null;
+  focal_length_35mm?: number | null;
+  crop_factor?: number | null;
+  sensor_format?: string | null;
   f_number?: number | null;
-  exposure_time?: string | null;
+  shutter_speed?: string | null;
   iso?: number | null;
   exposure_bias?: number | null;
   flash?: string | null;

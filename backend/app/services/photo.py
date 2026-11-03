@@ -4,6 +4,7 @@ import json
 import uuid
 import datetime
 import time
+import logging
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from PIL import Image
@@ -12,6 +13,8 @@ from utils.image import is_raw_image, decode_raw_to_pil, load_pil_image
 from repositories.atomic_transaction import CompensatingTransactionManager
 
 from config import THUMBNAILS_DIR
+
+logger = logging.getLogger("focal_node.photo_service")
 
 THUMBNAIL_CACHE_DIR = THUMBNAILS_DIR
 
@@ -54,8 +57,10 @@ def _atomic_write_cache_file(target_path: str, data: bytes, image_id: str, max_r
         if os.path.exists(temp_path):
             try:
                 os.remove(temp_path)
-            except Exception:
+            except FileNotFoundError:
                 pass
+            except OSError as e:
+                logger.warning("Failed to clean up temp cache file %s: %s", temp_path, e)
 
 
 def generate_and_cache_thumbnail(file_path: str, image_id: str) -> bytes:

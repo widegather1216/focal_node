@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import asyncio
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response, StreamingResponse, FileResponse
 from sqlalchemy.orm import Session
@@ -14,6 +15,8 @@ import schemas
 from repositories.photo_repository import PhotoRepository
 from utils.image import is_raw_image
 from services.indexing_service import reindex_single_photo_inplace
+
+logger = logging.getLogger("focal_node.photos_api")
 
 MAX_CONCURRENT_DECODES = 3
 _decode_semaphore: Optional[asyncio.Semaphore] = None
@@ -68,8 +71,8 @@ async def get_photo_thumbnail(id: str, db: Session = Depends(get_db)):
                 thumb_bytes = await asyncio.to_thread(_read_cache)
                 if thumb_bytes:
                     return Response(content=thumb_bytes, media_type="image/jpeg")
-            except Exception:
-                pass
+            except (FileNotFoundError, OSError) as e:
+                logger.debug("Thumbnail cache read failed for %s: %s, falling back to generation", id, e)
                 
         async with get_decode_semaphore():
             thumb_bytes = await asyncio.to_thread(
