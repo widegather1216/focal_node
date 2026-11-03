@@ -79,11 +79,14 @@ class BaseKeepAliveModel:
         gc.collect()
         try:
             import torch
+            if hasattr(torch, "mps") and hasattr(torch.mps, "synchronize"):
+                torch.mps.synchronize()
             if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
                 torch.mps.empty_cache()
         except Exception as e:
-            logger.debug(f"[{self.model_name}] torch.mps.empty_cache failed or torch unavailable: {e}")
+            logger.debug(f"[{self.model_name}] torch.mps memory clearing failed: {e}")
 
+        gc.collect()
         try:
             import mlx.core as mx
             mx.clear_cache()

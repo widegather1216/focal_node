@@ -107,6 +107,8 @@ def _save_critique_to_db(
 def _clear_device_caches() -> None:
     try:
         import torch
+        if hasattr(torch, "mps") and hasattr(torch.mps, "synchronize"):
+            torch.mps.synchronize()
         if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
             torch.mps.empty_cache()
     except Exception:
@@ -119,10 +121,10 @@ def _clear_device_caches() -> None:
     except Exception:
         pass
 
-def _unload_critique_models() -> None:
+def _unload_critique_models(force: bool = False) -> None:
     """
     Immediately unloads UniPercept model from memory and unloads Gemma model
-    if no other concurrent tasks (such as background indexing) are using it.
+    if force is True or no other concurrent tasks (such as background indexing) are using it.
     """
     try:
         from services.unipercept_adapter import get_unipercept_adapter
@@ -135,7 +137,7 @@ def _unload_critique_models() -> None:
     try:
         gemma = get_gemma_adapter()
         active_reqs = getattr(gemma, "active_requests", 0)
-        should_unload = not isinstance(active_reqs, int) or active_reqs <= 0
+        should_unload = force or not isinstance(active_reqs, int) or active_reqs <= 0
         if should_unload and hasattr(gemma, "unload_model"):
             gemma.unload_model()
     except Exception as e:
@@ -351,7 +353,7 @@ async def _run_critique_pipeline(payload: schemas.CritiqueRequest) -> Dict[str, 
     except CritiqueCancelledException:
         print(f"[ChatService] 🛑 Photo critique generation cancelled for {payload.photo_id}", flush=True)
         critique_status_manager.update(payload.photo_id, 0, 4, "비평 생성이 사용자에 의해 중단되었습니다.", 0, status="cancelled")
-        await asyncio.to_thread(_unload_critique_models)
+        await asyncio.to_thread(_unload_critique_models, force=True)
         return {
             "critique": "",
             "critique_en": None,
@@ -366,11 +368,11 @@ async def _run_critique_pipeline(payload: schemas.CritiqueRequest) -> Dict[str, 
     except asyncio.CancelledError:
         print(f"[ChatService] 🛑 Photo critique task cancelled for {payload.photo_id}", flush=True)
         critique_status_manager.update(payload.photo_id, 0, 4, "비평 생성이 사용자에 의해 중단되었습니다.", 0, status="cancelled")
-        await asyncio.to_thread(_unload_critique_models)
+        await asyncio.to_thread(_unload_critique_models, force=True)
         raise
     except Exception as e:
         critique_status_manager.update(payload.photo_id, 0, 4, f"오류 발생: {str(e)}", 0, status="error")
-        await asyncio.to_thread(_unload_critique_models)
+        await asyncio.to_thread(_unload_critique_models, force=True)
         raise
 
 class ChatService:
@@ -400,7 +402,11 @@ class ChatService:
         """
         from services.critique_status import critique_status_manager
         critique_status_manager.request_cancel(photo_id)
-        _unload_critique_models()
+        with _critique_tasks_lock:
+            task = _critique_tasks.get(photo_id)
+            if task and not task.done():
+                task.cancel()
+        _unload_critique_models(force=True)
 
     @staticmethod
     async def generate_photo_critique(payload: schemas.CritiqueRequest) -> Dict[str, Any]:
