@@ -160,3 +160,91 @@ async def test_critique_cancellation_unloads_models(db_session, monkeypatch):
         # Gemma must also be unloaded upon cancellation!
         mock_gemma.unload_model.assert_called()
 
+
+def test_cancel_critique_forces_gemma_unload_when_active_requests_nonzero():
+    """
+    TC-CRT-10 reproduction:
+    Verifies that ChatService.cancel_critique forces Gemma unloading even when
+    active_requests > 0 (during an ongoing critique request).
+    """
+    test_id = "test_force_unload_photo"
+    with patch("services.chat_service.get_gemma_adapter") as mock_gemma_getter, \
+         patch("services.unipercept_adapter.get_unipercept_adapter") as mock_uni_getter:
+        mock_gemma = MagicMock()
+        mock_gemma.active_requests = 1
+        mock_gemma_getter.return_value = mock_gemma
+
+        mock_uni = MagicMock()
+        mock_uni_getter.return_value = mock_uni
+
+        ChatService.cancel_critique(test_id)
+
+        # In DEFECT-01, this fails because active_requests > 0 prevented unload!
+        mock_gemma.unload_model.assert_called_once()
+        mock_uni.unload_model.assert_called_once()
+
+
+def test_cancel_critique_cancels_asyncio_task():
+    """
+    TC-CRT-10 reproduction:
+    Verifies that ChatService.cancel_critique calls task.cancel() on the ongoing task
+    stored in _critique_tasks.
+    """
+    import services.chat_service as cs
+    test_id = "test_cancel_task_photo"
+    mock_task = MagicMock()
+    mock_task.done.return_value = False
+
+    with cs._critique_tasks_lock:
+        cs._critique_tasks[test_id] = mock_task
+
+    try:
+        cs.ChatService.cancel_critique(test_id)
+        mock_task.cancel.assert_called_once()
+    finally:
+        with cs._critique_tasks_lock:
+            cs._critique_tasks.pop(test_id, None)
+
+
+def test_clear_device_caches_calls_mps_synchronize():
+    """
+    TC-CRT-10 reproduction:
+    Verifies that _clear_device_caches synchronizes torch MPS queue before empty_cache.
+    """
+    import sys
+    mock_torch = MagicMock()
+    mock_torch.mps = MagicMock()
+
+    with patch.dict(sys.modules, {"torch": mock_torch}):
+        from services.chat_service import _clear_device_caches
+        _clear_device_caches()
+
+        mock_torch.mps.synchronize.assert_called_once()
+        mock_torch.mps.empty_cache.assert_called_once()
+
+
+def test_base_model_unload_locked_synchronizes_mps():
+    """
+    TC-CRT-10 reproduction:
+    Verifies that BaseKeepAliveModel._unload_model_locked synchronizes MPS before empty_cache.
+    """
+    import sys
+    from services.base_model import BaseKeepAliveModel
+
+    class DummyModel(BaseKeepAliveModel):
+        def _load_model(self):
+            return "dummy"
+
+    dummy = DummyModel(model_name="dummy", keep_alive_timeout=60)
+    dummy.model = "loaded"
+
+    mock_torch = MagicMock()
+    mock_torch.mps = MagicMock()
+
+    with patch.dict(sys.modules, {"torch": mock_torch}):
+        dummy._unload_model_locked()
+        mock_torch.mps.synchronize.assert_called_once()
+        mock_torch.mps.empty_cache.assert_called_once()
+
+
+
