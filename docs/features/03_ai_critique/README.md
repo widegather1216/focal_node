@@ -1,6 +1,6 @@
 # 🤖 [03_ai_critique] On-Demand AI Critique & Editorial Export
 
-- **현재 상태 (Lifecycle)**: `🟢 Sign-Off 대기 (미학 주도형 EXIF 적응적 평점 개편 Step 1~4 완료)`
+- **현재 상태 (Lifecycle)**: `🟢 Verified (DEFECT-01 해결 완료, 리팩토링 티켓 3건 대기)`
 - **구현 진척도**: `[■■■■] 4/4 Steps (Active Iteration Step 1~4 전 계층 구현 완료)`
 - **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 3건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
@@ -39,19 +39,19 @@
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-10-28 / clean-code-developer / 03_ai_critique 도메인 Step 4 [UI & Integration] 구현 완료 (ScoringGuideModal.tsx 컴포넌트 신규 구현 - 3대 지각 지표 정의 및 ISTA 밀도 안내, 4대 EXIF 가중치 표, 미학 보너스 안내, ESC/백드롭 닫기 지원; CritiqueContentRenderer.tsx 스코어보드 헤더 우측에 [?] 점수 산출 가이드 버튼 및 모달 렌더링 연결; TC-CRT-09 검증 완료; npx tsc --noEmit 및 npm run build 통과; 도메인 회귀 56종 및 백엔드 98종 전수 통과; Step 1~4 전 계층 구현 완료로 spec.md/architecture.md As-Is 승격 병합 완료)`
+- **Recent Commits**:
+  - `e99482f` - `fix(critique): force unload VLM models and synchronize MPS queue on cancellation`
+  - `16aaff0` - `test(critique): add regression test cases for cancellation and MPS cache synchronization`
+- **직전 완료 작업**: `2026-11-03 / systematic-debugger / 03_ai_critique 도메인 DEFECT-01 결함 해결 (비평 취소/중지 시 Gemma active_requests 가드 해제 force=True 지원, asyncio Task task.cancel() 신호 전달, PyTorch MPS torch.mps.synchronize() 동기화로 Metal 캐시 즉각 반환 및 100% 회귀 검증 통과)`
 - **생성/수정된 핵심 파일**:
-  - `src/components/critique/ScoringGuideModal.tsx`: [신규] 3대 지각 지표, 4대 EXIF 적응형 가중치 표, 미학적 탁월성 보너스 안내 모달 컴포넌트
-  - `src/components/critique/CritiqueContentRenderer.tsx`: [수정] 스코어보드 헤더에 `[?] 점수 산출 가이드` 버튼 및 `ScoringGuideModal` 오픈/해제 상태 연결
-  - `docs/features/03_ai_critique/spec.md`: Step 1~4 완료에 따른 To-Be ➔ As-Is 승격 병합
-  - `docs/features/03_ai_critique/architecture.md`: 컴포넌트 파일 트리 [기존] 갱신
-  - `docs/features/03_ai_critique/verification.md`: TC-CRT-09 `PASS` 및 인수 통과율 100%(4/4) 갱신
-  - `docs/features/03_ai_critique/README.md`: Step 4 [x] 완료 및 Handoff 갱신
-  - `docs/README.md`: Master Control Tower Spotlight 및 현황판 갱신
+  - `backend/app/services/base_model.py`: [수정] `_unload_model_locked`에 `torch.mps.synchronize()` 추가
+  - `backend/app/services/chat_service.py`: [수정] `_clear_device_caches` 동기화 보강, `_unload_critique_models(force=True)` 도입, `cancel_critique` 백그라운드 태스크 취소 연동
+  - `backend/tests/test_critique_cancellation.py`: [수정] 결함 재현(Red) 및 검증(Green) 테스트 케이스 4건 추가
+  - `docs/features/03_ai_critique/verification.md`: [수정] `TC-CRT-10` PASS 전환, `DEFECT-01` RESOLVED 동기화
 - **검증 완료된 테스트 실행 명령어**:
-  - `npx tsc --noEmit && npm run build` (`PASS`, Vite v7.3.6 프로덕션 번들 정상 생성)
-  - `./venv/bin/pytest backend/tests/test_adaptive_scoring.py backend/tests/test_critique_repository_and_api.py backend/tests/test_critique_service_save.py backend/tests/test_critique_cancellation.py backend/tests/test_critique_sleep_recovery.py backend/tests/test_ensemble_math.py backend/tests/test_unipercept.py backend/tests/test_critique_score_normalization.py -v` (`56 passed`)
-  - `./venv/bin/pytest backend/tests/` (`98 passed`)
+  - `npm run build` (`tsc & vite build PASS`)
+  - `./venv/bin/pytest backend/tests/test_critique_cancellation.py -v` (`8 passed`)
+  - `./venv/bin/pytest backend/tests/test_critique_cancellation.py backend/tests/test_critique_sleep_recovery.py backend/tests/test_adaptive_scoring.py backend/tests/test_critique_score_normalization.py backend/tests/test_critique_repository_and_api.py backend/tests/test_critique_service_save.py -v` (`43 passed`)
 - **다음 세션 포커스 및 추천 실행 프롬프트**:
-  - `03_ai_critique` 도메인의 모든 구현 Step(Step 1~4)이 완료되었습니다. `clean-code-auditor` 스킬을 통해 전체 계층 정적 분석 및 클린코드 품질 감사를 진행합니다.
-  - 👉 추천 프롬프트: `"03_ai_critique 도메인 클린코드 품질 감사 진행해줘"`
+  - `verification.md`에 등록된 `REFACTOR-01` (거대 컴포넌트 SRP 분할) 또는 다른 리팩토링 티켓을 진행합니다.
+  - 👉 추천 프롬프트: `"03_ai_critique 도메인의 REFACTOR-01 리팩토링 티켓 해결해줘"`

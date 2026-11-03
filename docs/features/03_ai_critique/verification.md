@@ -1,7 +1,7 @@
 # 🧪 [03_ai_critique] Verification & Ticket Logs
 
-- **검증 상태**: `🟢 Completed (Step 1~4 전 계층 구현 및 3단 검증 완료, 품질 감사 대기)`
-- **인수 조건 통과율**: `4 / 4 (100%, AC 1~4 전 시나리오 및 UI/모달 검증 완료)`
+- **검증 상태**: `🟢 Verified (DEFECT-01 모델 메모리 즉시 해제 결함 해결 완료)`
+- **인수 조건 통과율**: `5 / 5 (100%, AC 1~4 통과 및 취소 시 메모리 즉시 언로드 검증 완료)`
 - **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 3건`
 
 ---
@@ -52,12 +52,56 @@
 | **Boundary**| `TC-CRT-07` | EXIF 누락/비정상값 시 표준 폴백 및 클램핑 | EXIF 없음, 극단값(IAA 100, IQA 0 등) | 표준 모드 가중치 폴백 및 0~100 클램핑 | `PASS` |
 | **Happy** | `TC-CRT-08` | 기존 DB 사진 overall_score 자동 재계산 백필 | 기존 iaa/iqa/ista 보유 DB 기동 | run_migrations()에서 EXIF 조인 후 새 점수 백필 | `PASS` |
 | **Happy** | `TC-CRT-09` | 점수 가이드 모달 열람 및 닫기 | 스코어보드 [?] 버튼 클릭 | ScoringGuideModal 열림, ESC/닫기 동작 (`tsc & build`) | `PASS` |
+| **Boundary**| `TC-CRT-10` | 비평 취소 시 VLM 즉시 강제 언로드 및 GPU 동기화 | 비평 추론 도중 `[취소]` 클릭 | Gemma/UniPercept 즉시 언로드 및 MPS 캐시 100% 반환 | `PASS (Fixed in DEFECT-01)` |
 
 ---
 
 ## 🚨 3. 결함 리포트 (Defect Logs)
 
-*(현재 등록된 OPEN 결함 없음)*
+### [DEFECT-01] 비평 취소(중지) 요청 시 VLM 모델 메모리 미해제 및 지연 잔류 결함
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **심각도**: 🔴 Must Fix (메모리 누수 및 GPU 점유 잔류)
+- **해결 내역**:
+  - **수정 파일**: [`base_model.py`](../../../backend/app/services/base_model.py#L77-L93), [`chat_service.py`](../../../backend/app/services/chat_service.py#L107-L146), [`chat_service.py`](../../../backend/app/services/chat_service.py#L353-L415), [`test_critique_cancellation.py`](../../../backend/tests/test_critique_cancellation.py#L164-L248)
+  - **원인 및 조치**:
+    1. `_unload_critique_models(force=True)` 매개변수를 도입하여 비평 취소/예외 발생 시 Gemma의 `active_requests` 수치와 무관하게 즉시 강제 언로드 수행.
+    2. `cancel_critique()`에서 `_critique_tasks`의 백그라운드 코루틴 `task.cancel()`을 호출하여 비동기 실행 루프에 즉각 취소 신호 전달.
+    3. `base_model._unload_model_locked` 및 `chat_service._clear_device_caches`에 `torch.mps.synchronize()`를 적용하여 Metal 비동기 커맨드 버퍼 큐를 즉시 비우고 GPU 메모리를 OS로 100% 환원.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_critique_cancellation.py -v` (8 passed)
+- **발견 일자**: 2026-11-03 (by `clean-code-auditor`)
+- **위치**: 
+  - `backend/app/services/chat_service.py#L122-L145` (`_unload_critique_models`)
+  - `backend/app/services/chat_service.py#L397-L404` (`cancel_critique`)
+  - `backend/app/services/base_model.py#L70-L93` (`_unload_model_locked`)
+- **재현 조건 (Reproduction Steps)**:
+  1. 갤러리에서 고해상도 사진 선택 후 `[AI 비평 생성]` 클릭.
+  2. UniPercept 8B 또는 Gemma 4 12B-it VLM이 로드되어 추론(Pass 1 또는 VQA) 중인 상태에서 `[취소]` 버튼 클릭.
+  3. 프론트엔드 UI에는 즉시 "비평 생성이 중단되었습니다"가 표시되나, macOS 활성 상태 보기(Activity Monitor)에서 Python 프로세스가 13~28GB의 RAM과 100% GPU를 30~60초간 지속 점유하거나 메모리가 완전히 반환되지 않음.
+- **근본 원인 분석 (Root Causes)**:
+  1. **`_unload_critique_models()`의 Gemma 언로드 조건 검사 오류 (`chat_service.py#L137-L140`)**:
+     - 비평이 돌고 있을 때 Gemma의 `active_requests`는 `1`임.
+     - `should_unload = active_reqs <= 0` 가드로 인해 취소 API 핸들러에서 Gemma 언로드가 아예 스킵(무시)됨.
+  2. **`asyncio.Task`에 `task.cancel()` 미전달 (`chat_service.py#L397-L404`)**:
+     - `cancel_critique()`가 상태 매니저 플래그만 세팅하고 백그라운드 코루틴 `_critique_tasks.get(photo_id)`에 취소 시그널(`task.cancel()`)을 전달하지 않음.
+  3. **PyTorch MPS GPU 큐 동기화 누락 (`base_model.py#L79-L86`)**:
+     - Apple Silicon Metal은 비동기 커맨드 버퍼로 동작함.
+     - `torch.mps.synchronize()` 없이 `torch.mps.empty_cache()`만 부르면 GPU 큐에 남아있는 참조로 인해 메모리가 OS로 즉각 환원되지 않음.
+- **수정 계획 (Suggested Fix)**:
+  ```python
+  # 1. chat_service.py: cancel_critique에서 force_unload=True 전달 및 task.cancel() 호출
+  def _unload_critique_models(force: bool = False) -> None:
+      ...
+      should_unload = force or not isinstance(active_reqs, int) or active_reqs <= 0
+      if should_unload and hasattr(gemma, "unload_model"):
+          gemma.unload_model()
+
+  # 2. base_model.py: torch.mps.synchronize() 추가 및 gc.collect() 2회 실행
+  if hasattr(torch, "mps") and hasattr(torch.mps, "synchronize"):
+      torch.mps.synchronize()
+  gc.collect()
+  if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+      torch.mps.empty_cache()
+  ```
 
 ---
 
