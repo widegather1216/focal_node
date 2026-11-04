@@ -79,6 +79,25 @@ export interface CritiqueItem {
 
 ---
 
-## 🟡 4. [To-Be] 추가 예정 스펙
+## 🟡 4. [To-Be] 신규 개발 명세: UniPercept 지각 앵커 + Gemma 4 직접 비평 하이브리드 파이프라인
 
-*(현재 예정된 추가 변경사항 없음 — 전 계층 Step 1~4 구현 완료)*
+### 4.1. 모델 역할 재정의 및 2단계 하이브리드 파이프라인
+* **Stage 1: UniPercept 8B (초고속 정량 채점 & 지각 앵커 추출, ~10초)**:
+  1. **VR 3-Way 채점**: IAA, IQA, ISTA 각 0~100점 Logit 기대값 산출 및 EXIF 적응형 종합 점수 계산.
+  2. **단일 패스 통합 지각 VQA (Single-Pass Integrated VQA)**: 기존 3회 장문 VQA 대신, 1회의 VQA로 미학적 강점/구도 결함, 광학 화질 저하, 표면 질감을 유기적으로 연결한 3~4문장(약 150~200토큰)의 영문 핵심 지각 앵커(`critique_en`) 추출.
+  3. **디코딩 안정화**: `repetition_penalty=1.0`, `do_sample=True`, `temperature=0.7`, `top_p=0.9`로 설정하여 Greedy Search 패널티로 인한 어휘 붕괴(Word Salad, 문법 왜곡, 특수문자 깨짐) 원천 차단.
+  4. **즉시 언로드**: 지각 앵커 추출 직후 `finally` 블록에서 UniPercept 모델 언로드, `torch.mps.synchronize()` 및 MPS 캐시 100% 즉시 반환.
+* **Stage 2: Gemma 4 12B (지각 앵커 기반 심층 비평 작성 & 실전 솔루션 확장, ~15-20초)**:
+  1. **번역 단계 제거 및 직접 작성**: 기존의 딱딱한 2단계 번역(Step 1 직역 ➔ Step 2 감수)을 폐지하고, Gemma 4가 사진 픽셀 + EXIF + UniPercept VR 점수 + UniPercept 영문 지각 앵커를 직접 종합하여 고품질 한국어 리포트를 단일 생성.
+  2. **살 덧붙이기 (Enrichment)**: UniPercept의 시각적 판단(미학/화질/질감)을 핵심 뼈대(Anchor)로 100% 수용하되, Gemma 4의 사진학 전문 지식을 활용하여 셔터/조리개/초점거리 조작, 라이팅 앵글, 라이트룸 보정 커브/HSL 조정 등 실전 조언을 풍부하게 확장.
+  3. **3단계 표준 리포트 양식 보존**:
+     - 최상단 `[6-Way 앙상블 비평 스코어보드]`
+     - 스코어보드 직후 `> **한 줄 총평**: ...`
+     - `## 1. [시각적 미학 및 EXIF 광학 진단]`
+     - `## 2. [구도 및 화질 결함과 왜곡 위치 지적]`
+     - `## 3. [현장 재촬영 및 보정 실전 기술 조언]`
+
+### 4.2. 데이터 스키마 및 API 호환성
+* **DB 컬럼 매핑**: `critique`(Gemma 4 최종 한국어 비평), `critique_en`(UniPercept 통합 지각 영문 앵커), 4종 점수 컬럼 모두 기존 스키마 100% 유지 (마이그레이션 불필요).
+* **REST API 및 UI**: `/api/chat/critique` 요청/응답 스키마 및 프론트엔드(`PhotoCritiqueView`, `CritiqueCard`, `OriginalEnglishCritiqueCard`) 100% 무수정 하위 호환.
+* **성능 목표**: 전체 비평 생성 시간 기존 3~5분 ➔ **20~30초**로 대폭 단축.

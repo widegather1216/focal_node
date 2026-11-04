@@ -13,8 +13,8 @@ flowchart TD
     ChatRouter --> ChatSvc["ChatService & critique_status.py"]
     ChatSvc --> GPULock["GPU_LOCK (Metal 직렬화)"]
     
-    GPULock -->|1단계: engine='unipercept'| UniPercept["UniPerceptAdapter (PyTorch MPS)\n3-Way VR 채점 + 3-Way VQA 영문 비평 후 즉시 언로드"]
-    UniPercept -->|2단계: 번역 및 에디토리얼 구조화| Gemma4["GemmaAdapter (Gemma 4 12B-it MLX)\n2-Pass 한국어 직역/정제 & 60초 Keep-alive"]
+    GPULock -->|1단계: engine='unipercept'| UniPercept["UniPerceptAdapter (PyTorch MPS)\n3-Way VR 채점 + 단일 패스 통합 지각 VQA(3~4문장 앵커)\n추론 완료 즉시 100% 언로드 (~10초)"]
+    UniPercept -->|2단계: 지각 앵커 기반 직접 심층 비평| Gemma4["GemmaAdapter (Gemma 4 12B-it MLX)\n[VR점수 + 지각앵커 + EXIF + 사진] 직결 생성\n한국어 마크다운 리포트 완성 & 60초 Keep-alive (~15초)"]
     GPULock -->|단독: engine='gemma4'| Gemma4
     
     ChatSvc -->|정규화 저장: critique + critique_en + 4종 평점| PhotoRepo["PhotoRepository\n(SQLite ai_analysis 테이블)"]
@@ -32,10 +32,11 @@ backend/app/
 ├── api/chat.py                        # [기존] 비평 생성/Polling/취소/삭제/총평 및 평점 정렬 지원 전체 비평 목록 라우터
 ├── services/
 │   ├── scoring.py                     # [기존] EXIF 적응형 4대 가중치, 미학적 탁월성 보너스 및 종합 평점 산출 순수 연산 모듈
-│   ├── chat_service.py                # [기존] UniPercept -> Gemma 4 순차 비평 파이프라인 및 정규화 컬럼/원문 영구 저장
+│   ├── chat_service.py                # [수정] UniPercept(VR+단일패스 지각앵커) -> Gemma 4(직접 심층비평) 하이브리드 파이프라인
 │   ├── critique_status.py             # [기존] 사진별 4단계 비평 진행률(step/progress), 취소 플래그 및 DB Self-Healing 조회
-│   ├── mlx_adapters.py                # [기존] GemmaAdapter (MLX 60초 Keep-alive, 2-Pass 번역/구조화 및 종합 총평)
-│   ├── unipercept_adapter.py          # [기존] UniPerceptAdapter (_resolve_perceptual_weights, _calculate_aesthetic_bonus, _calculate_overall_vr_score 개편 완료)
+│   ├── ai_parser.py                   # [수정] UniPercept 단일패스 통합 지각 프롬프트 및 Gemma 4 지각 앵커 기반 비평 프롬프트
+│   ├── mlx_adapters.py                # [수정] GemmaAdapter에 generate_perceptual_critique(지각 앵커 기반 직접 심층 비평) 추가
+│   ├── unipercept_adapter.py          # [수정] 단일 패스 통합 지각 VQA 및 디코딩 파라미터 정상화 (Word Salad 방지)
 │   └── unipercept_utils.py            # [기존] InternVL 동적 패치 타일링 및 이미지 전처리 유틸리티
 
 src/
@@ -88,7 +89,7 @@ src/
 ## 🔒 4. 도메인 아키텍처 제약 규칙
 
 1. **비평 엔진 상호 배타적 메모리 수명주기**:
-   - `UniPercept 8B`는 3-Way VR 채점 및 VQA 영문 비평 직후 `finally` 블록에서 즉시 가중치를 언로드하고 `torch.mps.empty_cache()`를 실행한 뒤 `Gemma 4` 한국어 번역 단계로 진입해야 합니다.
+   - `UniPercept 8B`는 3-Way VR 채점 및 단일 패스 통합 지각 VQA 직후 `finally` 블록에서 즉시 가중치를 언로드하고 `torch.mps.synchronize()` 및 `empty_cache()`를 실행한 뒤 `Gemma 4` 직접 비평 작성 단계로 진입해야 합니다.
    - `Gemma 4 (MLX)`는 연속 요청 최적화를 위해 60초 Keep-alive 후 언로드하며, 비평 도중 사용자 취소 또는 예외 발생 시에는 두 모델 모두 즉시 언로드(`_unload_critique_models`)합니다.
 2. **정량 평점 및 한/영 원문 정규화 원칙**:
    - 산출된 6-Way 앙상블 평점(`overall_score`, `iaa_score`, `iqa_score`, `ista_score`)과 UniPercept 영문 원문(`critique_en`)은 문자열 파싱에 의존하지 않도록 전용 DB 컬럼에 분리 저장하며, 기존 사용자의 데이터를 위해 기동 마이그레이션 시 레거시 비평 본문에서 점수를 자동 추출해 백필합니다.

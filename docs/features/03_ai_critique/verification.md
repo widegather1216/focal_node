@@ -1,7 +1,7 @@
 # 🧪 [03_ai_critique] Verification & Ticket Logs
 
-- **검증 상태**: `🟢 Verified (DEFECT-01 및 REFACTOR-01 거대 컴포넌트 SRP 분할 완료)`
-- **인수 조건 통과율**: `5 / 5 (100%, AC 1~4 통과 및 취소 시 메모리 즉시 언로드 검증 완료)`
+- **검증 상태**: `🟡 In Progress (하이브리드 파이프라인 개편 기획 완료, TC-CRT-11~13 ⏳ Pending)`
+- **인수 조건 통과율**: `10 / 13 (76.9%, As-Is 10건 통과 / To-Be 3건 대기)`
 - **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건`
 
 ---
@@ -37,6 +37,15 @@
   3. 기존 DB 사진들의 `overall_score`가 `run_migrations()`에서 새 수식으로 일괄 자동 재계산(Backfill)되어야 한다.
   4. 프론트엔드 스코어보드 헤더의 `[?] 점수 산출 가이드` 클릭 시 `ScoringGuideModal`이 오픈되어 4대 가중치 표와 보너스 공식이 안내되어야 한다.
 
+### AC 5. UniPercept 지각 앵커 + Gemma 4 직접 심층 비평 하이브리드 파이프라인 `[To-Be]`
+* **Given:** 사용자가 특정 사진에 대해 UniPercept 기반 AI 비평 생성을 요청했을 때,
+* **When:** 백엔드에서 2단계 하이브리드 파이프라인이 실행되면,
+* **Then:**
+  1. UniPercept 8B가 VR 3-Way 채점과 단일 패스 통합 지각 VQA(3~4문장 영문 앵커)를 생성하고 10초 이내에 메모리에서 100% 즉시 언로드되어야 한다.
+  2. VQA 생성 시 `repetition_penalty=1.0` 및 샘플링이 적용되어 어휘 붕괴(Word Salad, 깨진 특수문자, 중국어 잔여물) 없이 자연스러운 영문 진단문(`critique_en`)이 도출되어야 한다.
+  3. Gemma 4 12B가 사진 픽셀, EXIF, UniPercept 점수, 영문 지각 앵커를 입력받아 스코어보드, 한 줄 총평, 3대 표준 헤더(미학/결함/실전조언)를 갖춘 고품질 한국어 비평문(`critique`)을 직결 생성해야 한다.
+  4. 전체 비평 생성 시간이 20~30초 이내로 완료되고 DB `ai_analysis` 테이블에 정상 영구 캐싱되어야 한다.
+
 ---
 
 ## 🧪 2. 테스트 시나리오 매트릭스 (Test Matrix)
@@ -53,6 +62,9 @@
 | **Happy** | `TC-CRT-08` | 기존 DB 사진 overall_score 자동 재계산 백필 | 기존 iaa/iqa/ista 보유 DB 기동 | run_migrations()에서 EXIF 조인 후 새 점수 백필 | `PASS` |
 | **Happy** | `TC-CRT-09` | 점수 가이드 모달 열람 및 닫기 | 스코어보드 [?] 버튼 클릭 | ScoringGuideModal 열림, ESC/닫기 동작 (`tsc & build`) | `PASS` |
 | **Boundary**| `TC-CRT-10` | 비평 취소 시 VLM 즉시 강제 언로드 및 GPU 동기화 | 비평 추론 도중 `[취소]` 클릭 | Gemma/UniPercept 즉시 언로드 및 MPS 캐시 100% 반환 | `PASS (Fixed in DEFECT-01)` |
+| **Happy** | `TC-CRT-11` | UniPercept 단일 패스 지각 앵커 추출 및 어휘 붕괴 방지 | 고해상도 테스트 사진 입력 | 150토큰 내외 지각 앵커 정상 영문 도출, 어휘 붕괴 0건 | `⏳ Pending` |
+| **Happy** | `TC-CRT-12` | Gemma 4 지각 앵커 기반 직결 심층 비평 생성 | 지각 앵커 + VR 점수 + EXIF 주입 | 3대 표준 헤더 + 한 줄 총평 + 실전 조언 한국어 완성 | `⏳ Pending` |
+| **Boundary**| `TC-CRT-13` | UniPercept VQA 오류 시 Gemma 4 자율 비평 폴백 | UniPercept VQA 예외 강제 발생 | Gemma 4 직접 심층 비평으로 정상 폴백 생성 완료 | `⏳ Pending` |
 
 ---
 

@@ -1,17 +1,17 @@
 # 🧭 Focal Node: Master Control Tower (Living Wiki Hub)
 
 > 외부 클라우드 전송 없이 Mac Native(Apple MLX & PyTorch MPS)로 구동되는 **프라이버시 보호 로컬 사진 관리 및 AI 시맨틱 검색/비평 데스크탑 플랫폼**입니다.
-> **최종 업데이트**: 2026-11-04 (by `systematic-debugger`)
+> **최종 업데이트**: 2026-11-04 (by `interactive-feature-planner`)
 
 ---
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
 - **Active 도메인**: [`03_ai_critique`](./features/03_ai_critique/README.md)
-- **현재 단계 (Stage)**: `🧐 Auditing (REFACTOR-02 해결 완료, REFACTOR 티켓 1건 대기)`
-- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 REFACTOR-02 리팩토링 완료 (비평 추론 어댑터 내 Silent Fail 전면 제거 및 format_and_structure_critique / generate_vqa_critiques_3way SRP 헬퍼 분리, 백엔드 103종 전수 통과 및 프론트엔드 빌드 PASS)
+- **현재 단계 (Stage)**: `🛠️ Implementing (UniPercept 지각 앵커 + Gemma 4 직접 심층 비평 기획 완료, Step 3 대기)`
+- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 하이브리드 파이프라인 기획 완료 (UniPercept VR 채점+단일 패스 지각 앵커 추출 ➔ Gemma 4 지각 기반 한국어 직접 비평 리포트 작성으로 3~5분 ➔ 20~30초 단축 및 어휘 붕괴 방지, spec/architecture/decisions/verification 위키 동기화)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"03_ai_critique 도메인의 REFACTOR-03 리팩토링 티켓 해결해줘"` *(비평 Polling 빈 catch 블록 예외 묵인 교정 및 ApiClient 반환 타입 강화)*
+  > `"03_ai_critique 도메인 Step 3 개발 진행해줘"` *(단일 패스 지각 앵커 프롬프트 및 Gemma 4 직접 비평 서비스 파이프라인 구현)*
 
 ---
 
@@ -22,7 +22,7 @@
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `3/3 (100%)` | `0 / 0` | 동적 포트/IPC/모델 로더 검증 및 REFACTOR-01 해결 완료 |
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 📐 Planning | `[□□□□] 0/4` | `3/6 (50%)` | `0 / 0` | REFACTOR-01 해결 완료 (타입 일원화, Repo 캡슐화, 예외 로깅) |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 📐 Planning | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 거리 임계값 + RRF 랭킹 + 35mm/점수 필터 + 스마트 앨범 Step 1~4 대기 |
-| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🧐 Auditing | `[■■■■] 4/4` | `5/5 (100%)` | `0 / 1` | REFACTOR-02 해결 완료 (어댑터 Silent Fail 제거 & SRP 메서드 분리) |
+| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🛠️ Implementing | `[■■□□] 2/4` | `10/13 (77%)` | `0 / 1` | UniPercept 지각 앵커 + Gemma 4 직접 비평 기획 완료, Step 3 대기 |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 📐 Planning | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 2` | 통계 차트 클릭 갤러리 드릴다운(`Click-to-Filter`) Step 3~4 대기 |
 
 *(※ 상태 범례: `📐 Planning` | `🛠️ Implementing` | `🧐 Auditing` | `🧪 QA Testing` | `🩹 Debugging` | `🟢 Sign-Off`)*
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-04]` `[interactive-feature-planner]` [`03_ai_critique`]**: UniPercept 지각 앵커 + Gemma 4 직접 심층 비평 2단계 하이브리드 파이프라인 기획 및 위키 전수 갱신 완료 (`a9b398b` / UniPercept의 VQA 어휘 붕괴/기계적 분해표 결함 해소를 위해 VR 채점 + 단일 패스 3~4문장 지각 앵커 추출로 경량화, Gemma 4가 지각 앵커를 뼈대 삼아 직접 한국어 3대 헤더 리포트를 완성하도록 파이프라인 재설계, 비평 시간 3~5분 ➔ 20~30초 단축 목표, spec.md To-Be/architecture.md/decisions.md ADR-05/verification.md AC 5 및 TC-CRT-11~13 등록 완료).
 
 - **`[2026-11-04]` `[systematic-debugger]` [`03_ai_critique`]**: REFACTOR-02 리팩토링 티켓 해결 완료 (`756e6be` / 비평 추론 어댑터 `chat_service.py`, `mlx_adapters.py`, `unipercept_adapter.py` 내 `except Exception: pass` Silent Fail 전면 제거 및 명시적 로깅 보강, `format_and_structure_critique` 및 `generate_vqa_critiques_3way` 장문 메서드 30줄 가이드 준수 SRP 헬퍼 분리, 백엔드 103종 테스트 및 `npm run build` 100% 통과, `verification.md` REFACTOR-02 RESOLVED 갱신).
 - **`[2026-11-04]` `[systematic-debugger]` [`03_ai_critique`]**: REFACTOR-01 리팩토링 티켓 해결 완료 (`1f0151c` / `CritiqueDocumentModal` 1,766줄 ➔ 449줄로 약 75% 경량화, `CritiqueContentRenderer` 856줄 ➔ 109줄 축소, `PhotoCritiqueView`에서 `ScoreHudStrip` 분리, `CritiqueView` 375줄 ➔ 223줄 경량화, `critiqueParser.tsx`/`critiqueExporter.ts`/`useModalZoomPan.ts` 등 12개 전문 서브 모듈 분할 완료, `npm run build` 및 pytest 43건 100% 통과, verification.md REFACTOR-01 RESOLVED 갱신).
