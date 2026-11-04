@@ -2,7 +2,7 @@
 
 - **검증 상태**: `🟢 Verified (DEFECT-01 및 REFACTOR-01 거대 컴포넌트 SRP 분할 완료)`
 - **인수 조건 통과율**: `5 / 5 (100%, AC 1~4 통과 및 취소 시 메모리 즉시 언로드 검증 완료)`
-- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 2건`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건`
 
 ---
 
@@ -143,7 +143,15 @@
   ```
 
 ### [REFACTOR-02] 비평 추론 어댑터 내 Silent Fail(`except: pass`) 제거 및 장문 메서드 분리
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
 - **심각도**: 🟡 Should Fix (권장)
+- **해결 내역**:
+  - **수정 파일**: [`chat_service.py`](../../../backend/app/services/chat_service.py#L75-L125), [`mlx_adapters.py`](../../../backend/app/services/mlx_adapters.py#L42-L635), [`unipercept_adapter.py`](../../../backend/app/services/unipercept_adapter.py#L60-L585)
+  - **원인 및 조치**:
+    1. `chat_service.py`(`_clear_device_caches`, `updated_at` 파싱), `mlx_adapters.py`(모델 로드, safetensors 링크, OOM 복구, 언로드 캐시 정리), `unipercept_adapter.py`(MPS 프리클리어, 토크나이저/프로세서 로드, 템플릿 로드, VR/VQA 텐서 캐시 클리어)의 모든 빈 `except: pass` 블록에 명시적 디버그/경고 로깅을 추가하여 Silent Fail 완전 제거.
+    2. `mlx_adapters.py`의 `format_and_structure_critique`(88줄)에서 프롬프트 빌더(`_build_document_structuring_messages`), 스코어보드 보존(`_preserve_scoreboard_header`), 추론 실행기(`_execute_document_structuring_generation`)를 분리하여 단일 함수 30줄 가이드 충족.
+    3. `unipercept_adapter.py`의 `generate_vqa_critiques_3way`(90줄)에서 단계 정의(`_get_vqa_step_definitions`), 단일 단계 실행(`_execute_single_vqa_step`), 전 단계 오케스트레이션(`_execute_all_vqa_steps`)을 추출하여 책임 분리 및 가독성 확보.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/ -v` (103 passed), `npm run build` (`PASS`)
 - **위치**: `backend/app/services/chat_service.py#L80-L120`, `backend/app/services/mlx_adapters.py#L323-L640`, `backend/app/services/unipercept_adapter.py#L55-L498`
 - **위반 규칙**: Rule 4.1 (함수 30줄 이내) & Rule 4.3 (예외 묵인 `except: pass` 금지)
 - **발견된 문제**:
@@ -153,7 +161,6 @@
   - 프롬프트 생성 빌더 함수를 별도 헬퍼로 추출하여 추론 메서드 길이를 30줄 이내로 축소
   - 빈 except 블록에 명시적 경고 로그(print/logger) 추가
   ```
-- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
 
 ### [REFACTOR-03] 비평 Polling 빈 catch 블록 예외 묵인(Rule 4.3) 교정 및 ApiClient 반환 타입 강화
 - **심각도**: 🟡 Should Fix (권장)

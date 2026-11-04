@@ -1,8 +1,8 @@
 # 🤖 [03_ai_critique] On-Demand AI Critique & Editorial Export
 
-- **현재 상태 (Lifecycle)**: `🟢 Verified (REFACTOR-01 거대 컴포넌트 SRP 분할 완료, 리팩토링 티켓 2건 대기)`
+- **현재 상태 (Lifecycle)**: `🟢 Verified (REFACTOR-02 비평 어댑터 Silent Fail 제거 및 장문 메서드 분리 완료, 리팩토링 티켓 1건 대기)`
 - **구현 진척도**: `[■■■■] 4/4 Steps (Active Iteration Step 1~4 전 계층 구현 완료)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 2건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -40,33 +40,17 @@
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
 - **Recent Commits**:
+  - `756e6be` - `refactor(critique): eliminate silent fail blocks and decompose long adapter methods`
   - `1f0151c` - `refactor(critique): decompose monolithic critique components for SRP conformance`
-  - `e99482f` - `fix(critique): force unload VLM models and synchronize MPS queue on cancellation`
-- **직전 완료 작업**: `2026-11-04 / systematic-debugger / 03_ai_critique 도메인 REFACTOR-01 리팩토링 티켓 해결 (CritiqueDocumentModal 1,766줄 ➔ 449줄 경량화, CritiqueContentRenderer 856줄 ➔ 109줄 축소, PhotoCritiqueView/CritiqueView SRP 컴포넌트 분할, critiqueParser/critiqueExporter/useModalZoomPan 분리 및 프론트/백엔드 빌드·회귀 검증 100% 통과)`
+- **직전 완료 작업**: `2026-11-04 / systematic-debugger / 03_ai_critique 도메인 REFACTOR-02 리팩토링 티켓 해결 (비평 추론 어댑터 chat_service.py/mlx_adapters.py/unipercept_adapter.py 내 Silent Fail except: pass 전면 제거 및 명시적 로깅 추가, format_and_structure_critique 및 generate_vqa_critiques_3way SRP 헬퍼 분리, 백엔드 103종 전수 통과 및 npm run build PASS)`
 - **생성/수정된 핵심 파일**:
-  - `src/utils/critiqueParser.tsx`: [신설] 마크다운 AST 파서 & 6-Way 스코어보드 추출 유틸리티
-  - `src/utils/critiqueExporter.ts`: [신설] Markdown 직렬화, A4 인쇄 HTML 생성 및 PDF 내보내기 엔진
-  - `src/hooks/useModalZoomPan.ts`: [신설] 모달 휠 줌 및 드래그 패닝 훅
-  - `src/components/critique/CritiqueScoreboardCard.tsx`: [신설] 6-Way 평점 카드
-  - `src/components/critique/ExecutiveSummaryCard.tsx`: [신설] 한 줄 총평 인용구 카드
-  - `src/components/critique/OriginalEnglishCritiqueCard.tsx`: [신설] 영문 원문 토글 카드
-  - `src/components/critique/CritiqueBlockItem.tsx`: [신설] 단일 마크다운 블록 렌더러
-  - `src/components/critique/ScoreHudStrip.tsx`: [신설] 카메라 LCD HUD 점수 스트립
-  - `src/components/critique/CritiqueHeader.tsx`: [신설] 비평 보관함 상단 헤더
-  - `src/components/critique/CritiqueDocumentToolbar.tsx`: [신설] 매거진 문서 상단 툴바
-  - `src/components/critique/CritiqueDocumentPhotoViewer.tsx`: [신설] 매거진 문서 좌측 사진 인스펙터
-  - `src/components/critique/CritiqueDocumentArticle.tsx`: [신설] 매거진 문서 우측 아티클
-  - `src/components/critique/CritiqueExportProgressOverlay.tsx`: [신설] 내보내기 진행률 오버레이
-  - `src/components/critique/CritiqueDocumentModal.tsx`: [수정] 1,766줄 ➔ 449줄로 경량화
-  - `src/components/critique/CritiqueContentRenderer.tsx`: [수정] 856줄 ➔ 109줄로 축소
-  - `src/components/detail/PhotoCritiqueView.tsx`: [수정] ScoreHudStrip 분리
-  - `src/components/CritiqueView.tsx`: [수정] CritiqueHeader 분리 (223줄)
-  - `docs/features/03_ai_critique/verification.md`: [수정] REFACTOR-01 RESOLVED 갱신
-  - `docs/features/03_ai_critique/architecture.md`: [수정] 신설 파일 트리 최신화
+  - `backend/app/services/chat_service.py`: [수정] `_clear_device_caches` 및 `updated_at` 파싱의 Silent Fail 제거
+  - `backend/app/services/mlx_adapters.py`: [수정] 모델 로드/OOM 복구/언로드 캐시 Silent Fail 제거, `_build_document_structuring_messages`, `_preserve_scoreboard_header`, `_execute_document_structuring_generation` 헬퍼 분리
+  - `backend/app/services/unipercept_adapter.py`: [수정] MPS 프리클리어/토크나이저/프로세서/템플릿/텐서 캐시 클리어 Silent Fail 제거, `_get_vqa_step_definitions`, `_execute_single_vqa_step`, `_execute_all_vqa_steps` 헬퍼 분리
+  - `docs/features/03_ai_critique/verification.md`: [수정] REFACTOR-02 RESOLVED 갱신
 - **검증 완료된 테스트 실행 명령어**:
+  - `./venv/bin/pytest backend/tests/ -v` (`103 passed`)
   - `npm run build` (`tsc & vite build PASS`)
-  - `./venv/bin/pytest backend/tests/test_critique_cancellation.py -v` (`8 passed`)
-  - `./venv/bin/pytest backend/tests/test_critique_cancellation.py backend/tests/test_critique_sleep_recovery.py backend/tests/test_adaptive_scoring.py backend/tests/test_critique_score_normalization.py backend/tests/test_critique_repository_and_api.py backend/tests/test_critique_service_save.py -v` (`43 passed`)
 - **다음 세션 포커스 및 추천 실행 프롬프트**:
-  - `verification.md`에 등록된 `REFACTOR-02` (추론 어댑터 내 Silent Fail 제거 및 장문 메서드 분리)를 진행합니다.
-  - 👉 추천 프롬프트: `"03_ai_critique 도메인의 REFACTOR-02 리팩토링 티켓 해결해줘"`
+  - `verification.md`에 등록된 `REFACTOR-03` (비평 Polling 빈 catch 블록 예외 묵인 교정 및 ApiClient 반환 타입 강화)를 진행합니다.
+  - 👉 추천 프롬프트: `"03_ai_critique 도메인의 REFACTOR-03 리팩토링 티켓 해결해줘"`
