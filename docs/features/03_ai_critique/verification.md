@@ -1,8 +1,8 @@
 # 🧪 [03_ai_critique] Verification & Ticket Logs
 
-- **검증 상태**: `🟢 Verified (DEFECT-01 모델 메모리 즉시 해제 결함 해결 완료)`
+- **검증 상태**: `🟢 Verified (DEFECT-01 및 REFACTOR-01 거대 컴포넌트 SRP 분할 완료)`
 - **인수 조건 통과율**: `5 / 5 (100%, AC 1~4 통과 및 취소 시 메모리 즉시 언로드 검증 완료)`
-- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 3건`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 2건`
 
 ---
 
@@ -108,7 +108,29 @@
 ## 🧐 4. 코드 품질 감사 리포트 (Audit & Refactoring Logs)
 
 ### [REFACTOR-01] `CritiqueDocumentModal.tsx` 및 비평 UI 거대 컴포넌트 SRP 모듈 분할
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
 - **심각도**: 🟡 Should Fix (권장)
+- **해결 내역**:
+  - **신설 및 분리 모듈**:
+    - [`critiqueParser.tsx`](../../../src/utils/critiqueParser.tsx): 마크다운 AST 파서 & 6-Way 스코어보드 추출 유틸리티 (292줄)
+    - [`critiqueExporter.ts`](../../../src/utils/critiqueExporter.ts): A4 인쇄 HTML 생성, 마크다운 직렬화 및 html2canvas/jsPDF 엔진 (650줄)
+    - [`useModalZoomPan.ts`](../../../src/hooks/useModalZoomPan.ts): 모달 휠 줌 및 드래그 패닝 인터랙션 훅 (60줄)
+    - [`CritiqueScoreboardCard.tsx`](../../../src/components/critique/CritiqueScoreboardCard.tsx): 6-Way 스코어보드 및 가이드 모달 연결 카드 (182줄)
+    - [`ExecutiveSummaryCard.tsx`](../../../src/components/critique/ExecutiveSummaryCard.tsx): 통합 한 줄 총평 인용구 카드 (44줄)
+    - [`OriginalEnglishCritiqueCard.tsx`](../../../src/components/critique/OriginalEnglishCritiqueCard.tsx): UniPercept 8B VQA 영문 원문 토글 카드 (93줄)
+    - [`CritiqueBlockItem.tsx`](../../../src/components/critique/CritiqueBlockItem.tsx): 개별 마크다운 AST 블록 렌더러 (207줄)
+    - [`ScoreHudStrip.tsx`](../../../src/components/critique/ScoreHudStrip.tsx): 카메라 LCD HUD 스타일 컴팩트 점수 스트립 (77줄)
+    - [`CritiqueHeader.tsx`](../../../src/components/critique/CritiqueHeader.tsx): 비평 대시보드 타이틀, 통계 뱃지, 정렬 탭, 검색바 및 요약 생성 헤더 (188줄)
+    - [`CritiqueDocumentToolbar.tsx`](../../../src/components/critique/CritiqueDocumentToolbar.tsx): 매거진 뷰어 상단 헤더 툴바 (319줄)
+    - [`CritiqueDocumentPhotoViewer.tsx`](../../../src/components/critique/CritiqueDocumentPhotoViewer.tsx): 매거진 뷰어 좌측 사진 캔버스 및 EXIF HUD (187줄)
+    - [`CritiqueDocumentArticle.tsx`](../../../src/components/critique/CritiqueDocumentArticle.tsx): 매거진 뷰어 우측 페이퍼 문서 아티클 (175줄)
+    - [`CritiqueExportProgressOverlay.tsx`](../../../src/components/critique/CritiqueExportProgressOverlay.tsx): 내보내기 진행률 피드백 모달 오버레이 (197줄)
+  - **리팩토링 파일**:
+    - [`CritiqueDocumentModal.tsx`](../../../src/components/critique/CritiqueDocumentModal.tsx): 1,766줄 ➔ 449줄로 약 75% 경량화 및 최상위 컨테이너 레이아웃 단일 책임 정돈
+    - [`CritiqueContentRenderer.tsx`](../../../src/components/critique/CritiqueContentRenderer.tsx): 856줄 ➔ 109줄로 축소 및 하위 호환 re-export 제공
+    - [`PhotoCritiqueView.tsx`](../../../src/components/detail/PhotoCritiqueView.tsx): 478줄 ➔ 408줄로 축소 (인라인 `ScoreHudStrip` 분리)
+    - [`CritiqueView.tsx`](../../../src/components/CritiqueView.tsx): 375줄 ➔ 223줄로 축소 (헤더 컨트롤 분리)
+  - **회귀 검증 결과**: `npm run build` (tsc & vite build `PASS`), pytest 43건 전체 통과 (`PASS`)
 - **위치**: `src/components/critique/CritiqueDocumentModal.tsx#L1-L1766`, `src/components/critique/CritiqueContentRenderer.tsx#L1-L813`, `src/components/detail/PhotoCritiqueView.tsx#L1-L478`, `src/components/CritiqueView.tsx#L1-L375`
 - **위반 규칙**: Single Responsibility Principle (단일 UI 파일 300줄 가이드 초과)
 - **발견된 문제**:
@@ -119,7 +141,6 @@
   - PDF/Markdown 내보내기 순수 유틸리티 및 프린트 HTML 템플릿을 src/utils/critiqueExporter.ts로 분리
   - 스코어보드 파서/서브 섹션(ScoreHudStrip, OriginalEnglishCritiqueCard)을 분리하여 모달/컴포넌트 본체를 300줄 이내로 축소
   ```
-- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
 
 ### [REFACTOR-02] 비평 추론 어댑터 내 Silent Fail(`except: pass`) 제거 및 장문 메서드 분리
 - **심각도**: 🟡 Should Fix (권장)

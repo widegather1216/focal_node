@@ -40,22 +40,36 @@ backend/app/
 
 src/
 ├── types/critique.ts                  # [기존] CritiqueItem(overall_score, iaa_score, iqa_score, ista_score, critique_en 포함)
+├── utils/
+│   ├── critiqueParser.tsx             # [신설] 마크다운 AST 파서, 6-Way 스코어보드 추출 및 인라인 스타일 렌더 유틸
+│   └── critiqueExporter.ts            # [신설] Markdown 직렬화, A4 인쇄 HTML 템플릿 및 html2canvas/jsPDF 엔진
 ├── hooks/
 │   ├── usePhotoDetail.ts              # [기존] 상세 패널 상태, 비평 Polling/취소/삭제 및 재분석 제어 훅
-│   └── usePhotoDetailQuery.ts         # [기존] 단일 사진 상세 정보 TanStack Query 훅
+│   ├── usePhotoDetailQuery.ts         # [기존] 단일 사진 상세 정보 TanStack Query 훅
+│   └── useModalZoomPan.ts             # [신설] 모달 캔버스 휠 확대/축소 및 드래그 패닝 제어 훅
 └── components/
-    ├── CritiqueView.tsx               # [기존] 전체 비평 아카이브 대시보드 탭 (최신순 / 종합평점순 / 미학점수순 정렬 지원)
+    ├── CritiqueView.tsx               # [리팩토링] 전체 비평 아카이브 대시보드 탭 (헤더 분리 후 223줄 경량화)
     ├── detail/
-    │   ├── PhotoCritiqueView.tsx      # [기존] 우측 패널 내 비평 요청/취소/점수 HUD 뷰
+    │   ├── PhotoCritiqueView.tsx      # [리팩토링] 우측 패널 내 비평 요청/취소 뷰 (ScoreHudStrip 분리)
     │   └── PhotoAiAnalysisView.tsx    # [기존] AI 캡션 및 태그 수동 편집 폼
     └── critique/
         ├── CritiqueCard.tsx           # [기존] 개별 비평 요약 카드 및 정규화 평점 배지 표시
         ├── CritiqueSummaryCard.tsx    # [기존] 다중 사진 포트폴리오 종합 비평 카드
-        ├── CritiqueContentRenderer.tsx# [기존] 스코어보드 상단에 [?] 점수 산출 가이드 버튼 및 ScoringGuideModal 연동 완료
+        ├── CritiqueHeader.tsx         # [신설] 비평 보관함 상단 타이틀, 통계 뱃지, 정렬 토글 및 요약 생성 헤더
+        ├── CritiqueContentRenderer.tsx# [리팩토링] 마크다운 본문 렌더러 (서브 컴포넌트 분할 후 109줄 경량화)
+        ├── CritiqueScoreboardCard.tsx # [신설] 6-Way 지각 앙상블 평점 카드 및 점수 가이드 모달 연결
+        ├── ExecutiveSummaryCard.tsx   # [신설] 통합 한 줄 총평 인용구 카드
+        ├── OriginalEnglishCritiqueCard.tsx # [신설] UniPercept 8B VQA 영문 원문 토글 카드
+        ├── CritiqueBlockItem.tsx      # [신설] 단일 마크다운 AST 블록 렌더러
+        ├── ScoreHudStrip.tsx          # [신설] 카메라 LCD HUD 스타일 컴팩트 점수 스트립
         ├── ScoringGuideModal.tsx      # [기존] 3대 지각 지표 정의, 4대 적응형 가중치 및 미학 보너스 안내 모달
         ├── CritiqueProgressWidget.tsx # [기존] 4단계 비평 생성 프로그레스 위젯
         ├── GlobalCritiqueToast.tsx    # [기존] 백그라운드 비평 진행 전역 플로팅 토스트
-        └── CritiqueDocumentModal.tsx  # [기존/리팩토링대상] 매거진 뷰어(모달/독립 팝아웃 창) 및 MD/PDF 익스포터
+        ├── CritiqueDocumentToolbar.tsx# [신설] 매거진 문서 뷰어 상단 툴바 (복사/MD/PDF/팝아웃/닫기)
+        ├── CritiqueDocumentPhotoViewer.tsx # [신설] 매거진 문서 뷰어 좌측 사진 인스펙터 (줌/팬/EXIF HUD)
+        ├── CritiqueDocumentArticle.tsx# [신설] 매거진 문서 뷰어 우측 페이퍼 문서 아티클
+        ├── CritiqueExportProgressOverlay.tsx # [신설] PDF/MD 내보내기 진행률 피드백 오버레이
+        └── CritiqueDocumentModal.tsx  # [리팩토링] 매거진 뷰어 모달 본체 (1,766줄 -> 449줄 SRP 분할)
 ```
 
 ---

@@ -1,17 +1,17 @@
 # 🧭 Focal Node: Master Control Tower (Living Wiki Hub)
 
 > 외부 클라우드 전송 없이 Mac Native(Apple MLX & PyTorch MPS)로 구동되는 **프라이버시 보호 로컬 사진 관리 및 AI 시맨틱 검색/비평 데스크탑 플랫폼**입니다.
-> **최종 업데이트**: 2026-11-03 (by `systematic-debugger`)
+> **최종 업데이트**: 2026-11-04 (by `systematic-debugger`)
 
 ---
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
 - **Active 도메인**: [`03_ai_critique`](./features/03_ai_critique/README.md)
-- **현재 단계 (Stage)**: `🧐 Auditing (DEFECT-01 해결 완료, REFACTOR 티켓 3건 대기)`
-- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 DEFECT-01 결함 해결 완료 (비평 취소/중지 시 Gemma active_requests 가드 해제 force=True 지원, 백그라운드 태스크 task.cancel 신호 전달, PyTorch MPS torch.mps.synchronize() 동기화로 Metal 캐시 즉각 반환 및 회귀 테스트 100% 통과)
+- **현재 단계 (Stage)**: `🧐 Auditing (REFACTOR-01 해결 완료, REFACTOR 티켓 2건 대기)`
+- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 REFACTOR-01 리팩토링 완료 (CritiqueDocumentModal 1,766줄 ➔ 449줄 경량화, CritiqueContentRenderer 856줄 ➔ 109줄 축소, PhotoCritiqueView/CritiqueView SRP 컴포넌트 분할, critiqueParser/critiqueExporter/useModalZoomPan 분리 및 회귀 검증 100% 통과)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"03_ai_critique 도메인의 REFACTOR-01 리팩토링 티켓 해결해줘"` *(CritiqueDocumentModal 거대 컴포넌트 SRP 분할)*
+  > `"03_ai_critique 도메인의 REFACTOR-02 리팩토링 티켓 해결해줘"` *(비평 추론 어댑터 내 Silent Fail 제거 및 장문 메서드 분리)*
 
 ---
 
@@ -22,7 +22,7 @@
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `3/3 (100%)` | `0 / 0` | 동적 포트/IPC/모델 로더 검증 및 REFACTOR-01 해결 완료 |
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 📐 Planning | `[□□□□] 0/4` | `3/6 (50%)` | `0 / 0` | REFACTOR-01 해결 완료 (타입 일원화, Repo 캡슐화, 예외 로깅) |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 📐 Planning | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 거리 임계값 + RRF 랭킹 + 35mm/점수 필터 + 스마트 앨범 Step 1~4 대기 |
-| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🧐 Auditing | `[■■■■] 4/4` | `5/5 (100%)` | `0 / 3` | DEFECT-01 해결 완료 (비평 취소 시 Gemma 강제 언로드 및 Metal 캐시 동기화) |
+| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🧐 Auditing | `[■■■■] 4/4` | `5/5 (100%)` | `0 / 2` | REFACTOR-01 해결 완료 (거대 컴포넌트 SRP 모듈 분할 및 경량화) |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 📐 Planning | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 2` | 통계 차트 클릭 갤러리 드릴다운(`Click-to-Filter`) Step 3~4 대기 |
 
 *(※ 상태 범례: `📐 Planning` | `🛠️ Implementing` | `🧐 Auditing` | `🧪 QA Testing` | `🩹 Debugging` | `🟢 Sign-Off`)*
@@ -32,6 +32,7 @@
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
 
+- **`[2026-11-04]` `[systematic-debugger]` [`03_ai_critique`]**: REFACTOR-01 리팩토링 티켓 해결 완료 (`1f0151c` / `CritiqueDocumentModal` 1,766줄 ➔ 449줄로 약 75% 경량화, `CritiqueContentRenderer` 856줄 ➔ 109줄 축소, `PhotoCritiqueView`에서 `ScoreHudStrip` 분리, `CritiqueView` 375줄 ➔ 223줄 경량화, `critiqueParser.tsx`/`critiqueExporter.ts`/`useModalZoomPan.ts` 등 12개 전문 서브 모듈 분할 완료, `npm run build` 및 pytest 43건 100% 통과, verification.md REFACTOR-01 RESOLVED 갱신).
 - **`[2026-11-03]` `[systematic-debugger]` [`03_ai_critique`]**: DEFECT-01 결함 해결 완료 (`e99482f`, `16aaff0` / 비평 취소/중지 시 Gemma active_requests 가드 해제 force=True 지원, asyncio Task에 task.cancel 신호 전달, PyTorch MPS torch.mps.synchronize() 동기화로 Metal 캐시 즉각 반환, 단위/회귀 테스트 4종 추가 및 8종 통과, verification.md TC-CRT-10 PASS 및 DEFECT-01 RESOLVED 갱신).
 - **`[2026-11-03]` `[clean-code-auditor]` [`03_ai_critique`]**: DEFECT-01 결함 발권 (비평 취소/중지 시 Gemma active_requests 가드 버그로 인한 언로드 스킵, torch.mps.synchronize 누락으로 인한 Metal 캐시 반환 지연, asyncio Task에 task.cancel 미전달로 인한 VLM 메모리 잔류 원인 분석 및 수정 계획 수립, verification.md에 TC-CRT-10 FAIL 및 DEFECT-01 티켓 등록, 관제탑 docs/README.md 동기화).
 - **`[2026-11-03]` `[systematic-debugger]` [`01_indexing_storage`]**: REFACTOR-01 해결 완료 (`PhotoMetadata` `focal_length_35mm`/`shutter_speed` 프론트엔드 타입 통일, `IndexedFolder`를 `PhotoRepository` 메서드로 캡슐화, 썸네일 캐시 `except Exception: pass` 제거 및 `FileNotFoundError`/`OSError` 로깅 보강, 백엔드 99종 전수 통과 및 `tsc`/`build` PASS).
