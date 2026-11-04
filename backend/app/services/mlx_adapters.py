@@ -42,7 +42,8 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
                             local_files_only=True
                         ).to(self.device)
                         self.processor = AutoProcessor.from_pretrained(self.model_id, local_files_only=True)
-                    except Exception:
+                    except Exception as local_load_err:
+                        print(f"[SigLIP2Adapter] Local cache miss, loading from hub: {local_load_err}", flush=True)
                         self.model = AutoModel.from_pretrained(
                             self.model_id,
                             attn_implementation="sdpa"
@@ -190,7 +191,8 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                         if not os.path.exists(dst):
                             try:
                                 os.symlink(s_path, dst)
-                            except Exception:
+                            except Exception as symlink_err:
+                                print(f"[GemmaAdapter] Symlink failed ({symlink_err}), copying file: {dst}", flush=True)
                                 shutil.copy2(s_path, dst)
         except Exception as link_err:
             print(f"[GemmaAdapter] Subfolder safetensors link warning: {link_err}", flush=True)
@@ -320,8 +322,8 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                     try:
                         import mlx.core as mx
                         mx.clear_cache()
-                    except Exception:
-                        pass
+                    except Exception as clear_err:
+                        print(f"[GemmaAdapter] Cache clear note: {clear_err}", flush=True)
                     gc.collect()
                     return "시스템 메모리가 부족하여 비평을 완료하지 못했습니다. 다른 프로그램을 종료 후 다시 시도해주세요."
                 except Exception as e:
@@ -381,8 +383,8 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                     try:
                         import mlx.core as mx
                         mx.clear_cache()
-                    except Exception:
-                        pass
+                    except Exception as clear_err:
+                        print(f"[GemmaAdapter] Cache clear note: {clear_err}", flush=True)
                     gc.collect()
                     return "메모리가 부족하여 종합 요약을 완료하지 못했습니다. 불필요한 앱을 종료 후 다시 시도해주세요."
                 except Exception as e:
@@ -524,12 +526,76 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
             try:
                 import mlx.core as mx
                 mx.clear_cache()
-            except Exception:
-                pass
+            except Exception as clear_err:
+                print(f"[GemmaAdapter] Cache clear note: {clear_err}", flush=True)
             gc.collect()
             with self.lock:
                 self.last_used_time = time.time()
                 self.active_requests -= 1
+
+    @staticmethod
+    def _build_document_structuring_messages(critique_draft: str, metadata: Optional[dict]) -> list:
+        from services.ai_parser import (
+            GEMMA_DOCUMENT_FORMATTING_SYSTEM_PROMPT,
+            format_critique_document_structuring_user_prompt
+        )
+        user_prompt = format_critique_document_structuring_user_prompt(critique_draft, metadata)
+        return [
+            {"role": "system", "content": GEMMA_DOCUMENT_FORMATTING_SYSTEM_PROMPT},
+            {"role": "user", "content": [{"type": "text", "text": user_prompt}]}
+        ]
+
+    @staticmethod
+    def _preserve_scoreboard_header(critique_draft: str, output: str) -> str:
+        """Preserves ensemble scoreboard header if present in draft but omitted in LLM output."""
+        if "앙상블 비평 스코어보드" in critique_draft and "앙상블 비평 스코어보드" not in output:
+            sb_match = critique_draft.split("\n\n## 1.")[0].split("\n\n1. ")[0]
+            if "앙상블 비평 스코어보드" in sb_match:
+                return f"{sb_match.strip()}\n\n{output}"
+        return output
+
+    def _execute_document_structuring_generation(
+        self,
+        messages: list,
+        critique_draft: str,
+        t_start: float,
+        photo_id: Optional[str]
+    ) -> str:
+        from services.critique_status import critique_status_manager, CritiqueCancelledException
+        with GPU_LOCK:
+            if photo_id:
+                critique_status_manager.check_cancelled(photo_id)
+            try:
+                import mlx.core as mx
+                mx.clear_cache()
+                gc.collect()
+
+                tokenizer = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
+                prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+
+                from mlx_vlm import generate
+                result = generate(self.model, self.processor, prompt=prompt, max_tokens=2048, verbose=False)
+                output = (result.text if hasattr(result, "text") else str(result)).strip()
+
+                elapsed = time.time() - t_start
+                print(f"[GemmaAdapter] ✅ [Gemma Document Polish] 문서 양식 정돈 완료 ({len(output)}자, 소요시간: {elapsed:.2f}초)", flush=True)
+
+                output = self._preserve_scoreboard_header(critique_draft, output)
+                return output if output and len(output) > 30 else critique_draft
+            except CritiqueCancelledException:
+                raise
+            except RuntimeError as e:
+                print(f"[GemmaAdapter] MLX OOM during document structuring: {e}. Falling back to draft...", flush=True)
+                try:
+                    import mlx.core as mx
+                    mx.clear_cache()
+                except Exception as clear_err:
+                    print(f"[GemmaAdapter] Cache clear note: {clear_err}", flush=True)
+                gc.collect()
+                return critique_draft
+            except Exception as e:
+                print(f"[GemmaAdapter] Unexpected document structuring error: {e}. Falling back to draft...", flush=True)
+                return critique_draft
 
     def format_and_structure_critique(self, critique_draft: str, metadata: dict = None, photo_id: str = None) -> str:
         """
@@ -546,10 +612,6 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                 self.active_requests += 1
 
         try:
-            from services.ai_parser import (
-                GEMMA_DOCUMENT_FORMATTING_SYSTEM_PROMPT,
-                format_critique_document_structuring_user_prompt
-            )
             from services.critique_status import critique_status_manager, CritiqueCancelledException
 
             if photo_id:
@@ -559,59 +621,8 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
             print("[GemmaAdapter] ⏱️ [Gemma Document Polish] 비평 문서 구조화 및 양식 정돈 시작...", flush=True)
             t_start = time.time()
 
-            user_prompt = format_critique_document_structuring_user_prompt(critique_draft, metadata)
-            messages = [
-                {
-                    "role": "system",
-                    "content": GEMMA_DOCUMENT_FORMATTING_SYSTEM_PROMPT
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": user_prompt}
-                    ]
-                }
-            ]
-
-            with GPU_LOCK:
-                if photo_id:
-                    critique_status_manager.check_cancelled(photo_id)
-                try:
-                    import mlx.core as mx
-                    mx.clear_cache()
-                    gc.collect()
-
-                    tokenizer = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
-                    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-
-                    from mlx_vlm import generate
-                    result = generate(self.model, self.processor, prompt=prompt, max_tokens=2048, verbose=False)
-                    output = (result.text if hasattr(result, "text") else str(result)).strip()
-
-                    elapsed = time.time() - t_start
-                    print(f"[GemmaAdapter] ✅ [Gemma Document Polish] 문서 양식 정돈 완료 ({len(output)}자, 소요시간: {elapsed:.2f}초)", flush=True)
-
-                    # Ensure scoreboard is preserved if it was present in draft but omitted in output
-                    if "앙상블 비평 스코어보드" in critique_draft and "앙상블 비평 스코어보드" not in output:
-                        sb_match = critique_draft.split("\n\n## 1.")[0].split("\n\n1. ")[0]
-                        if "앙상블 비평 스코어보드" in sb_match:
-                            output = f"{sb_match.strip()}\n\n{output}"
-
-                    return output if output and len(output) > 30 else critique_draft
-                except CritiqueCancelledException:
-                    raise
-                except RuntimeError as e:
-                    print(f"[GemmaAdapter] MLX OOM during document structuring: {e}. Falling back to draft...", flush=True)
-                    try:
-                        import mlx.core as mx
-                        mx.clear_cache()
-                    except Exception:
-                        pass
-                    gc.collect()
-                    return critique_draft
-                except Exception as e:
-                    print(f"[GemmaAdapter] Unexpected document structuring error: {e}. Falling back to draft...", flush=True)
-                    return critique_draft
+            messages = self._build_document_structuring_messages(critique_draft, metadata)
+            return self._execute_document_structuring_generation(messages, critique_draft, t_start, photo_id)
         except CritiqueCancelledException:
             raise
         finally:

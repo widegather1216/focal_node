@@ -62,8 +62,8 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
             try:
                 torch.mps.empty_cache()
-            except Exception:
-                pass
+            except Exception as err:
+                print(f"[UniPerceptAdapter] Warning pre-clearing MPS cache: {err}", flush=True)
 
         print(f"[UniPerceptAdapter] Lazy loading UniPercept model ({self.model_id}) on {self.device} ({self.torch_dtype})...", flush=True)
         from transformers import AutoModel, AutoTokenizer, AutoProcessor
@@ -81,12 +81,14 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             
             try:
                 self.tokenizer = AutoTokenizer.from_pretrained(self.model_id, trust_remote_code=True, **extra_kwargs)
-            except Exception:
+            except Exception as tok_err:
+                print(f"[UniPerceptAdapter] AutoTokenizer load warning: {tok_err}", flush=True)
                 self.tokenizer = None
                 
             try:
                 self.processor = AutoProcessor.from_pretrained(self.model_id, trust_remote_code=True, **extra_kwargs)
-            except Exception:
+            except Exception as proc_err:
+                print(f"[UniPerceptAdapter] AutoProcessor load warning: {proc_err}", flush=True)
                 self.processor = None
                 
             print("[UniPerceptAdapter] UniPercept Model loaded successfully.", flush=True)
@@ -123,7 +125,7 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         try:
             from transformers_modules.widegather.unipercept_hyphen_mirror.conversation import get_conv_template
             return get_conv_template(template_name)
-        except Exception:
+        except Exception as import_err:
             try:
                 import importlib.util, glob
                 cached_convs = glob.glob(os.path.expanduser("~/.cache/huggingface/hub/models--widegather--unipercept-mirror/snapshots/*/conversation.py"))
@@ -132,8 +134,8 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                     conv_mod = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(conv_mod)
                     return conv_mod.get_conv_template(template_name)
-            except Exception:
-                pass
+            except Exception as cache_err:
+                print(f"[UniPerceptAdapter] Dynamic conversation template load warning: {cache_err}", flush=True)
         return None
 
     @classmethod
@@ -215,8 +217,8 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
                 try:
                     torch.mps.empty_cache()
-                except Exception:
-                    pass
+                except Exception as clear_err:
+                    print(f"[UniPerceptAdapter] VR forward cache clear warning: {clear_err}", flush=True)
 
         return final_score
 
@@ -247,8 +249,8 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         if self.model is not None and hasattr(self.model, "parameters"):
             try:
                 target_dtype = next(self.model.parameters()).dtype
-            except Exception:
-                pass
+            except Exception as param_err:
+                print(f"[UniPerceptAdapter] Parameter dtype inspection note: {param_err}", flush=True)
         transform = build_transform(input_size=448)
         transformed = transform(pil_img).unsqueeze(0).to(dtype=target_dtype)
         with GPU_LOCK:
@@ -391,8 +393,8 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
                 try:
                     torch.mps.empty_cache()
-                except Exception:
-                    pass
+                except Exception as clear_err:
+                    print(f"[UniPerceptAdapter] VR scores cache clear warning: {clear_err}", flush=True)
 
             return {
                 "overall": overall_val,
@@ -453,8 +455,74 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                 if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
                     try:
                         torch.mps.empty_cache()
-                    except Exception:
-                        pass
+                    except Exception as clear_err:
+                        print(f"[UniPerceptAdapter] Single VQA cache clear warning: {clear_err}", flush=True)
+
+    def _execute_single_vqa_step(
+        self,
+        domain_key: str,
+        base_prompt: str,
+        label: str,
+        step_idx: int,
+        prog: int,
+        exif_desc: str,
+        score_desc: str,
+        pixel_values: torch.Tensor,
+        pil_img: Any,
+        generation_config: dict,
+        photo_id: Optional[str]
+    ) -> Tuple[str, float]:
+        if photo_id:
+            from services.critique_status import critique_status_manager
+            critique_status_manager.check_cancelled(photo_id)
+            critique_status_manager.update(photo_id, 2, 4, f"[{step_idx}/6] {label} 작성 중...", prog)
+
+        print(f"[UniPercept] ⏱️ [VQA Step {step_idx-3}/3] {label} 생성 시작...", flush=True)
+        step_t0 = time.time()
+        prompt_text = f"{exif_desc}{score_desc}{base_prompt}"
+
+        try:
+            txt = self._run_single_vqa_domain_inference(prompt_text, pixel_values, pil_img, generation_config)
+            elapsed = time.time() - step_t0
+            print(f"[UniPercept] ✅ [VQA Step {step_idx-3}/3] {label} 완료 ➔ {len(txt)}자 생성 (소요시간: {elapsed:.2f}초)", flush=True)
+            return txt, elapsed
+        except Exception as eval_err:
+            elapsed = time.time() - step_t0
+            print(f"[UniPercept] ❌ [VQA Step {step_idx-3}/3] {label} 오류 ({eval_err}) (소요시간: {elapsed:.2f}초)", flush=True)
+            return f"분석 오류: {eval_err}", elapsed
+
+    @staticmethod
+    def _get_vqa_step_definitions() -> list:
+        from services.ai_parser import (
+            UNIPERCEPT_VQA_IAA_PROMPT,
+            UNIPERCEPT_VQA_IQA_PROMPT,
+            UNIPERCEPT_VQA_ISTA_PROMPT
+        )
+        return [
+            ("iaa", UNIPERCEPT_VQA_IAA_PROMPT, "미학·구도 비평 (IAA)", 4, 45),
+            ("iqa", UNIPERCEPT_VQA_IQA_PROMPT, "화질·왜곡 비평 (IQA)", 5, 60),
+            ("ista", UNIPERCEPT_VQA_ISTA_PROMPT, "구조·재질 비평 (ISTA)", 6, 75),
+        ]
+
+    def _execute_all_vqa_steps(
+        self,
+        exif_desc: str,
+        score_desc: str,
+        pixel_values: torch.Tensor,
+        pil_img: Any,
+        photo_id: Optional[str]
+    ) -> tuple[Dict[str, str], Dict[str, float]]:
+        generation_config = dict(max_new_tokens=1024, do_sample=False, num_beams=1, repetition_penalty=1.2)
+        vqa_steps = self._get_vqa_step_definitions()
+        critiques, timings = {}, {}
+        for domain_key, base_prompt, label, step_idx, prog in vqa_steps:
+            txt, elapsed = self._execute_single_vqa_step(
+                domain_key, base_prompt, label, step_idx, prog,
+                exif_desc, score_desc, pixel_values, pil_img, generation_config, photo_id
+            )
+            critiques[domain_key] = txt
+            timings[domain_key] = elapsed
+        return critiques, timings
 
     def generate_vqa_critiques_3way(
         self,
@@ -492,48 +560,16 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             score_desc = self._format_score_guidance_desc(scores_context)
             pixel_values = self._prepare_pixel_values(pil_img)
 
-            from services.ai_parser import (
-                UNIPERCEPT_VQA_IAA_PROMPT,
-                UNIPERCEPT_VQA_IQA_PROMPT,
-                UNIPERCEPT_VQA_ISTA_PROMPT
+            critiques, timings = self._execute_all_vqa_steps(
+                exif_desc, score_desc, pixel_values, pil_img, photo_id
             )
-            vqa_steps = [
-                ("iaa", UNIPERCEPT_VQA_IAA_PROMPT, "미학·구도 비평 (IAA)", 4, 45),
-                ("iqa", UNIPERCEPT_VQA_IQA_PROMPT, "화질·왜곡 비평 (IQA)", 5, 60),
-                ("ista", UNIPERCEPT_VQA_ISTA_PROMPT, "구조·재질 비평 (ISTA)", 6, 75),
-            ]
-            generation_config = dict(max_new_tokens=1024, do_sample=False, num_beams=1, repetition_penalty=1.2)
-
-            critiques, timings = {}, {}
-            for domain_key, base_prompt, label, step_idx, prog in vqa_steps:
-                if photo_id:
-                    from services.critique_status import critique_status_manager
-                    critique_status_manager.check_cancelled(photo_id)
-                    critique_status_manager.update(
-                        photo_id, 2, 4, f"[{step_idx}/6] {label} 작성 중...", prog
-                    )
-
-                print(f"[UniPercept] ⏱️ [VQA Step {step_idx-3}/3] {label} 생성 시작...", flush=True)
-                step_t0 = time.time()
-                prompt_text = f"{exif_desc}{score_desc}{base_prompt}"
-
-                try:
-                    txt = self._run_single_vqa_domain_inference(prompt_text, pixel_values, pil_img, generation_config)
-                    critiques[domain_key] = txt
-                    elapsed = time.time() - step_t0
-                    timings[domain_key] = elapsed
-                    print(f"[UniPercept] ✅ [VQA Step {step_idx-3}/3] {label} 완료 ➔ {len(txt)}자 생성 (소요시간: {elapsed:.2f}초)", flush=True)
-                except Exception as eval_err:
-                    elapsed = time.time() - step_t0
-                    print(f"[UniPercept] ❌ [VQA Step {step_idx-3}/3] {label} 오류 ({eval_err}) (소요시간: {elapsed:.2f}초)", flush=True)
-                    critiques[domain_key] = f"분석 오류: {eval_err}"
 
             del pixel_values
             if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
                 try:
                     torch.mps.empty_cache()
-                except Exception:
-                    pass
+                except Exception as clear_err:
+                    print(f"[UniPerceptAdapter] VQA scores cache clear warning: {clear_err}", flush=True)
 
             vqa_total_elapsed = time.time() - vqa_start_time
             print(f"[UniPercept] 📝 [VQA 모드 종료] 3개 비평문 생성 완료 (총 소요시간: {vqa_total_elapsed:.2f}초)", flush=True)

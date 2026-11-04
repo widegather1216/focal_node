@@ -77,8 +77,8 @@ def _save_critique_to_db(
         try:
             import datetime
             updated_at = datetime.datetime.fromisoformat(updated_at)
-        except Exception:
-            pass
+        except Exception as date_err:
+            print(f"[ChatService] Failed to parse updated_at string '{updated_at}': {date_err}", flush=True)
 
     with SessionLocal() as db:
         ai_record = db.query(models.AIAnalysis).filter(models.AIAnalysis.image_id == photo_id).first()
@@ -111,15 +111,15 @@ def _clear_device_caches() -> None:
             torch.mps.synchronize()
         if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
             torch.mps.empty_cache()
-    except Exception:
-        pass
+    except Exception as torch_err:
+        print(f"[ChatService] Warning clearing torch cache: {torch_err}", flush=True)
     try:
         import mlx.core as mx
         import gc
         mx.clear_cache()
         gc.collect()
-    except Exception:
-        pass
+    except Exception as mlx_err:
+        print(f"[ChatService] Warning clearing MLX cache: {mlx_err}", flush=True)
 
 def _unload_critique_models(force: bool = False) -> None:
     """
