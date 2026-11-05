@@ -8,10 +8,10 @@
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
 - **Active 도메인**: [`03_ai_critique`](./features/03_ai_critique/README.md)
-- **현재 단계 (Stage)**: `🛠️ Implementing (UniPercept 지각 앵커 + Gemma 4 직접 심층 비평 기획 완료, Step 3 대기)`
-- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 하이브리드 파이프라인 기획 완료 (UniPercept VR 채점+단일 패스 지각 앵커 추출 ➔ Gemma 4 지각 기반 한국어 직접 비평 리포트 작성으로 3~5분 ➔ 20~30초 단축 및 어휘 붕괴 방지, spec/architecture/decisions/verification 위키 동기화)
+- **현재 단계 (Stage)**: `🛠️ Implementing (Step 3 구현 완료, Step 4 UI 검증 대기)`
+- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 Step 3 [Domain Service & Logic] 구현 완료 (UniPercept 단일 패스 지각 앵커 프롬프트, 디코딩 파라미터 정상화, Gemma 4 직접 심층 비평 generate_perceptual_critique 신설, chat_service 파이프라인 직결 및 UniPercept 실패 시 자율 폴백 연동, TC-CRT-11~13 100% 통과)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"03_ai_critique 도메인 Step 3 개발 진행해줘"` *(단일 패스 지각 앵커 프롬프트 및 Gemma 4 직접 비평 서비스 파이프라인 구현)*
+  > `"03_ai_critique 도메인 Step 4 개발 진행해줘"` *(프론트엔드 한/영 원문 토글 및 상세 패널 통합 회귀 검증)*
 
 ---
 
@@ -22,7 +22,7 @@
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `3/3 (100%)` | `0 / 0` | 동적 포트/IPC/모델 로더 검증 및 REFACTOR-01 해결 완료 |
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 📐 Planning | `[□□□□] 0/4` | `3/6 (50%)` | `0 / 0` | REFACTOR-01 해결 완료 (타입 일원화, Repo 캡슐화, 예외 로깅) |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 📐 Planning | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 거리 임계값 + RRF 랭킹 + 35mm/점수 필터 + 스마트 앨범 Step 1~4 대기 |
-| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🛠️ Implementing | `[■■□□] 2/4` | `10/13 (77%)` | `0 / 1` | UniPercept 지각 앵커 + Gemma 4 직접 비평 기획 완료, Step 3 대기 |
+| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🛠️ Implementing | `[■■■□] 3/4` | `13/13 (100%)` | `0 / 1` | UniPercept 지각 앵커 + Gemma 4 직접 심층 비평 Step 3 구현 완료 |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 📐 Planning | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 2` | 통계 차트 클릭 갤러리 드릴다운(`Click-to-Filter`) Step 3~4 대기 |
 
 *(※ 상태 범례: `📐 Planning` | `🛠️ Implementing` | `🧐 Auditing` | `🧪 QA Testing` | `🩹 Debugging` | `🟢 Sign-Off`)*
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-05]` `[clean-code-developer]` [`03_ai_critique`]**: Step 3 [Domain Service & Logic] 구현 및 3단 검증 완료 (`73a31cf` / UniPercept 단일 패스 지각 앵커 프롬프트 `UNIPERCEPT_VQA_SINGLE_PASS_PROMPT` 및 디코딩 파라미터 정상화, `GemmaAdapter.generate_perceptual_critique` 신설, `_execute_unipercept_critique_pipeline` 직결 개편 및 UniPercept 오류 시 Gemma 4 자율 비평 자동 폴백 연동, 단위 테스트 `TC-CRT-11~13` 통과, 백엔드 106종 및 `npm run build` 100% 통과, verification.md AC 5 100% PASS 갱신).
 
 - **`[2026-11-04]` `[interactive-feature-planner]` [`03_ai_critique`]**: UniPercept 지각 앵커 + Gemma 4 직접 심층 비평 2단계 하이브리드 파이프라인 기획 및 위키 전수 갱신 완료 (`a9b398b` / UniPercept의 VQA 어휘 붕괴/기계적 분해표 결함 해소를 위해 VR 채점 + 단일 패스 3~4문장 지각 앵커 추출로 경량화, Gemma 4가 지각 앵커를 뼈대 삼아 직접 한국어 3대 헤더 리포트를 완성하도록 파이프라인 재설계, 비평 시간 3~5분 ➔ 20~30초 단축 목표, spec.md To-Be/architecture.md/decisions.md ADR-05/verification.md AC 5 및 TC-CRT-11~13 등록 완료).
 
