@@ -162,12 +162,7 @@ def test_full_ensemble_6way_pipeline(monkeypatch):
                     text = v
                     break
         vqa_calls.append(text)
-        if "Image Aesthetics Assessment" in text or "aesthetic qualities" in text:
-            return "Striking aesthetic composition with golden hour lighting."
-        elif "Image Quality Assessment" in text or "technical image quality" in text:
-            return "Pin-sharp optical clarity with minimal sensor noise."
-        else:
-            return "Exceptional micro-contrast and rich surface textures."
+        return "Striking aesthetic composition with golden hour lighting, pin-sharp optical clarity, and rich surface textures."
 
     adapter.model = type("DummyModel", (), {"chat": mock_chat})()
     adapter.tokenizer = type("DummyTokenizer", (), {"convert_tokens_to_ids": lambda self, x: 100})()
@@ -175,9 +170,9 @@ def test_full_ensemble_6way_pipeline(monkeypatch):
     
     res = adapter.generate_full_ensemble_critique(test_img)
     
-    # Verify 3 VR calls and 3 VQA calls = 6 total calls
+    # Verify 3 VR calls and 1 single-pass integrated VQA call
     assert vr_calls == ["aesthetics", "quality", "structure and texture richness"]
-    assert len(vqa_calls) == 3
+    assert len(vqa_calls) == 1
     assert res["scores"]["iaa"] == 85.5
     assert res["scores"]["iqa"] == 90.0
     assert res["scores"]["ista"] == 80.0
@@ -185,7 +180,7 @@ def test_full_ensemble_6way_pipeline(monkeypatch):
     assert res["scores"]["overall"] == 86
     assert res["quality_score"] == 86
     assert "Striking aesthetic composition" in res["critique"]
-    assert "Pin-sharp optical clarity" in res["critique"]
+    assert "pin-sharp optical clarity" in res["critique"]
     assert "rich surface textures" in res["critique"]
 
 def test_1point_perfect_score_upgrade_logic():
@@ -278,8 +273,8 @@ def test_unipercept_prompts_strict_fidelity_and_no_emoji():
 @pytest.mark.asyncio
 async def test_chat_service_unipercept_pipeline_isolation(monkeypatch, db_session):
     """
-    Verifies that when payload.engine == 'unipercept', format_and_structure_critique
-    is NEVER called, preventing Gemma from overriding UniPercept critique content.
+    Verifies that when payload.engine == 'unipercept', generate_perceptual_critique
+    is called with perceptual anchor and format_and_structure_critique is NOT called.
     """
     from contextlib import contextmanager
     from services.chat_service import ChatService
@@ -305,12 +300,12 @@ async def test_chat_service_unipercept_pipeline_isolation(monkeypatch, db_sessio
     monkeypatch.setattr("services.chat_service.SessionLocal", mock_session_scope)
 
     mock_format_called = False
-    mock_translate_called = False
+    mock_perceptual_called = False
 
     class DummyUniPercept:
         def generate_full_ensemble_critique(self, *args, **kwargs):
             return {
-                "critique": "Raw english critique from UniPercept",
+                "critique": "Raw english anchor from UniPercept",
                 "scores": {"overall": 88, "iaa": 90, "iqa": 85, "ista": 89},
                 "quality_score": 88
             }
@@ -318,9 +313,12 @@ async def test_chat_service_unipercept_pipeline_isolation(monkeypatch, db_sessio
             pass
 
     class DummyGemma:
+        def generate_perceptual_critique(self, *args, **kwargs):
+            nonlocal mock_perceptual_called
+            mock_perceptual_called = True
+            return "Perceptual critique based on anchor"
+
         def translate_and_format_critique(self, *args, **kwargs):
-            nonlocal mock_translate_called
-            mock_translate_called = True
             return "Translated UniPercept critique"
 
         def format_and_structure_critique(self, *args, **kwargs):
@@ -334,10 +332,171 @@ async def test_chat_service_unipercept_pipeline_isolation(monkeypatch, db_sessio
     req = schemas.CritiqueRequest(photo_id=photo_id, engine="unipercept")
     result = await ChatService.generate_photo_critique(req)
 
-    assert mock_translate_called is True
+    assert mock_perceptual_called is True
     assert mock_format_called is False, "format_and_structure_critique should NOT be called for unipercept engine"
     assert "6-Way 앙상블 비평 스코어보드" in result["critique"]
-    assert "Translated UniPercept critique" in result["critique"]
+    assert "Perceptual critique based on anchor" in result["critique"]
+
+
+def test_tc_crt_11_single_pass_perceptual_anchor():
+    """
+    TC-CRT-11: UniPercept single-pass perceptual anchor extraction and vocabulary breakdown prevention.
+    Verifies that generate_perceptual_anchor_vqa calls inference with UNIPERCEPT_VQA_SINGLE_PASS_PROMPT
+    and normalized decoding parameters (repetition_penalty=1.0, do_sample=True, temp=0.7, top_p=0.9).
+    """
+    import os
+    from services.ai_parser import UNIPERCEPT_VQA_SINGLE_PASS_PROMPT
+
+    adapter = UniPerceptAdapter()
+    test_img = os.path.join(os.path.dirname(__file__), "fixtures", "test_scenic.jpg")
+    if not os.path.exists(test_img):
+        test_img = os.path.abspath("backend/tests/fixtures/test_scenic.jpg")
+
+    captured_prompt = None
+    captured_config = None
+
+    def mock_chat(self, tokenizer, pixel_values, prompt_text, generation_config=None):
+        nonlocal captured_prompt, captured_config
+        captured_prompt = prompt_text
+        captured_config = generation_config
+        return (
+            "The photo exhibits remarkable compositional harmony with balanced leading lines drawing attention into the mountain ridge. "
+            "Optical clarity is sharp across the central zone with minimal sensor grain and well-managed dynamic range. "
+            "Tactile rock textures in the foreground create tangible spatial depth against the soft atmospheric background haze."
+        )
+
+    adapter.model = type("DummyModel", (), {"chat": mock_chat})()
+    adapter.tokenizer = type("DummyTokenizer", (), {"convert_tokens_to_ids": lambda self, x: 100})()
+
+    meta = {"camera_model": "Sony A7R V", "lens_model": "FE 35mm F1.4 GM", "f_number": 1.4, "iso": 100}
+    scores = {"overall": 88, "iaa": 92, "iqa": 85, "ista": 86}
+
+    anchor = adapter.generate_perceptual_anchor_vqa(test_img, metadata=meta, scores_context=scores)
+
+    # 1. Prompt verification: contains single-pass prompt and EXIF
+    assert UNIPERCEPT_VQA_SINGLE_PASS_PROMPT in captured_prompt
+    assert "Sony A7R V" in captured_prompt
+
+    # 2. Decoding parameter normalization: repetition_penalty=1.0, do_sample=True, temp=0.7, top_p=0.9
+    assert captured_config is not None
+    assert captured_config.get("repetition_penalty") == 1.0
+    assert captured_config.get("do_sample") is True
+    assert captured_config.get("temperature") == 0.7
+    assert captured_config.get("top_p") == 0.9
+
+    # 3. Clean diagnosis: around 150-200 tokens, no broken markdown tables
+    assert len(anchor) > 100
+    assert "compositional harmony" in anchor
+    assert "Optical clarity is sharp" in anchor
+    assert "Tactile rock textures" in anchor
+    assert "## 1." not in anchor  # no robotic markdown table decay
+
+
+def test_tc_crt_12_gemma_perceptual_critique_generation():
+    """
+    TC-CRT-12: Gemma 4 direct perceptual critique generation grounded in perceptual anchor.
+    Verifies that GemmaAdapter.generate_perceptual_critique constructs system and user prompts
+    with the 3 standard headers, executive summary, and preserves scoreboard header.
+    """
+    from services.mlx_adapters import GemmaAdapter
+    from services.ai_parser import (
+        GEMMA_PERCEPTUAL_CRITIQUE_SYSTEM_PROMPT,
+        format_score_info_text
+    )
+
+    gemma = GemmaAdapter()
+    scores = {"overall": 88, "iaa": 92, "iqa": 85, "ista": 86}
+    meta = {"camera_model": "Sony A7R V", "f_number": 1.4, "iso": 100}
+    anchor = "Strong leading lines with sharp central clarity and tactile foreground textures."
+
+    # Verify prompt builder
+    messages = gemma._build_perceptual_critique_messages(meta, scores, anchor)
+    assert messages[0]["role"] == "system"
+    assert messages[0]["content"] == GEMMA_PERCEPTUAL_CRITIQUE_SYSTEM_PROMPT
+    user_text = messages[1]["content"][1]["text"]
+    assert "Sony A7R V" in user_text
+    assert "Strong leading lines" in user_text
+    assert "6-Way 앙상블 비평 스코어보드" in user_text
+
+    # Mock execute generation and preservation
+    sample_critique = (
+        "> **한 줄 총평**: 섬세한 시선 유도와 빛 모델링이 돋보이나 주변부 광량 저하가 아쉬우며, 조리개 스톱 다운과 커브 보정 시 완성도가 격상될 작품입니다.\n\n"
+        "## 1. [시각적 미학 및 EXIF 광학 진단]\n"
+        "- 전경에서 원경으로 이어지는 **황금 분할** 구도가 안정적입니다.\n\n"
+        "## 2. [구도 및 화질 결함과 왜곡 위치 지적]\n"
+        "- F1.4 개방으로 인한 주변부 **색수차**가 미세하게 관찰됩니다.\n\n"
+        "## 3. [현장 재촬영 및 보정 실전 기술 조언]\n"
+        "- 조리개를 **F2.8**로 조이고 라이트룸에서 하이라이트 롤오프를 보정하십시오."
+    )
+    score_header = format_score_info_text(scores)
+    output = f"{score_header}{sample_critique}"
+
+    # Verify 3 standard headers + executive summary + scoreboard
+    assert "## 1. [시각적 미학 및 EXIF 광학 진단]" in output
+    assert "## 2. [구도 및 화질 결함과 왜곡 위치 지적]" in output
+    assert "## 3. [현장 재촬영 및 보정 실전 기술 조언]" in output
+    assert "> **한 줄 총평**" in output
+    assert "6-Way 앙상블 비평 스코어보드" in output
+
+
+@pytest.mark.asyncio
+async def test_tc_crt_13_unipercept_failure_fallback_to_gemma(monkeypatch, db_session):
+    """
+    TC-CRT-13: UniPercept VQA error triggers graceful fallback to Gemma 4 direct critique.
+    Verifies that when UniPercept throws an exception during critique pipeline,
+    ChatService falls back to _execute_gemma_critique_pipeline and completes without error.
+    """
+    from contextlib import contextmanager
+    from services.chat_service import ChatService
+    import schemas, models
+
+    photo_id = "test_unipercept_fallback_img"
+    test_img = models.Image(
+        id=photo_id,
+        parent_dir="/test",
+        file_path="/test/fallback.jpg",
+        file_name="fallback.jpg",
+        file_size=1000,
+        file_mtime=1.0,
+        mime_type="image/jpeg"
+    )
+    db_session.add(test_img)
+    db_session.commit()
+
+    @contextmanager
+    def mock_session_scope():
+        yield db_session
+
+    monkeypatch.setattr("services.chat_service.SessionLocal", mock_session_scope)
+
+    # 1. UniPercept throws RuntimeError
+    class FailingUniPercept:
+        def generate_full_ensemble_critique(self, *args, **kwargs):
+            raise RuntimeError("MPS Device Out of Memory during UniPercept inference")
+        def unload_model(self):
+            pass
+
+    # 2. Gemma direct critique fallback
+    class FallbackGemma:
+        def generate_deep_critique(self, *args, **kwargs):
+            return "Gemma 4 직접 심층 비평 초안"
+        def format_and_structure_critique(self, text, *args, **kwargs):
+            return (
+                "> **한 줄 총평**: 자율 비평 폴백 결과입니다.\n\n"
+                "## 1. [시각적 미학 및 EXIF 광학 진단]\n- 안정적인 구도입니다.\n\n"
+                "## 2. [구도 및 화질 결함과 왜곡 위치 지적]\n- 결함 없음.\n\n"
+                "## 3. [현장 재촬영 및 보정 실전 기술 조언]\n- 현장 조작 유지."
+            )
+
+    monkeypatch.setattr("services.unipercept_adapter.get_unipercept_adapter", lambda: FailingUniPercept())
+    monkeypatch.setattr("services.chat_service.get_gemma_adapter", lambda: FallbackGemma())
+
+    req = schemas.CritiqueRequest(photo_id=photo_id, engine="unipercept")
+    result = await ChatService.generate_photo_critique(req)
+
+    assert result["status"] == "completed"
+    assert "자율 비평 폴백 결과" in result["critique"]
+    assert "## 1. [시각적 미학 및 EXIF 광학 진단]" in result["critique"]
 
 
 

@@ -274,6 +274,7 @@ async def test_chat_service_non_blocking_calls():
         mock_unipercept.return_value = mock_uni_inst
 
         mock_gemma.return_value.translate_and_format_critique.return_value = "훌륭한 구도입니다."
+        mock_gemma.return_value.generate_perceptual_critique.return_value = "훌륭한 구도입니다."
 
         res = await ChatService.generate_photo_critique(req)
 

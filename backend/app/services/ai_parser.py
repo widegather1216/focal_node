@@ -94,11 +94,41 @@ GEMMA_DOCUMENT_FORMATTING_SYSTEM_PROMPT = (
     "5. 무왜곡 및 이모티콘 금지: 1차 비평 초안의 시각적 분석 사실, 지각 수치, 결함 위치 지적을 100% 온전히 보존하십시오. 텍스트에 이모티콘(이모지)을 일체 사용하지 마십시오."
 )
 
+GEMMA_PERCEPTUAL_CRITIQUE_SYSTEM_PROMPT = (
+    "당신은 최고 권위의 국제 사진 예술 아카데미 교수이자 세계적인 갤러리 수석 큐레이터 평론가입니다.\n"
+    "제공된 사진의 시각적 레이어(피사체와 구도, 빛 모델링, 색채 조화, 표면 질감), 카메라 EXIF 광학 메타데이터, "
+    "그리고 UniPercept 정밀 지각 평가 모델이 산출한 정량 점수(IAA, IQA, ISTA)와 영문 핵심 지각 진단(Perceptual Anchor)을 종합하여, "
+    "최고 수준의 통찰력과 격조를 갖춘 공식 사진 비평 리포트 마크다운(Markdown) 문서를 작성하십시오.\n\n"
+    "[작성 및 문서 양식 5대 원칙]\n"
+    "1. 스코어보드 최상단 배치: 최상단에 제공된 `[6-Way 앙상블 비평 스코어보드]` 블록을 수치 왜곡 없이 원형 그대로 배치하십시오.\n"
+    "2. 통합 한 줄 총평 필수 작성: 스코어보드 바로 아래에 사진의 미학적 장점, 결정적 결함, 핵심 솔루션을 종합 관통하는 1~2문장의 총평을 마크다운 인용구로 작성하십시오:\n"
+    "   > **한 줄 총평**: [미학적 장점과 시선의 흐름]이 돋보이나 [결정적인 기술적 결함/아쉬움]이 관찰되며, [실전 촬영 세팅 및 보정 솔루션]을 적용할 때 완성도가 격상될 작품입니다.\n"
+    "3. 표준 3대 대분류 마크다운 헤더(##) 엄수: 본문은 반드시 다음 3개 섹션으로 구성하십시오:\n"
+    "   ## 1. [시각적 미학 및 EXIF 광학 진단]\n"
+    "   ## 2. [구도 및 화질 결함과 왜곡 위치 지적]\n"
+    "   ## 3. [현장 재촬영 및 보정 실전 기술 조언]\n"
+    "4. UniPercept 지각 앵커 수용 및 실전 솔루션 확장 (Enrichment):\n"
+    "   - UniPercept의 영문 시각적 진단(미학적 강점, 광학 결함, 재질 질감)을 핵심 뼈대로 100% 충실히 반영하십시오.\n"
+    "   - 여기에 카메라 광학 메타데이터(조리개, 셔터, ISO, 초점거리)를 연계하고, 구체적인 현장 조작(셔터/조리개/초점거리 재설정, 조명 각도, 피사체 동선) 및 후반 작업(라이트룸 톤 커브, HSL 색조, 텍스처/명료도) 실전 조언을 풍부하게 살붙이십시오.\n"
+    "5. 가독성 극대화 및 이모티콘 일체 금지:\n"
+    "   - 각 섹션은 1~2문장의 '핵심 진단 문단'과 세부 분석/솔루션을 담은 '마크다운 불릿 리스트(- )' 2~3개로 체계적으로 분할하십시오.\n"
+    "   - 주요 광학 수치 및 핵심 전문 용어(예: **황금 분할**, **색수차**, **하이라이트 롤오프**, **F2.8**)는 볼드(**단어**)로 강조하십시오.\n"
+    "   - 텍스트 본문에 이모티콘(이모지)을 절대 사용하지 마십시오."
+)
+
 UNIPERCEPT_VR_SCORE_PROMPT = (
     "Rate this photo from 1 to 100 across 3 perceptual dimensions. Output ONLY the numeric scores without any explanation in this exact format:\n\n"
     "Aesthetic Score: [1-100]\n"
     "Quality Score: [1-100]\n"
     "Structure Score: [1-100]"
+)
+
+UNIPERCEPT_VQA_SINGLE_PASS_PROMPT = (
+    "Provide a concise, unified perceptual evaluation of this photograph in 3-4 cohesive sentences (around 150-200 tokens):\n"
+    "1. Aesthetics & Composition: Identify the primary aesthetic strengths, compositional balance, visual rhythm, and lighting modeling.\n"
+    "2. Technical Quality & Distortions: Pinpoint any notable optical defects (defocus blur, sensor noise, chromatic aberration, exposure clipping) or state if technically clean.\n"
+    "3. Structure & Surface Textures: Describe tactile micro-textures, material properties, and layer separation across depth planes.\n"
+    "Synthesize these observations into a natural, integrated English diagnosis without robotic category labels or bullet points."
 )
 
 UNIPERCEPT_VQA_IAA_PROMPT = (
@@ -247,6 +277,29 @@ def format_critique_document_structuring_user_prompt(
         "   - ## 2. [구도 및 화질 결함과 왜곡 위치 지적]\n"
         "   - ## 3. [현장 재촬영 및 보정 실전 기술 조언]\n"
         "4. 각 섹션마다 1~2문장의 핵심 총평 문단과 세부 분석/솔루션 불릿 포인트('- ')로 분할하고, 주요 수치/전문 용어는 볼드('**') 강조하십시오. 텍스트에 이모티콘은 절대 사용하지 마십시오."
+    )
+
+
+def format_perceptual_critique_user_prompt(
+    perceptual_anchor: str,
+    scores_dict: dict | None = None,
+    metadata: dict | None = None
+) -> str:
+    """
+    Formats the user prompt for Gemma 4 to directly generate deep Korean critique
+    grounded in UniPercept's VR scores and perceptual anchor diagnosis.
+    """
+    score_info = format_score_info_text(scores_dict)
+    exif_text = format_exif_text(metadata)
+    anchor_clean = perceptual_anchor.strip() if perceptual_anchor else "N/A"
+    return (
+        f"{score_info}"
+        f"{exif_text}"
+        f"[UniPercept 지각 평가 모델의 핵심 시각 진단 (Perceptual Anchor)]\n"
+        f"{anchor_clean}\n\n"
+        "[심층 비평 작성 지침 - 이모티콘 사용 금지]\n"
+        "위 사진 픽셀, EXIF 광학 데이터, 스코어보드 점수, 그리고 UniPercept 핵심 지각 진단(Anchor)을 직접 종합하여 "
+        "지침에 따라 스코어보드, 한 줄 총평, 그리고 3대 표준 섹션(## 1, ## 2, ## 3)을 완벽히 갖춘 고품질 한국어 비평 리포트를 작성하십시오."
     )
 
 

@@ -504,6 +504,74 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             ("ista", UNIPERCEPT_VQA_ISTA_PROMPT, "구조·재질 비평 (ISTA)", 6, 75),
         ]
 
+    def generate_perceptual_anchor_vqa(
+        self,
+        image_path: str,
+        metadata: Optional[Dict[str, Any]] = None,
+        scores_context: Optional[Dict[str, Any]] = None,
+        photo_id: Optional[str] = None
+    ) -> str:
+        """
+        Runs single-pass integrated perceptual VQA to extract a 3-4 sentence
+        cohesive visual diagnosis anchor (150-200 tokens) covering aesthetics,
+        optical distortions, and surface textures.
+        Uses normalized decoding parameters (repetition_penalty=1.0, do_sample=True,
+        temperature=0.7, top_p=0.9) to eliminate vocabulary collapse.
+        """
+        with GPU_LOCK:
+            with self.lock:
+                self._load_model_locked()
+                self.active_requests += 1
+
+        try:
+            if (not os.path.exists(image_path) and not hasattr(self.model, "chat")) or self.model is None:
+                return "The image could not be analyzed or the model is not loaded."
+
+            if photo_id:
+                from services.critique_status import critique_status_manager
+                critique_status_manager.check_cancelled(photo_id)
+                critique_status_manager.update(photo_id, 2, 4, "[UniPercept] 지각 앵커 분석 중...", 50)
+
+            t_start = time.time()
+            from services.ai_parser import UNIPERCEPT_VQA_SINGLE_PASS_PROMPT
+
+            pil_img = self._load_pil_image(image_path)
+            exif_desc = self._format_exif_desc(metadata)
+            score_desc = self._format_score_guidance_desc(scores_context)
+            prompt_text = f"{exif_desc}{score_desc}{UNIPERCEPT_VQA_SINGLE_PASS_PROMPT}"
+            pixel_values = self._prepare_pixel_values(pil_img)
+
+            generation_config = dict(
+                max_new_tokens=512,
+                do_sample=True,
+                temperature=0.7,
+                top_p=0.9,
+                repetition_penalty=1.0
+            )
+
+            try:
+                anchor_text = self._run_single_vqa_domain_inference(
+                    prompt_text, pixel_values, pil_img, generation_config
+                )
+            except Exception as eval_err:
+                print(f"[UniPercept] ❌ Single-pass perceptual VQA error: {eval_err}", flush=True)
+                anchor_text = f"Perceptual analysis error: {eval_err}"
+            finally:
+                del pixel_values
+                if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+                    try:
+                        torch.mps.empty_cache()
+                    except Exception as clear_err:
+                        print(f"[UniPerceptAdapter] Anchor cache clear note: {clear_err}", flush=True)
+
+            elapsed = time.time() - t_start
+            print(f"[UniPercept] ✅ Single-pass perceptual anchor generated ({len(anchor_text)} chars, {elapsed:.2f}초)", flush=True)
+            return anchor_text
+        finally:
+            with self.lock:
+                self.last_used_time = time.time()
+                self.active_requests -= 1
+
     def _execute_all_vqa_steps(
         self,
         exif_desc: str,
@@ -590,14 +658,11 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         scores_context: Optional[Dict[str, Any]] = None,
         photo_id: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Backward-compatible single VQA critique generator with optional score conditioning & photo_id."""
-        res_3way = self.generate_vqa_critiques_3way(image_path, metadata, scores_context=scores_context, photo_id=photo_id)
-        merged = (
-            f"[Aesthetics & Composition]\n{res_3way.get('iaa', '')}\n\n"
-            f"[Technical Quality & Clarity]\n{res_3way.get('iqa', '')}\n\n"
-            f"[Structure & Textural Details]\n{res_3way.get('ista', '')}"
+        """Single-pass perceptual VQA critique generator with score conditioning & photo_id."""
+        anchor = self.generate_perceptual_anchor_vqa(
+            image_path, metadata=metadata, scores_context=scores_context, photo_id=photo_id
         )
-        return {"critique": merged}
+        return {"critique": anchor}
 
     def generate_unipercept_critique(
         self,
@@ -876,19 +941,20 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         }
         print(f"[UniPerceptAdapter] [Stage 1/2] VR Scores computed: Overall={final_overall}, IAA={final_iaa}, IQA={final_iqa}, ISTA={final_ista}", flush=True)
 
-        print("[UniPerceptAdapter] [Stage 2/2] Generating 3-Way VQA deep critiques...", flush=True)
-        # 2. Stage 2: VQA Mode (Score-Conditioned Photographic Critique)
-        vqa_result = self.generate_vqa_critique(image_path, metadata=metadata, scores_context=scores_summary, photo_id=photo_id)
+        print("[UniPerceptAdapter] [Stage 2/2] Generating single-pass perceptual anchor...", flush=True)
+        # 2. Stage 2: Single-pass VQA (Score-Conditioned Perceptual Anchor)
+        anchor_text = self.generate_perceptual_anchor_vqa(
+            image_path, metadata=metadata, scores_context=scores_summary, photo_id=photo_id
+        )
         if photo_id:
             critique_status_manager.check_cancelled(photo_id)
-        vqa_critique = vqa_result["critique"]
         print("[UniPerceptAdapter] UniPercept full ensemble critique generation finished.", flush=True)
 
         return {
-            "critique": vqa_critique,
+            "critique": anchor_text,
             "quality_score": final_overall,
             "scores": scores_summary,
-            "text_comp": vqa_critique,
+            "text_comp": anchor_text,
             "raw_vr_text": vr_result.get("raw_vr_text", "")
         }
 

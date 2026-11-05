@@ -338,6 +338,122 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                 self.last_used_time = time.time()
                 self.active_requests -= 1
 
+    @staticmethod
+    def _build_perceptual_critique_messages(
+        metadata: Optional[dict],
+        scores_dict: Optional[dict],
+        perceptual_anchor: Optional[str]
+    ) -> list:
+        from services.ai_parser import (
+            GEMMA_PERCEPTUAL_CRITIQUE_SYSTEM_PROMPT,
+            format_perceptual_critique_user_prompt
+        )
+        user_prompt = format_perceptual_critique_user_prompt(
+            perceptual_anchor=perceptual_anchor or "",
+            scores_dict=scores_dict,
+            metadata=metadata
+        )
+        return [
+            {"role": "system", "content": GEMMA_PERCEPTUAL_CRITIQUE_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image"},
+                    {"type": "text", "text": user_prompt}
+                ]
+            }
+        ]
+
+    def _execute_perceptual_critique_generation(
+        self,
+        messages: list,
+        image_path: str,
+        scores_dict: Optional[dict],
+        photo_id: Optional[str]
+    ) -> str:
+        from services.critique_status import critique_status_manager, CritiqueCancelledException
+        from services.ai_parser import format_score_info_text
+        with GPU_LOCK:
+            if photo_id:
+                critique_status_manager.check_cancelled(photo_id)
+            try:
+                import mlx.core as mx
+                mx.clear_cache()
+                gc.collect()
+
+                tokenizer = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
+                prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+
+                from mlx_vlm import generate
+                from utils.image import is_raw_image, decode_raw_to_pil
+
+                if is_raw_image(image_path):
+                    image_input = decode_raw_to_pil(image_path)
+                else:
+                    image_input = image_path
+
+                result = generate(self.model, self.processor, prompt=prompt, image=image_input, max_tokens=3072, verbose=False)
+                output = (result.text if hasattr(result, "text") else str(result)).strip()
+
+                if scores_dict and "앙상블 비평 스코어보드" not in output:
+                    output = f"{format_score_info_text(scores_dict)}{output}"
+                return output
+            except CritiqueCancelledException:
+                raise
+            except RuntimeError as e:
+                print(f"[GemmaAdapter] MLX OOM during perceptual critique: {e}. Recovering...", flush=True)
+                try:
+                    import mlx.core as mx
+                    mx.clear_cache()
+                except Exception as clear_err:
+                    print(f"[GemmaAdapter] Cache clear note: {clear_err}", flush=True)
+                gc.collect()
+                return "시스템 메모리가 부족하여 비평을 완료하지 못했습니다. 불필요한 앱을 종료 후 다시 시도해주세요."
+            except Exception as e:
+                print(f"[GemmaAdapter] Unexpected perceptual critique inference error: {e}", flush=True)
+                return "사진 비평 생성 중 알 수 없는 오류가 발생했습니다."
+
+    def generate_perceptual_critique(
+        self,
+        image_path: str,
+        metadata: Optional[dict] = None,
+        scores_dict: Optional[dict] = None,
+        perceptual_anchor: Optional[str] = None,
+        photo_id: Optional[str] = None
+    ) -> str:
+        """
+        Directly generates deep Korean photo critique report grounded in
+        UniPercept's VR scores and single-pass perceptual anchor diagnosis,
+        combining photo visual features, EXIF data, and expert photography insights.
+        """
+        from services.critique_status import critique_status_manager, CritiqueCancelledException
+        if photo_id:
+            critique_status_manager.check_cancelled(photo_id)
+            critique_status_manager.update(photo_id, 3, 4, "[Gemma] 지각 앵커 기반 심층 비평 작성 중...", 75)
+
+        with GPU_LOCK:
+            with self.lock:
+                self._load_model_locked()
+                self.last_used_time = time.time()
+                self.active_requests += 1
+
+        try:
+            if photo_id:
+                critique_status_manager.check_cancelled(photo_id)
+
+            t_start = time.time()
+            messages = self._build_perceptual_critique_messages(metadata, scores_dict, perceptual_anchor)
+            output = self._execute_perceptual_critique_generation(messages, image_path, scores_dict, photo_id)
+            elapsed = time.time() - t_start
+            print(f"[GemmaAdapter] ✅ Direct perceptual critique generated ({len(output)} chars, {elapsed:.2f}s)", flush=True)
+            return output
+        except CritiqueCancelledException:
+            raise
+        finally:
+            with self.lock:
+                self.last_used_time = time.time()
+                self.active_requests -= 1
+
     def generate_critique_summary(self, critiques_list: list[dict]) -> str:
         with GPU_LOCK:
             with self.lock:

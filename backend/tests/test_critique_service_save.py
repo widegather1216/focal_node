@@ -278,7 +278,7 @@ async def test_generate_photo_critique_unipercept_pipeline_end_to_end(db_session
 
     # Mock Gemma adapter
     mock_gemma_inst = MagicMock()
-    mock_gemma_inst.translate_and_format_critique.return_value = (
+    critique_output = (
         "[6-Way 앙상블 비평 스코어보드]\n"
         "- 최종 종합 평점: 88.5점 / 100점\n"
         "- 미학 및 구도 (IAA): 92.0점\n"
@@ -286,6 +286,8 @@ async def test_generate_photo_critique_unipercept_pipeline_end_to_end(db_session
         "- 구조 및 질감 (ISTA): 88.5점\n\n"
         "한국어로 정제된 비평 본문입니다."
     )
+    mock_gemma_inst.generate_perceptual_critique.return_value = critique_output
+    mock_gemma_inst.translate_and_format_critique.return_value = critique_output
     monkeypatch.setattr("services.chat_service.get_gemma_adapter", lambda: mock_gemma_inst)
 
     req = schemas.CritiqueRequest(photo_id=photo_id, engine="unipercept")
