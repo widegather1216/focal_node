@@ -1,17 +1,17 @@
 # 🧭 Focal Node: Master Control Tower (Living Wiki Hub)
 
 > 외부 클라우드 전송 없이 Mac Native(Apple MLX & PyTorch MPS)로 구동되는 **프라이버시 보호 로컬 사진 관리 및 AI 시맨틱 검색/비평 데스크탑 플랫폼**입니다.
-> **최종 업데이트**: 2026-11-05 (by `clean-code-developer`)
+> **최종 업데이트**: 2026-11-06 (by `clean-code-auditor`)
 
 ---
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
 - **Active 도메인**: [`03_ai_critique`](./features/03_ai_critique/README.md)
-- **현재 단계 (Stage)**: `🧐 Auditing (전 계층 Step 1~4 구현 및 3단 검증 완료, 품질 감사 대기)`
-- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 Step 4 [UI & Integration] 검증 완료 (한/영 원문 토글 카드 연계, 마크다운 AST 파서 정규식 및 헤더 테마 분류 우선순위 보강, 마크다운 내보내기 영문 앵커 부록 연동, 3단 검증 PASS 및 스펙 승격 병합)
+- **현재 단계 (Stage)**: `🩹 Debugging (UniPercept 취소 미해제 DEFECT-02·VQA 불능 DEFECT-03 및 REFACTOR 6건 해결 대기)`
+- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 전 계층 7대 감사 완료 및 UniPercept 중단 시 28GB 메모리 미해제(`DEFECT-02`)·`transformers 5.x` VQA `return_dict` 충돌(`DEFECT-03`) 근본 원인 규명 및 티켓 등록
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"03_ai_critique 도메인 클린코드 품질 감사 진행해줘"` *(전 계층 정적 분석 및 클린코드 품질 감사)*
+  > `"03_ai_critique 도메인의 DEFECT-02 티켓 해결해줘"` *(최우선 런타임 메모리 결함 수술적 해결)*
 
 ---
 
@@ -22,7 +22,7 @@
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `3/3 (100%)` | `0 / 0` | 동적 포트/IPC/모델 로더 검증 및 REFACTOR-01 해결 완료 |
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 📐 Planning | `[□□□□] 0/4` | `3/6 (50%)` | `0 / 0` | REFACTOR-01 해결 완료 (타입 일원화, Repo 캡슐화, 예외 로깅) |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 📐 Planning | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 거리 임계값 + RRF 랭킹 + 35mm/점수 필터 + 스마트 앨범 Step 1~4 대기 |
-| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🧐 Auditing | `[■■■■] 4/4` | `13/13 (100%)` | `0 / 1` | UniPercept 지각 앵커 + Gemma 4 직접 심층 비평 Step 1~4 전 계층 구현 및 검증 완료 |
+| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `11/13 (85%)` | `2 / 6` | UniPercept 취소 미해제(`DEFECT-02`)·VQA 불능(`DEFECT-03`) 및 `REFACTOR` 6건 대기 |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 📐 Planning | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 2` | 통계 차트 클릭 갤러리 드릴다운(`Click-to-Filter`) Step 3~4 대기 |
 
 *(※ 상태 범례: `📐 Planning` | `🛠️ Implementing` | `🧐 Auditing` | `🧪 QA Testing` | `🩹 Debugging` | `🟢 Sign-Off`)*
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-06]` `[clean-code-auditor]` [`03_ai_critique`]**: 3개 계층 전수 정적 분석(`tsc`, `vite build`, `pytest` 106종 PASS), 7대 감사 매트릭스 점검 및 UniPercept 런타임 2대 결함 원인 규명 완료 (`d848988` / 비평 중단 시 `asyncio.to_thread` 워커 스레드 레이스/취소 전 재로드로 인한 28GB 메모리 미해제 `DEFECT-02`, `transformers==5.12.1` `return_dict` 중복 인자 충돌로 인한 VQA 100% `TypeError` 및 예외 문자열 은폐 `DEFECT-03`, `CritiqueDocumentModal` Hooks 크래시/PDF XSS 등 `REFACTOR-03~08` 총 `DEFECT 2건`·`REFACTOR 6건` 등록).
 
 - **`[2026-11-05]` `[clean-code-developer]` [`03_ai_critique`]**: Step 4 [UI & Integration] 검증, 마크다운 AST 파서 정규식 보강, 3단 검증 및 위키 승격 병합 완료 (`9081f9c` / `critiqueParser.tsx` 헤더 테마 우선순위 정비 및 제목 바깥 괄호/볼드 정제, `critiqueExporter.ts` 영문 원문 부록 연동, `OriginalEnglishCritiqueCard` 및 `PhotoCritiqueView`/`CritiqueDocumentModal` 회귀 검증, `npx tsc --noEmit` & `npm run build` 통과, 백엔드 106종 회귀 테스트 100% 통과, `spec.md` As-Is 승격 병합 및 Step 1~4 완료 처리).
 

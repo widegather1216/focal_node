@@ -36,6 +36,7 @@
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
 - **Recent Commits**:
+  - `d848988` - `docs(critique): record code audit matrix findings and register defect tickets`
   - `9081f9c` - `docs(critique): promote hybrid pipeline spec to As-Is and complete step 4`
   - `a3afb63` - `fix(critique): improve markdown parser header tagging and export English anchor appendix`
   - `73a31cf` - `feat(critique): implement hybrid perceptual anchor critique pipeline`
