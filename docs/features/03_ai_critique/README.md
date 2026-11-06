@@ -1,7 +1,7 @@
 # 🤖 [03_ai_critique] On-Demand AI Critique & Editorial Export
 
-- **현재 상태 (Lifecycle)**: `🟡 In Progress (UniPercept 지각 앵커 + Gemma 4 직접 심층 비평 Step 3 구현 완료 / Step 4 UI 검증 대기)`
-- **구현 진척도**: `[■■■□] 3/4 Steps (Active Iteration Step 1~3 완료 / Step 4 대기)`
+- **현재 상태 (Lifecycle)**: `🧐 Auditing (UniPercept 지각 앵커 + Gemma 4 직접 심층 비평 전 계층 Step 1~4 구현 및 3단 검증 완료)`
+- **구현 진척도**: `[■■■■] 4/4 Steps (Active Iteration Step 1~4 구현 완료)`
 - **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
@@ -20,9 +20,9 @@
 - [x] **Step 2 [Data Access & API]**: `[N/A - 기존 POST /api/chat/critique 및 응답 스키마 100% 호환]`
 - [x] **Step 3 [Domain Service & Logic]**: 단일 패스 지각 앵커 프롬프트 및 Gemma 4 직접 비평 서비스 파이프라인 구현 완료
   - 📂 구현: [`chat_service.py`](../../../backend/app/services/chat_service.py), [`mlx_adapters.py`](../../../backend/app/services/mlx_adapters.py), [`unipercept_adapter.py`](../../../backend/app/services/unipercept_adapter.py), [`ai_parser.py`](../../../backend/app/services/ai_parser.py) | 🧪 테스트: [`test_unipercept.py`](../../../backend/tests/test_unipercept.py) (`TC-CRT-11~13` PASS, 16 passed)
-- [ ] **Step 4 [UI & Integration]**:
-  - 프론트엔드 한/영 원문 토글 카드(`OriginalEnglishCritiqueCard.tsx`) 및 상세 패널 통합 회귀 검증
-  - 🧪 검증: `npm run build` 및 엔드투엔드 비평 생성/취소 회귀 검증
+- [x] **Step 4 [UI & Integration]**:
+  - 프론트엔드 한/영 원문 토글 카드([`OriginalEnglishCritiqueCard.tsx`](../../../src/components/critique/OriginalEnglishCritiqueCard.tsx)), AST 파서 헤더/테마 보강([`critiqueParser.tsx`](../../../src/utils/critiqueParser.tsx)) 및 마크다운 내보내기 연계([`critiqueExporter.ts`](../../../src/utils/critiqueExporter.ts)) 점검
+  - 🧪 검증: `npx tsc --noEmit`, `npm run build` 및 백엔드 106종 전체 회귀 PASS
 
 ### ✅ Previous Baseline (As-Is 기구현 완료)
 - [x] `ai_analysis` 테이블, 비평 요청/응답/상태 스키마 및 프론트엔드 `CritiqueStatus` 타입
@@ -36,20 +36,22 @@
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
 - **Recent Commits**:
+  - `9081f9c` - `docs(critique): promote hybrid pipeline spec to As-Is and complete step 4`
+  - `a3afb63` - `fix(critique): improve markdown parser header tagging and export English anchor appendix`
   - `73a31cf` - `feat(critique): implement hybrid perceptual anchor critique pipeline`
   - `a9b398b` - `docs(critique): specify hybrid perceptual anchor pipeline with gemma 4 direct critique`
   - `756e6be` - `refactor(critique): eliminate silent fail blocks and decompose long adapter methods`
   - `1f0151c` - `refactor(critique): decompose monolithic critique components for SRP conformance`
-- **직전 완료 작업**: `2026-11-05 / clean-code-developer / Step 3 [Domain Service & Logic] 구현 및 3단 검증 완료 (단일 패스 지각 앵커 UNIPERCEPT_VQA_SINGLE_PASS_PROMPT, 디코딩 파라미터 정상화, Gemma 4 직접 심층 비평 generate_perceptual_critique 신설, chat_service 파이프라인 직결 및 UniPercept 실패 시 자율 폴백 연동, TC-CRT-11~13 100% 통과)`
+- **직전 완료 작업**: `2026-11-05 / clean-code-developer / Step 4 [UI & Integration] 검증, 마크다운 AST 파서 정규식/테마 패턴 보강, 3단 검증(tsc, build, pytest 106종) PASS 및 위키 승격 병합 완료`
 - **구현된 핵심 사항**:
-  1. `ai_parser.py`: `UNIPERCEPT_VQA_SINGLE_PASS_PROMPT`, `GEMMA_PERCEPTUAL_CRITIQUE_SYSTEM_PROMPT`, `format_perceptual_critique_user_prompt` 정의
-  2. `unipercept_adapter.py`: `generate_perceptual_anchor_vqa` 구현 (`repetition_penalty=1.0`, `do_sample=True`, `temperature=0.7`, `top_p=0.9`) 및 `generate_full_ensemble_critique` 연동
-  3. `mlx_adapters.py`: `GemmaAdapter.generate_perceptual_critique` 신설 (사진 픽셀+EXIF+VR점수+지각앵커 직접 종합, 스코어보드 원형 보존)
-  4. `chat_service.py`: `_execute_unipercept_critique_pipeline` 개편 (2단계 번역 폐지 후 지각 앵커 기반 직결 호출, UniPercept 10초 내 완료 및 즉시 언로드, VQA 오류 시 Gemma 4 자율 비평 자동 폴백)
+  1. `critiqueParser.tsx`: 6-Way 스코어보드 추출 폴백 추가, `determineThemeType` 테마 분류 우선순위(`defect` 및 `advice` 우선 매칭으로 결함 섹션 태깅 정상화), 섹션 제목 바깥 대괄호 `[...]` 및 볼드 `**...**` 정제 유틸 추가
+  2. `critiqueExporter.ts`: 마크다운 리포트 내보내기 시 `photo.ai_analysis.critique_en` 부록 자동 첨부 연계
+  3. `PhotoCritiqueView.tsx` / `CritiqueDocumentModal.tsx` / `OriginalEnglishCritiqueCard.tsx`: UniPercept 8B VQA 영문 앵커 토글 및 3대 표준 헤더 AST 마크다운 렌더링 정상 동작 확인
+  4. 3단 검증: `npx tsc --noEmit` 통과, `npm run build` 번들 빌드 성공, `./venv/bin/pytest backend/tests/ -v` 106종 전체 회귀 100% 통과
 - **검증 완료된 테스트 실행 명령어**:
-  - `./venv/bin/pytest backend/tests/test_unipercept.py -v` (`16 passed`)
-  - `./venv/bin/pytest backend/tests/ -v` (`106 passed`)
+  - `npx tsc --noEmit` (`PASS`)
   - `npm run build` (`PASS`)
+  - `./venv/bin/pytest backend/tests/ -v` (`106 passed`)
 - **다음 세션 포커스 및 추천 실행 프롬프트**:
-  - `03_ai_critique` 도메인의 Step 4 [UI & Integration] 검증을 진행합니다.
-  - 👉 추천 프롬프트: `"03_ai_critique 도메인 Step 4 개발 진행해줘"`
+  - `03_ai_critique` 도메인의 클린코드 품질 감사를 진행합니다.
+  - 👉 추천 프롬프트: `"03_ai_critique 도메인 클린코드 품질 감사 진행해줘"`

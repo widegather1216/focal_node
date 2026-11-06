@@ -1,17 +1,17 @@
 # 🧭 Focal Node: Master Control Tower (Living Wiki Hub)
 
 > 외부 클라우드 전송 없이 Mac Native(Apple MLX & PyTorch MPS)로 구동되는 **프라이버시 보호 로컬 사진 관리 및 AI 시맨틱 검색/비평 데스크탑 플랫폼**입니다.
-> **최종 업데이트**: 2026-11-04 (by `interactive-feature-planner`)
+> **최종 업데이트**: 2026-11-05 (by `clean-code-developer`)
 
 ---
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
 - **Active 도메인**: [`03_ai_critique`](./features/03_ai_critique/README.md)
-- **현재 단계 (Stage)**: `🛠️ Implementing (Step 3 구현 완료, Step 4 UI 검증 대기)`
-- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 Step 3 [Domain Service & Logic] 구현 완료 (UniPercept 단일 패스 지각 앵커 프롬프트, 디코딩 파라미터 정상화, Gemma 4 직접 심층 비평 generate_perceptual_critique 신설, chat_service 파이프라인 직결 및 UniPercept 실패 시 자율 폴백 연동, TC-CRT-11~13 100% 통과)
+- **현재 단계 (Stage)**: `🧐 Auditing (전 계층 Step 1~4 구현 및 3단 검증 완료, 품질 감사 대기)`
+- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 Step 4 [UI & Integration] 검증 완료 (한/영 원문 토글 카드 연계, 마크다운 AST 파서 정규식 및 헤더 테마 분류 우선순위 보강, 마크다운 내보내기 영문 앵커 부록 연동, 3단 검증 PASS 및 스펙 승격 병합)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"03_ai_critique 도메인 Step 4 개발 진행해줘"` *(프론트엔드 한/영 원문 토글 및 상세 패널 통합 회귀 검증)*
+  > `"03_ai_critique 도메인 클린코드 품질 감사 진행해줘"` *(전 계층 정적 분석 및 클린코드 품질 감사)*
 
 ---
 
@@ -22,7 +22,7 @@
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `3/3 (100%)` | `0 / 0` | 동적 포트/IPC/모델 로더 검증 및 REFACTOR-01 해결 완료 |
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 📐 Planning | `[□□□□] 0/4` | `3/6 (50%)` | `0 / 0` | REFACTOR-01 해결 완료 (타입 일원화, Repo 캡슐화, 예외 로깅) |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 📐 Planning | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 거리 임계값 + RRF 랭킹 + 35mm/점수 필터 + 스마트 앨범 Step 1~4 대기 |
-| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🛠️ Implementing | `[■■■□] 3/4` | `13/13 (100%)` | `0 / 1` | UniPercept 지각 앵커 + Gemma 4 직접 심층 비평 Step 3 구현 완료 |
+| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🧐 Auditing | `[■■■■] 4/4` | `13/13 (100%)` | `0 / 1` | UniPercept 지각 앵커 + Gemma 4 직접 심층 비평 Step 1~4 전 계층 구현 및 검증 완료 |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 📐 Planning | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 2` | 통계 차트 클릭 갤러리 드릴다운(`Click-to-Filter`) Step 3~4 대기 |
 
 *(※ 상태 범례: `📐 Planning` | `🛠️ Implementing` | `🧐 Auditing` | `🧪 QA Testing` | `🩹 Debugging` | `🟢 Sign-Off`)*
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-05]` `[clean-code-developer]` [`03_ai_critique`]**: Step 4 [UI & Integration] 검증, 마크다운 AST 파서 정규식 보강, 3단 검증 및 위키 승격 병합 완료 (`9081f9c` / `critiqueParser.tsx` 헤더 테마 우선순위 정비 및 제목 바깥 괄호/볼드 정제, `critiqueExporter.ts` 영문 원문 부록 연동, `OriginalEnglishCritiqueCard` 및 `PhotoCritiqueView`/`CritiqueDocumentModal` 회귀 검증, `npx tsc --noEmit` & `npm run build` 통과, 백엔드 106종 회귀 테스트 100% 통과, `spec.md` As-Is 승격 병합 및 Step 1~4 완료 처리).
 
 - **`[2026-11-05]` `[clean-code-developer]` [`03_ai_critique`]**: Step 3 [Domain Service & Logic] 구현 및 3단 검증 완료 (`73a31cf` / UniPercept 단일 패스 지각 앵커 프롬프트 `UNIPERCEPT_VQA_SINGLE_PASS_PROMPT` 및 디코딩 파라미터 정상화, `GemmaAdapter.generate_perceptual_critique` 신설, `_execute_unipercept_critique_pipeline` 직결 개편 및 UniPercept 오류 시 Gemma 4 자율 비평 자동 폴백 연동, 단위 테스트 `TC-CRT-11~13` 통과, 백엔드 106종 및 `npm run build` 100% 통과, verification.md AC 5 100% PASS 갱신).
 
