@@ -1,8 +1,8 @@
 # 🤖 [03_ai_critique] On-Demand AI Critique & Editorial Export
 
-- **현재 상태 (Lifecycle)**: `🧐 Auditing (UniPercept 지각 앵커 + Gemma 4 직접 심층 비평 전 계층 Step 1~4 구현 및 3단 검증 완료)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (UniPercept 취소 미해제 DEFECT-02·VQA 불능 DEFECT-03 및 REFACTOR 6건 해결 대기)`
 - **구현 진척도**: `[■■■■] 4/4 Steps (Active Iteration Step 1~4 구현 완료)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 2건` | `🧐 REFACTOR: 6건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -42,16 +42,22 @@
   - `a9b398b` - `docs(critique): specify hybrid perceptual anchor pipeline with gemma 4 direct critique`
   - `756e6be` - `refactor(critique): eliminate silent fail blocks and decompose long adapter methods`
   - `1f0151c` - `refactor(critique): decompose monolithic critique components for SRP conformance`
-- **직전 완료 작업**: `2026-11-05 / clean-code-developer / Step 4 [UI & Integration] 검증, 마크다운 AST 파서 정규식/테마 패턴 보강, 3단 검증(tsc, build, pytest 106종) PASS 및 위키 승격 병합 완료`
-- **구현된 핵심 사항**:
-  1. `critiqueParser.tsx`: 6-Way 스코어보드 추출 폴백 추가, `determineThemeType` 테마 분류 우선순위(`defect` 및 `advice` 우선 매칭으로 결함 섹션 태깅 정상화), 섹션 제목 바깥 대괄호 `[...]` 및 볼드 `**...**` 정제 유틸 추가
-  2. `critiqueExporter.ts`: 마크다운 리포트 내보내기 시 `photo.ai_analysis.critique_en` 부록 자동 첨부 연계
-  3. `PhotoCritiqueView.tsx` / `CritiqueDocumentModal.tsx` / `OriginalEnglishCritiqueCard.tsx`: UniPercept 8B VQA 영문 앵커 토글 및 3대 표준 헤더 AST 마크다운 렌더링 정상 동작 확인
-  4. 3단 검증: `npx tsc --noEmit` 통과, `npm run build` 번들 빌드 성공, `./venv/bin/pytest backend/tests/ -v` 106종 전체 회귀 100% 통과
+- **직전 완료 작업**: `2026-11-06 / clean-code-auditor / 전 계층 7대 매트릭스 감사 및 UniPercept 취소 미해제(DEFECT-02)·VQA 불능(DEFECT-03) 근본 원인 규명 완료 (DEFECT 2건·REFACTOR 6건 대기)`
+- **감사 완료 범위 및 핵심 발견 사항**:
+  1. **정적 분석기 결과**: `npx tsc --noEmit` (`PASS`), `npm run build` (`PASS`), `./venv/bin/pytest backend/tests/ -v` (`106 passed`), `transformers==5.12.1` `generate` 재현 검증 완료
+  2. **🚨 핵심 런타임 결함 (`DEFECT-02~03` — 최우선 해결)**:
+     - `DEFECT-02` (`TC-CRT-10 FAIL`): 비평 중단 시 `task.cancel()`이 코루틴만 먼저 종료해 `self.model is None`(로딩 중) 상태에서 빈 `unload_model()`이 실행되거나, `generate_perceptual_anchor_vqa`가 `check_cancelled` 전에 `_load_model_locked()`를 호출해 28GB를 디스크에서 재적재 후 방치함
+     - `DEFECT-03` (`TC-CRT-11 FAIL`): `transformers==5.12.1`의 `_prefill(..., return_dict=True)`와 `InternVLChatModel.chat()`의 `return_dict=None` 전달이 충돌하여 VQA가 100% `TypeError`로 실패하고, `#L556-L558` 예외 삼킴으로 인해 `"Perceptual analysis error: ..."` 문자열이 정상 앵커로 위장 저장됨
+  3. **🔴 Must Fix 리팩토링 (`REFACTOR-04~07`)**:
+     - `REFACTOR-04`: `CritiqueDocumentModal.tsx` 조기 `return null` 이후 `useMemo` 호출로 인한 모달 오픈 즉시 런타임 크래시·전역 키 가로채기 및 PDF 내보내기 미이스케이프 `innerHTML`(XSS)·다크 인라인 색상 역전
+     - `REFACTOR-05`: `PATCH /api/photos/{id}/metadata` 응답의 비평/평점 필드 누락(캐시 유실), `DELETE /critique/{id}` 후 인메모리 상태 미삭제 부활, 취소 시 워커 스레드 `task.cancel()` 비스레드안전 호출 및 `PhotoRepository` 우회 쿼리
+     - `REFACTOR-06`: `unipercept_adapter`/`unipercept_utils` 상단 `torch`/`transformers` Eager Import(Rule 2.5), Gemma 추론 예외 문자열 반환(DB 오염), RAW 저해상도(`min_dimension=None`)/중복 디코딩 및 `GPU_LOCK`/메모리 누수
+     - `REFACTOR-07`: 프로덕션 미임포트 허수 테스트(`test_ensemble_math.py`, `TC-CRT-12`) 실검증 전환 및 `/api/chat/*` 누락 라우트 테스트 보강
+  4. **🟡 Should Fix (`REFACTOR-03`, `REFACTOR-08`)**: 3중 비평 Polling 타이머 증식·빈 `catch`·캐시 키 불일치 수정 및 ADR-05 이전 사문화 코드(~560줄)·UI 진행률 라벨/`ScoringGuideModal` 포털 보강
 - **검증 완료된 테스트 실행 명령어**:
   - `npx tsc --noEmit` (`PASS`)
   - `npm run build` (`PASS`)
   - `./venv/bin/pytest backend/tests/ -v` (`106 passed`)
 - **다음 세션 포커스 및 추천 실행 프롬프트**:
-  - `03_ai_critique` 도메인의 클린코드 품질 감사를 진행합니다.
-  - 👉 추천 프롬프트: `"03_ai_critique 도메인 클린코드 품질 감사 진행해줘"`
+  - 최우선 런타임 결함인 `DEFECT-02`(취소 시 28GB 미해제) 및 `DEFECT-03`(VQA `return_dict` 충돌)부터 순차 해결합니다 (`systematic-debugger`).
+  - 👉 추천 프롬프트: `"03_ai_critique 도메인의 DEFECT-02 티켓 해결해줘"`

@@ -23,13 +23,13 @@ CREATE TABLE ai_analysis (
 ```
 
 ### 1.2. `[As-Is 기구현]` 미학 주도형 EXIF 적응적 종합 평점 모델 수식
-* **EXIF 기반 4대 모드 동적 가중치 분배 (`_resolve_perceptual_weights`)**:
+* **EXIF 기반 4대 모드 동적 가중치 분배 (`resolve_perceptual_weights`)**:
   - [모드 A] 浅심도 인물/감성 ($F \le 2.8$): $w_{\text{iaa}} = 0.65, \; w_{\text{iqa}} = 0.25, \; w_{\text{ista}} = 0.10$
   - [모드 B] 팬포커스 풍경/건축 ($F \ge 5.6$): $w_{\text{iaa}} = 0.45, \; w_{\text{iqa}} = 0.30, \; w_{\text{ista}} = 0.25$
   - [모드 C] 야경/스트리트 스냅 ($\text{ISO} \ge 1600$): $w_{\text{iaa}} = 0.70, \; w_{\text{iqa}} = 0.20, \; w_{\text{ista}} = 0.10$
   - [모드 D] 일반 스냅 (표준 모드) (그 외 및 EXIF 누락): $w_{\text{iaa}} = 0.55, \; w_{\text{iqa}} = 0.30, \; w_{\text{ista}} = 0.15$
 * **기저 점수**: $S_{\text{base}} = (w_{\text{iaa}} \cdot \text{IAA}) + (w_{\text{iqa}} \cdot \text{IQA}) + (w_{\text{ista}} \cdot \text{ISTA})$
-* **미학적 탁월성 보너스 (`_calculate_aesthetic_bonus`)**:
+* **미학적 탁월성 보너스 (`calculate_aesthetic_bonus`)**:
   $$\Delta_{\text{aesthetic}} = (\text{IAA} - \text{IQA}) \times 0.25 \times (\text{IAA} / 100) \quad (\text{단, } \text{IAA} > \text{IQA} \text{ and } \text{IAA} \ge 75)$$
 * **최종 클램핑**: $\text{overall\_score} = \min(100, \; \max(0, \; \text{round}(S_{\text{base}} + \Delta_{\text{aesthetic}})))$
 * **자동 백필 정책**: `run_migrations()`에서 `iaa_score IS NOT NULL`인 기존 레코드를 EXIF 메타데이터와 조인하여 새 수식으로 자동 재계산 완료.

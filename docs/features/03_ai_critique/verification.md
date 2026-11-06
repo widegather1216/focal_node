@@ -1,8 +1,8 @@
 # 🧪 [03_ai_critique] Verification & Ticket Logs
 
-- **검증 상태**: `🟢 Ready (하이브리드 파이프라인 Step 3 구현 및 TC-CRT-11~13 검증 완료, Step 4 UI 검증 대기)`
-- **인수 조건 통과율**: `13 / 13 (100%)`
-- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건`
+- **검증 상태**: `🩹 Debugging (UniPercept 취소 미해제 DEFECT-02·VQA 불능 DEFECT-03 및 REFACTOR 6건 해결 대기)`
+- **인수 조건 통과율**: `11 / 13 (85%)`
+- **미해결 티켓**: `🚨 DEFECT: 2건` | `🧐 REFACTOR: 6건`
 
 ---
 
@@ -30,14 +30,14 @@
 
 ### AC 4. 미학 주도형 EXIF 적응적 종합 평점 및 점수 가이드 모달 `[As-Is]`
 * **Given:** 특정 사진의 비평이 생성되거나 마이그레이션이 실행될 때,
-* **When:** `_calculate_overall_vr_score`가 호출되거나 프론트엔드에서 `[?] 점수 산출 가이드` 버튼이 클릭되면,
+* **When:** `calculate_overall_vr_score`가 호출되거나 프론트엔드에서 `[?] 점수 산출 가이드` 버튼이 클릭되면,
 * **Then:**
   1. 사진의 EXIF(조리개 F값, ISO)에 따라 [인물/감성], [풍경/건축], [야경/스트리트], [표준] 4대 적응형 가중치가 적용되어야 한다.
   2. $\text{IAA} \ge 75$ 및 $\text{IAA} > \text{IQA}$ 조건에서 미학적 탁월성 보너스($\Delta_{\text{aesthetic}}$)가 정확히 산출 및 가산되어야 한다.
   3. 기존 DB 사진들의 `overall_score`가 `run_migrations()`에서 새 수식으로 일괄 자동 재계산(Backfill)되어야 한다.
   4. 프론트엔드 스코어보드 헤더의 `[?] 점수 산출 가이드` 클릭 시 `ScoringGuideModal`이 오픈되어 4대 가중치 표와 보너스 공식이 안내되어야 한다.
 
-### AC 5. UniPercept 지각 앵커 + Gemma 4 직접 심층 비평 하이브리드 파이프라인 `[To-Be]`
+### AC 5. UniPercept 지각 앵커 + Gemma 4 직접 심층 비평 하이브리드 파이프라인 `[As-Is]`
 * **Given:** 사용자가 특정 사진에 대해 UniPercept 기반 AI 비평 생성을 요청했을 때,
 * **When:** 백엔드에서 2단계 하이브리드 파이프라인이 실행되면,
 * **Then:**
@@ -61,8 +61,8 @@
 | **Boundary**| `TC-CRT-07` | EXIF 누락/비정상값 시 표준 폴백 및 클램핑 | EXIF 없음, 극단값(IAA 100, IQA 0 등) | 표준 모드 가중치 폴백 및 0~100 클램핑 | `PASS` |
 | **Happy** | `TC-CRT-08` | 기존 DB 사진 overall_score 자동 재계산 백필 | 기존 iaa/iqa/ista 보유 DB 기동 | run_migrations()에서 EXIF 조인 후 새 점수 백필 | `PASS` |
 | **Happy** | `TC-CRT-09` | 점수 가이드 모달 열람 및 닫기 | 스코어보드 [?] 버튼 클릭 | ScoringGuideModal 열림, ESC/닫기 동작 (`tsc & build`) | `PASS` |
-| **Boundary**| `TC-CRT-10` | 비평 취소 시 VLM 즉시 강제 언로드 및 GPU 동기화 | 비평 추론 도중 `[취소]` 클릭 | Gemma/UniPercept 즉시 언로드 및 MPS 캐시 100% 반환 | `PASS (Fixed in DEFECT-01)` |
-| **Happy** | `TC-CRT-11` | UniPercept 단일 패스 지각 앵커 추출 및 어휘 붕괴 방지 | 고해상도 테스트 사진 입력 | 150토큰 내외 지각 앵커 정상 영문 도출, 어휘 붕괴 0건 | `PASS` |
+| **Boundary**| `TC-CRT-10` | 비평 취소 시 VLM 즉시 강제 언로드 및 GPU 동기화 | 비평 추론 도중 `[취소]` 클릭 | Gemma/UniPercept 즉시 언로드 및 MPS 캐시 100% 반환 | `FAIL (DEFECT-02)` |
+| **Happy** | `TC-CRT-11` | UniPercept 단일 패스 지각 앵커 추출 및 어휘 붕괴 방지 | 고해상도 테스트 사진 입력 | 150토큰 내외 지각 앵커 정상 영문 도출, 어휘 붕괴 0건 | `FAIL (DEFECT-03)` |
 | **Happy** | `TC-CRT-12` | Gemma 4 지각 앵커 기반 직결 심층 비평 생성 | 지각 앵커 + VR 점수 + EXIF 주입 | 3대 표준 헤더 + 한 줄 총평 + 실전 조언 한국어 완성 | `PASS` |
 | **Boundary**| `TC-CRT-13` | UniPercept VQA 오류 시 Gemma 4 자율 비평 폴백 | UniPercept VQA 예외 강제 발생 | Gemma 4 직접 심층 비평으로 정상 폴백 생성 완료 | `PASS` |
 
@@ -71,122 +71,134 @@
 ## 🚨 3. 결함 리포트 (Defect Logs)
 
 ### [DEFECT-01] 비평 취소(중지) 요청 시 VLM 모델 메모리 미해제 및 지연 잔류 결함
-- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
-- **심각도**: 🔴 Must Fix (메모리 누수 및 GPU 점유 잔류)
-- **해결 내역**:
-  - **수정 파일**: [`base_model.py`](../../../backend/app/services/base_model.py#L77-L93), [`chat_service.py`](../../../backend/app/services/chat_service.py#L107-L146), [`chat_service.py`](../../../backend/app/services/chat_service.py#L353-L415), [`test_critique_cancellation.py`](../../../backend/tests/test_critique_cancellation.py#L164-L248)
-  - **원인 및 조치**:
-    1. `_unload_critique_models(force=True)` 매개변수를 도입하여 비평 취소/예외 발생 시 Gemma의 `active_requests` 수치와 무관하게 즉시 강제 언로드 수행.
-    2. `cancel_critique()`에서 `_critique_tasks`의 백그라운드 코루틴 `task.cancel()`을 호출하여 비동기 실행 루프에 즉각 취소 신호 전달.
-    3. `base_model._unload_model_locked` 및 `chat_service._clear_device_caches`에 `torch.mps.synchronize()`를 적용하여 Metal 비동기 커맨드 버퍼 큐를 즉시 비우고 GPU 메모리를 OS로 100% 환원.
-  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_critique_cancellation.py -v` (8 passed)
-- **발견 일자**: 2026-11-03 (by `clean-code-auditor`)
-- **위치**: 
-  - `backend/app/services/chat_service.py#L122-L145` (`_unload_critique_models`)
-  - `backend/app/services/chat_service.py#L397-L404` (`cancel_critique`)
-  - `backend/app/services/base_model.py#L70-L93` (`_unload_model_locked`)
-- **재현 조건 (Reproduction Steps)**:
-  1. 갤러리에서 고해상도 사진 선택 후 `[AI 비평 생성]` 클릭.
-  2. UniPercept 8B 또는 Gemma 4 12B-it VLM이 로드되어 추론(Pass 1 또는 VQA) 중인 상태에서 `[취소]` 버튼 클릭.
-  3. 프론트엔드 UI에는 즉시 "비평 생성이 중단되었습니다"가 표시되나, macOS 활성 상태 보기(Activity Monitor)에서 Python 프로세스가 13~28GB의 RAM과 100% GPU를 30~60초간 지속 점유하거나 메모리가 완전히 반환되지 않음.
-- **근본 원인 분석 (Root Causes)**:
-  1. **`_unload_critique_models()`의 Gemma 언로드 조건 검사 오류 (`chat_service.py#L137-L140`)**:
-     - 비평이 돌고 있을 때 Gemma의 `active_requests`는 `1`임.
-     - `should_unload = active_reqs <= 0` 가드로 인해 취소 API 핸들러에서 Gemma 언로드가 아예 스킵(무시)됨.
-  2. **`asyncio.Task`에 `task.cancel()` 미전달 (`chat_service.py#L397-L404`)**:
-     - `cancel_critique()`가 상태 매니저 플래그만 세팅하고 백그라운드 코루틴 `_critique_tasks.get(photo_id)`에 취소 시그널(`task.cancel()`)을 전달하지 않음.
-  3. **PyTorch MPS GPU 큐 동기화 누락 (`base_model.py#L79-L86`)**:
-     - Apple Silicon Metal은 비동기 커맨드 버퍼로 동작함.
-     - `torch.mps.synchronize()` 없이 `torch.mps.empty_cache()`만 부르면 GPU 큐에 남아있는 참조로 인해 메모리가 OS로 즉각 환원되지 않음.
-- **수정 계획 (Suggested Fix)**:
-  ```python
-  # 1. chat_service.py: cancel_critique에서 force_unload=True 전달 및 task.cancel() 호출
-  def _unload_critique_models(force: bool = False) -> None:
-      ...
-      should_unload = force or not isinstance(active_reqs, int) or active_reqs <= 0
-      if should_unload and hasattr(gemma, "unload_model"):
-          gemma.unload_model()
+- **현재 상태**: 🟢 RESOLVED — `_unload_critique_models(force=True)`, `task.cancel()`, `torch.mps.synchronize()` 적용으로 1차 조치 완료 (UniPercept 워커 스레드 레이스는 `DEFECT-02`로 후속 추적)
 
-  # 2. base_model.py: torch.mps.synchronize() 추가 및 gc.collect() 2회 실행
-  if hasattr(torch, "mps") and hasattr(torch.mps, "synchronize"):
-      torch.mps.synchronize()
-  gc.collect()
-  if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
-      torch.mps.empty_cache()
+### [DEFECT-02] 비평 중단(취소) 시 `asyncio.to_thread` 워커 스레드 레이스 및 재로드로 인한 UniPercept 28GB 메모리 미해제 결함
+- **심각도**: 🔴 Must Fix (28GB RAM 상주 잔류)
+- **위치**: `backend/app/services/unipercept_adapter.py#L19-L23, #L333-L398, #L521-L533, #L894-L959`, `backend/app/services/chat_service.py#L208-L227, #L421-L432`
+- **근본 원인 분석 (Root Causes)**:
+  1. **비동기 코루틴 취소와 OS 워커 스레드 수명주기 분리**: `cancel_critique()`에서 `task.cancel()` 호출 시 이벤트 루프의 `await asyncio.to_thread(adapter.generate_full_ensemble_critique, ...)`는 즉시 중단되어 `unload_model()`을 먼저 실행하고 종료되지만, OS 워커 스레드(`Thread A`)는 계속 실행됨.
+  2. **로딩 구간(10~15초) 취소 시 빈 언로드 및 사후 적재 방치**: `Thread A`가 28GB 가중치를 읽는 `_load_model_locked()` 도중(`self.model is None`) 중단 버튼을 누르면 취소 측 `unload_model()`은 `self.model is None`이므로 아무 작업 없이 종료되고, 직후 로딩을 마친 `Thread A`가 취소 예외로 빠져나가며 **이후 누구도 `unload_model()`을 다시 호출하지 않음**.
+  3. **취소 체크보다 앞선 `_load_model_locked()` 호출로 인한 28GB 재적재**: `generate_vr_scores`(`#L335`)와 `generate_perceptual_anchor_vqa`(`#L523`) 모두 `check_cancelled(photo_id)` 이전에 `_load_model_locked()`를 먼저 호출함. VR 직후 중단 시 취소 스레드가 모델을 내린 직후 `Thread A`가 `#L523`에 진입해 **28GB를 디스크에서 다시 로드**한 뒤 `#L532`에서 취소 종료되어 메모리에 영구 잔류함.
+  4. **MPS 텐서 잔류 및 Keep-alive 설정 불일치**: `generate_vr_scores`의 `del pixel_values`(`#L392`)가 `finally` 밖에 있어 취소 시 누락되며, `_on_unload()`에서 MPS 텐서 `_cached_weight_tensor`(`#L211`)를 해제하지 않고 `keep_alive_timeout=60.0` 스레드가 구동됨.
+- **수정 계획 (Suggested Fix)**:
+  ```text
+  - `generate_full_ensemble_critique` 내부 최외곽 `try ... finally:`에서 워커 스레드 자신이 직접 `self.unload_model()`을 보장 실행하도록 이동
+  - `with GPU_LOCK: with self.lock:` 블록 내 `_load_model_locked()` 호출 직전에 `check_cancelled(photo_id)` 가드를 배치해 취소된 작업의 모델 로드/재로드 원천 차단
+  - `del pixel_values`를 `finally`로 이동하고, `_on_unload()`에서 `self._cached_weight_tensor = None` 해제 및 서브모듈 참조 정리 수행
   ```
+- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+
+### [DEFECT-03] `transformers 5.x` `return_dict` 인자 충돌로 인한 UniPercept VQA 모드 100% 실패 및 에러 은폐 결함
+- **심각도**: 🔴 Must Fix (UniPercept VQA 지각 앵커 기능 완전 불능)
+- **위치**: `backend/app/services/unipercept_adapter.py#L74-L80, #L431-L454, #L552-L569`
+- **근본 원인 분석 (Root Causes)**:
+  1. **`transformers==5.12.1`과 `InternVLChatModel.chat()` 간 시그니처 충돌**: `_run_single_vqa_domain_inference`(`#L442`)가 호출하는 `self.model.chat()` 내부 `InternVLChatModel.generate()`는 `self.language_model.generate(..., return_dict=return_dict)`(`None`)를 전달함. 반면 현재 가상환경의 `transformers==5.12.1`(`generation/utils.py#L3830`)은 프리필 단계에서 `self(**model_inputs, return_dict=True)`를 호출하여 **`TypeError: Qwen2ForCausalLM(...) got multiple values for keyword argument 'return_dict'`가 100% 발생**함 (VR 채점 `#L190-L205`는 `model.chat` 없이 직접 `language_model(...)` forward를 호출해 정상 동작했던 것).
+  2. **예외 삼킴(`#L556-L558`)으로 인한 거짓 성공 처리**: `generate_perceptual_anchor_vqa`가 위 `TypeError`를 잡아서 `anchor_text = "Perceptual analysis error: ..."` 문자열로 둔갑시킨 뒤 정상 반환함. 그 결과 Gemma 4는 UniPercept VQA 진단 없이 자체 비전 인코더만으로 한국어 비평을 작성하고, DB `critique_en`(`RAW EN` 카드)에는 에러 문자열이 그대로 저장됨.
+  3. **`model.eval()` 누락**: `_load_model_locked()`에서 `from_pretrained(...).to(self.device)` 직후 `.eval()` 모드 전환이 누락됨.
+- **수정 계획 (Suggested Fix)**:
+  ```text
+  - `_load_model_locked()`에서 `self.model.eval()` 명시 호출
+  - `self.model.chat()` 래퍼를 우회하고, VR과 동일하게 `_resolve_conversation_template` + `extract_feature(pixel_values)`(VR 단계의 `vit_embeds` 재사용 가능)로 `inputs_embeds`를 구성한 뒤 `self.model.language_model.generate(inputs_embeds=..., attention_mask=..., eos_token_id=..., pad_token_id=..., use_cache=True, **generation_config)`를 `return_dict` 없이 직접 호출 (출력에서 `<think>...</think>` 및 종료 토큰 정제)
+  - VQA 추론 실패 시 에러 문자열을 반환하지 않고 예외를 그대로 전파(`raise`)하여 `ChatService` 자율 폴백이 정상 동작하도록 교정
+  ```
+- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
 
 ---
 
 ## 🧐 4. 코드 품질 감사 리포트 (Audit & Refactoring Logs)
 
 ### [REFACTOR-01] `CritiqueDocumentModal.tsx` 및 비평 UI 거대 컴포넌트 SRP 모듈 분할
-- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
-- **심각도**: 🟡 Should Fix (권장)
-- **해결 내역**:
-  - **신설 및 분리 모듈**:
-    - [`critiqueParser.tsx`](../../../src/utils/critiqueParser.tsx): 마크다운 AST 파서 & 6-Way 스코어보드 추출 유틸리티 (292줄)
-    - [`critiqueExporter.ts`](../../../src/utils/critiqueExporter.ts): A4 인쇄 HTML 생성, 마크다운 직렬화 및 html2canvas/jsPDF 엔진 (650줄)
-    - [`useModalZoomPan.ts`](../../../src/hooks/useModalZoomPan.ts): 모달 휠 줌 및 드래그 패닝 인터랙션 훅 (60줄)
-    - [`CritiqueScoreboardCard.tsx`](../../../src/components/critique/CritiqueScoreboardCard.tsx): 6-Way 스코어보드 및 가이드 모달 연결 카드 (182줄)
-    - [`ExecutiveSummaryCard.tsx`](../../../src/components/critique/ExecutiveSummaryCard.tsx): 통합 한 줄 총평 인용구 카드 (44줄)
-    - [`OriginalEnglishCritiqueCard.tsx`](../../../src/components/critique/OriginalEnglishCritiqueCard.tsx): UniPercept 8B VQA 영문 원문 토글 카드 (93줄)
-    - [`CritiqueBlockItem.tsx`](../../../src/components/critique/CritiqueBlockItem.tsx): 개별 마크다운 AST 블록 렌더러 (207줄)
-    - [`ScoreHudStrip.tsx`](../../../src/components/critique/ScoreHudStrip.tsx): 카메라 LCD HUD 스타일 컴팩트 점수 스트립 (77줄)
-    - [`CritiqueHeader.tsx`](../../../src/components/critique/CritiqueHeader.tsx): 비평 대시보드 타이틀, 통계 뱃지, 정렬 탭, 검색바 및 요약 생성 헤더 (188줄)
-    - [`CritiqueDocumentToolbar.tsx`](../../../src/components/critique/CritiqueDocumentToolbar.tsx): 매거진 뷰어 상단 헤더 툴바 (319줄)
-    - [`CritiqueDocumentPhotoViewer.tsx`](../../../src/components/critique/CritiqueDocumentPhotoViewer.tsx): 매거진 뷰어 좌측 사진 캔버스 및 EXIF HUD (187줄)
-    - [`CritiqueDocumentArticle.tsx`](../../../src/components/critique/CritiqueDocumentArticle.tsx): 매거진 뷰어 우측 페이퍼 문서 아티클 (175줄)
-    - [`CritiqueExportProgressOverlay.tsx`](../../../src/components/critique/CritiqueExportProgressOverlay.tsx): 내보내기 진행률 피드백 모달 오버레이 (197줄)
-  - **리팩토링 파일**:
-    - [`CritiqueDocumentModal.tsx`](../../../src/components/critique/CritiqueDocumentModal.tsx): 1,766줄 ➔ 449줄로 약 75% 경량화 및 최상위 컨테이너 레이아웃 단일 책임 정돈
-    - [`CritiqueContentRenderer.tsx`](../../../src/components/critique/CritiqueContentRenderer.tsx): 856줄 ➔ 109줄로 축소 및 하위 호환 re-export 제공
-    - [`PhotoCritiqueView.tsx`](../../../src/components/detail/PhotoCritiqueView.tsx): 478줄 ➔ 408줄로 축소 (인라인 `ScoreHudStrip` 분리)
-    - [`CritiqueView.tsx`](../../../src/components/CritiqueView.tsx): 375줄 ➔ 223줄로 축소 (헤더 컨트롤 분리)
-  - **회귀 검증 결과**: `npm run build` (tsc & vite build `PASS`), pytest 43건 전체 통과 (`PASS`)
-- **위치**: `src/components/critique/CritiqueDocumentModal.tsx#L1-L1766`, `src/components/critique/CritiqueContentRenderer.tsx#L1-L813`, `src/components/detail/PhotoCritiqueView.tsx#L1-L478`, `src/components/CritiqueView.tsx#L1-L375`
-- **위반 규칙**: Single Responsibility Principle (단일 UI 파일 300줄 가이드 초과)
-- **발견된 문제**:
-  - `CritiqueDocumentModal.tsx`(1,766줄) 내부에 매거진 뷰어 UI, A4 프린트 HTML 템플릿 생성(`generatePrintHtml`), Markdown 직렬화 로직, `html2canvas`/`jsPDF` 렌더링 엔진이 모두 결합되어 유지보수 복잡도가 높음.
-  - `CritiqueContentRenderer.tsx`(813줄) 및 `PhotoCritiqueView.tsx`(478줄)에 AST 파서, 스코어보드/영문원문 카드, LCD HUD 등이 결합되어 컴포넌트 분할이 필요함.
-- **권장 개선안 (Suggested Diff)**:
-  ```text
-  - PDF/Markdown 내보내기 순수 유틸리티 및 프린트 HTML 템플릿을 src/utils/critiqueExporter.ts로 분리
-  - 스코어보드 파서/서브 섹션(ScoreHudStrip, OriginalEnglishCritiqueCard)을 분리하여 모달/컴포넌트 본체를 300줄 이내로 축소
-  ```
+- **현재 상태**: 🟢 RESOLVED — `critiqueParser.tsx`, `critiqueExporter.ts`, `useModalZoomPan.ts` 등 13개 전문 서브 모듈로 분할하여 주요 비평 UI 경량화 완료
 
 ### [REFACTOR-02] 비평 추론 어댑터 내 Silent Fail(`except: pass`) 제거 및 장문 메서드 분리
-- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
-- **심각도**: 🟡 Should Fix (권장)
-- **해결 내역**:
-  - **수정 파일**: [`chat_service.py`](../../../backend/app/services/chat_service.py#L75-L125), [`mlx_adapters.py`](../../../backend/app/services/mlx_adapters.py#L42-L635), [`unipercept_adapter.py`](../../../backend/app/services/unipercept_adapter.py#L60-L585)
-  - **원인 및 조치**:
-    1. `chat_service.py`(`_clear_device_caches`, `updated_at` 파싱), `mlx_adapters.py`(모델 로드, safetensors 링크, OOM 복구, 언로드 캐시 정리), `unipercept_adapter.py`(MPS 프리클리어, 토크나이저/프로세서 로드, 템플릿 로드, VR/VQA 텐서 캐시 클리어)의 모든 빈 `except: pass` 블록에 명시적 디버그/경고 로깅을 추가하여 Silent Fail 완전 제거.
-    2. `mlx_adapters.py`의 `format_and_structure_critique`(88줄)에서 프롬프트 빌더(`_build_document_structuring_messages`), 스코어보드 보존(`_preserve_scoreboard_header`), 추론 실행기(`_execute_document_structuring_generation`)를 분리하여 단일 함수 30줄 가이드 충족.
-    3. `unipercept_adapter.py`의 `generate_vqa_critiques_3way`(90줄)에서 단계 정의(`_get_vqa_step_definitions`), 단일 단계 실행(`_execute_single_vqa_step`), 전 단계 오케스트레이션(`_execute_all_vqa_steps`)을 추출하여 책임 분리 및 가독성 확보.
-  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/ -v` (103 passed), `npm run build` (`PASS`)
-- **위치**: `backend/app/services/chat_service.py#L80-L120`, `backend/app/services/mlx_adapters.py#L323-L640`, `backend/app/services/unipercept_adapter.py#L55-L498`
-- **위반 규칙**: Rule 4.1 (함수 30줄 이내) & Rule 4.3 (예외 묵인 `except: pass` 금지)
-- **발견된 문제**:
-  - `chat_service.py`, `mlx_adapters.py`, `unipercept_adapter.py`의 모델 언로드 및 캐시 클리어 블록에 `except Exception: pass`가 다수 존재하며, `format_and_structure_critique`(87줄) 및 `generate_vqa_critiques_3way`(90줄)가 30줄 가이드를 초과함.
-- **권장 개선안 (Suggested Diff)**:
-  ```text
-  - 프롬프트 생성 빌더 함수를 별도 헬퍼로 추출하여 추론 메서드 길이를 30줄 이내로 축소
-  - 빈 except 블록에 명시적 경고 로그(print/logger) 추가
-  ```
+- **현재 상태**: 🟢 RESOLVED — `chat_service.py`, `mlx_adapters.py`, `unipercept_adapter.py`의 빈 `except: pass` 로깅 보강 및 프롬프트/VQA 헬퍼 분리 완료
 
-### [REFACTOR-03] 비평 Polling 빈 catch 블록 예외 묵인(Rule 4.3) 교정 및 ApiClient 반환 타입 강화
-- **심각도**: 🟡 Should Fix (권장)
-- **위치**: `src/components/detail/PhotoCritiqueView.tsx#L146-L148`, `src/components/critique/GlobalCritiqueToast.tsx#L53-L55`, `src/hooks/usePhotoDetail.ts#L207-L209`, `src/services/api.ts#L233-L277`, `src/components/CritiqueView.tsx#L56`
-- **위반 규칙**: Rule 4.3 (예외 묵인 빈 catch 금지) & Rule 4.2 / 타입 안전성 (`Promise<any>` 지양)
+### [REFACTOR-03] 프론트엔드 비평 Polling 타이머 증식·빈 `catch` 제거, `ApiClient` 우회/타입(`any`) 및 캐시 키 버그 교정
+- **심각도**: 🟡 Should Fix (권장 조치)
+- **위치**: `src/components/detail/PhotoCritiqueView.tsx#L56-L101`, `src/components/critique/GlobalCritiqueToast.tsx#L21-L80`, `src/hooks/usePhotoDetail.ts#L82-L99, #L161-L221, #L245, #L277-L281`, `src/store/useAppStore.ts#L161-L178`, `src/services/api.ts#L233-L277`, `src/components/CritiqueView.tsx#L55`
+- **위반 규칙**: Rule 4.3 (빈 `catch` 금지), Rule 4.2 (`res`/`data`/`st` 네이밍), `00_core_foundation` 단방향 `ApiClient` 경유 규칙, 타이머 동시성 안전성
 - **발견된 문제**:
-  - 백그라운드 비평 Polling 및 sleep/resume 복구 핸들러(`PhotoCritiqueView`, `GlobalCritiqueToast`, `usePhotoDetail`)에서 네트워크/서버 오류 발생 시 빈 `catch {}` 블록으로 예외를 묵인(Silent Fail)하여 백엔드 에러 원인 추적이 차단됨.
-  - `src/services/api.ts`의 `getPhotoCritique`, `cancelCritique`, `deleteCritique` 반환 타입이 `Promise<any>`로 느슨하게 정의되어 있으며, `CritiqueView.tsx#L56`에 `catch (err: any)`가 잔재함.
+  - `PhotoCritiqueView`·`GlobalCritiqueToast`·`usePhotoDetail` 3곳에 비평 상태 Polling이 중복되며, `focus`/`visibilitychange` 시 기존 `clearTimeout` 없이 `pollStatus()`를 재호출하여 재귀 `setTimeout` 체인이 중복 증식됨 (`3.5s` 자동 닫힘 타이머도 재분석 시 레이스 유발).
+  - 빈 `catch {}` 예외 묵인, `useAppStore.cancelActiveCritique`의 `fetch` 직접 호출(`ApiClient` 우회), `api.ts`의 `Promise<any>`, `usePhotoDetail#L84`의 `getQueryData(['critiques'])` 키 불일치(`['critiques', sortBy]` 미매칭으로 아카이브 좌우 키 이동 불능)가 존재함.
 - **권장 개선안 (Suggested Diff)**:
   ```text
-  // 빈 catch 블록에 디버그/경고 로깅 추가
-  } catch (pollErr) {
-    console.debug('[CritiquePolling] Transient status polling notice:', pollErr);
-  }
-  // api.ts: Promise<any> -> Promise<CritiqueResponse>, Promise<CritiqueCancelResponse>, Promise<{ status: string; photo_id: string }>
+  - 공통 `useCritiqueStatusPolling` 훅으로 일원화하고 `clearTimeout(timerId)` 선행 후 단일 타이머 체인 유지, 빈 catch에 `console.debug` 추가
+  - `useAppStore.cancelActiveCritique`에서 `api.cancelCritique` 호출, `api.ts` 반환 타입을 `CritiqueResponse` 등으로 명시, `getQueriesData<CritiqueItem[]>({ queryKey: ['critiques'] })` 적용
+  ```
+- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+
+### [REFACTOR-04] `CritiqueDocumentModal` Hooks 순서 위반 런타임 크래시·전역 키 가로채기 및 PDF XSS/인라인 색상 역전 교정
+- **심각도**: 🔴 Must Fix (즉시 조치·QA 진입 차단)
+- **위치**: `src/components/critique/CritiqueDocumentModal.tsx#L74-L159, #L311-L318`, `src/utils/critiqueExporter.ts#L189-L304, #L447-L470`, `src/utils/critiqueParser.tsx#L317`, `src/components/critique/CritiqueBlockItem.tsx#L90-L140`
+- **위반 규칙**: React Rules of Hooks (런타임 크래시), Audit Matrix #3 & #4 (DOM XSS 방어, 전역 리스너 수명주기), AC 2 PDF 가독성 무결성
+- **발견된 문제**:
+  - `App.tsx#L106`에 상시 마운트된 `CritiqueDocumentModal`이 `#L104`에서 조건부 `return null`을 수행한 뒤 `#L130`에서 `useMemo`를 호출하여, 문서 모달 오픈 즉시 `Rendered more hooks than during the previous render` 크래시가 100% 발생함. 또한 모달이 닫혀 있을 때도 전역 `Escape`/`Cmd+W`를 가로채며 사진 전환 시 줌/에러 상태가 초기화되지 않음.
+  - `critiqueExporter.ts`가 `file_name`·EXIF·본문을 미이스케이프 상태로 `innerHTML`에 삽입(Tauri WebView 내 DOM XSS 위험)하며, 다크 테마 인라인 색상(`#fff`, `#f4f4f5`, `#d4d4d8`)이 `#ffffff` 흰색 PDF 시트에 복제되어 볼드체가 100% 투명화되고 영문 토글 `<button>`이 인쇄물에 노출됨.
+- **권장 개선안 (Suggested Diff)**:
+  ```text
+  - `mastheadData = useMemo(...)` 및 사진 변경 상태 초기화 `useEffect`를 `if (!critiqueDocumentPhotoId) return null;` 위로 이동하고, `keydown` 리스너는 모달 오픈/`isPopout` 상태에서만 등록
+  - `escapeHtml()` 헬퍼로 모든 메타데이터/본문 보간값을 이스케이프하고, `.focal-pdf-report-container .critique-body` 하위 텍스트에 다크 인라인 컬러 오버라이드(`!important`) 및 `button { display: none !important; }` 적용
+  ```
+- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+
+### [REFACTOR-05] 메타데이터 수정 시 비평 필드 유실·삭제 후 좀비 상태 부활·취소 스레드 경계 수정 및 `PhotoRepository` 캡슐화
+- **심각도**: 🔴 Must Fix (즉시 조치·QA 진입 차단)
+- **위치**: `backend/app/api/photos.py#L125-L154`, `backend/app/api/chat.py#L25-L44, #L89-L96`, `backend/app/services/chat_service.py#L9-L27, #L83-L105, #L149-L183, #L421-L432`, `backend/app/services/critique_status.py#L57-L80`, `backend/app/repositories/photo_repository.py#L160-L203`
+- **위반 규칙**: Rule 2.4 (이벤트 루프/스레드 경계 안전성), `00_core_foundation` §3.1 (`Services -> Repositories` 캡슐화), API 스키마 계약 무결성
+- **발견된 문제**:
+  - `PATCH /api/photos/{id}/metadata`가 `ai_analysis` 중 4개 필드만 반환해 Pydantic이 `critique` 및 4종 점수를 `null`로 직렬화하며, 프론트엔드 React Query 캐시가 덮어써져 캡션/태그 편집 즉시 비평이 화면에서 유실됨.
+  - `DELETE /api/chat/critique/{photo_id}`가 `critique_status_manager.clear(photo_id)`를 누락해 창 포커스 시 삭제된 비평이 인메모리 상태에서 부활하며, 동기 라우트 `cancel_photo_critique`가 워커 스레드에서 `asyncio.Task.cancel()`을 비스레드안전하게 직접 호출함.
+  - `ChatService` 및 `CritiqueStatusManager`가 `PhotoRepository`를 우회해 직접 `db.query(models.AIAnalysis)` 및 중복 3-테이블 조인/청킹 쿼리를 실행함.
+- **권장 개선안 (Suggested Diff)**:
+  ```text
+  - `AIAnalysis.to_dict()`를 도입해 `patch_photo_metadata`가 전체 11개 필드를 보존 반환하도록 수정
+  - `delete_photo_critique`에 `critique_status_manager.clear(photo_id)` 추가, 취소 호출 시 `task.get_loop().call_soon_threadsafe(task.cancel)` 적용
+  - `PhotoRepository`에 `get_ai_analysis`, `upsert_critique`, `list_critiques(photo_ids=...)`, `update_caption_and_tags`를 캡슐화하여 서비스 계층 직접 ORM 쿼리 제거
+  ```
+- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+
+### [REFACTOR-06] UniPercept Eager Import(Rule 2.5)·추론 예외 삼킴(폴백 무력화/DB 오염)·RAW 저해상도 디코딩 및 `GPU_LOCK`/메모리 누수 교정
+- **심각도**: 🔴 Must Fix (즉시 조치·QA 진입 차단)
+- **위치**: `backend/app/services/unipercept_adapter.py#L5-L33, #L211, #L227, #L527-L559`, `backend/app/services/unipercept_utils.py#L8-L23`, `backend/app/services/mlx_adapters.py#L245, #L313-L331, #L376-L414, #L497-L508`, `backend/app/services/chat_service.py#L442-L456`, `backend/app/services/critique_status.py#L10-L54`
+- **위반 규칙**: Rule 2.3 (RAW 디코딩 품질/세마포어), Rule 2.4 (`GPU_LOCK` 범위·MPS 해제·태스크 누수 방지), Rule 2.5 (Heavy AI 지연 임포트), Rule 2.6 (`CONFIG_DIR` 격리), Rule 4.3 & ADR-05 (자율 폴백 보장)
+- **발견된 문제**:
+  - `unipercept_adapter.py`·`unipercept_utils.py` 상단에서 `torch`·`torchvision`·`transformers`를 Eager Import하고 임포트 시점 전역 몽키패칭을 수행하며, `~/.config/focal_node` 경로가 하드코딩됨(Rule 2.5, 2.6 위반).
+  - `generate_perceptual_anchor_vqa` 및 `GemmaAdapter` 추론 메서드가 예외를 삼키고 에러 안내문을 정상 문자열로 반환하여, ADR-05 자율 폴백이 무력화되고 에러 문구가 정상 비평(`completed`)으로 SQLite DB에 영구 저장됨.
+  - RAW 비평 시 `min_dimension=None` 호출로 160x120 초저해상도 썸네일이 채점되는 결함, VR+VQA 2회 중복 RAW 디코딩, `GPU_LOCK` 내부 CPU RAW 디코딩 블로킹, `_cached_weight_tensor` MPS 미해제, 슬립/연결 해제 시 `_critique_tasks` 및 `_statuses` 메모리 누수가 존재함.
+- **권장 개선안 (Suggested Diff)**:
+  ```text
+  - `torch`/`torchvision`/`transformers` 및 호환성 패치를 `_load_model_locked()` 내부로 지연 이동하고 `config.CONFIG_DIR` 사용
+  - VQA 및 Gemma 추론 실패 시 캐시 정리 후 예외를 명시적으로 `raise`하여 `ChatService` 자율 폴백 및 `error` 상태 전이가 정상 작동하도록 수정
+  - RAW 비평 디코딩 시 `GPU_LOCK` 진입 전 `min_dimension=1024` 및 공통 디코딩 세마포어를 적용해 VR+VQA 간 PIL 이미지를 1회 공유하고, `_on_unload()` 텐서 해제·`task.add_done_callback` 정리·`_statuses` 크기 상한 적용
+  ```
+- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+
+### [REFACTOR-07] 허수 단위 테스트(`test_ensemble_math.py`, `TC-CRT-12/13`) 프로덕션 실검증 전환 및 `/api/chat/*` 라우트 커버리지 보강
+- **심각도**: 🔴 Must Fix (즉시 조치·QA 진입 차단)
+- **위치**: `backend/tests/test_ensemble_math.py#L1-L63`, `backend/tests/test_unipercept.py#L2, #L117-L121, #L395-L500`, `backend/tests/test_critique_repository_and_api.py#L225-L324`, `backend/tests/test_api_photos.py#L33-L65`
+- **위반 규칙**: Audit Matrix #7 (허수/껍데기 테스트 금지 및 핵심 API·경계값 실효성 검증)
+- **발견된 문제**:
+  - `test_ensemble_math.py`가 프로덕션 코드 임포트 없이 파일 내 폐기된 로컬 수식 함수만 검증하는 100% 허수 테스트이며, `TC-CRT-12`(`test_unipercept.py#L395-L440`) 역시 `generate_perceptual_critique` 호출 없이 하드코딩 문자열만 검증함.
+  - `TC-CRT-13`이 상위 메서드를 통째로 모킹해 VQA 예외 삼킴 버그를 은폐했으며, `app.services.*` vs `services.*` 혼용 임포트로 싱글턴이 이중 생성됨.
+  - `POST /api/chat/critique`, `GET /api/chat/critique/status/{id}`, `POST /api/chat/critique-summary` 엔드포인트 테스트 및 `PATCH /api/photos/{id}/metadata` 비평 필드 보존 검증이 누락됨.
+- **권장 개선안 (Suggested Diff)**:
+  ```text
+  - `test_ensemble_math.py`에서 `services.scoring` 실제 함수를 임포트해 경계값 검증 수행, `test_unipercept.py` 임포트 경로를 `services.*`로 통일하고 `TC-CRT-12/13`이 실제 어댑터 메서드를 실행하도록 보강
+  - `test_critique_repository_and_api.py` 및 `test_api_photos.py`에 누락된 3개 `/api/chat/*` 엔드포인트·삭제 후 상태 초기화·메타데이터 수정 시 비평 보존 회귀 테스트 추가
+  ```
+- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+
+### [REFACTOR-08] ADR-05 이전 레거시 사문화 코드(~560줄)·장문 함수 정리 및 프로그레스 라벨/`ScoringGuideModal` 포털·진입점 보강
+- **심각도**: 🟡 Should Fix (권장 조치)
+- **위치**: `backend/app/services/chat_service.py#L246-L254, #L308`, `backend/app/services/mlx_adapters.py#L516-L650`, `backend/app/services/unipercept_adapter.py#L301, #L449-L505, #L575-L892`, `backend/app/services/ai_parser.py#L58-L78, #L119-L160, #L222-L257`, `backend/app/database.py#L41-L206`, `src/components/critique/CritiqueProgressWidget.tsx#L8-L19`, `src/components/critique/ScoringGuideModal.tsx#L166-L185`, `src/components/critique/ScoreHudStrip.tsx`, `src/components/critique/CritiqueDocumentArticle.tsx#L73-L146`, `src/utils/critiqueExporter.ts#L309-L646`, `src/hooks/usePhotoDetail.ts#L9-L44`
+- **위반 규칙**: Rule 4.1 (함수 <= 30줄, UI 파일 <= 300줄), Rule 4.2 (모호한 변수명 정리), Audit Matrix #1, #5 & #6 (사문화 코드 제거, 순환 참조 해소, ADR-04/05 UI 스펙 정합성)
+- **발견된 문제**:
+  - `chat_service.py#L248`의 프로덕션 `MagicMock` 분기 코드와 폐기된 2단계 번역/3-Way VQA/정규식 파서(~560줄)가 잔존하며, `database.py` 백필 함수·`critiqueExporter.ts`(658줄)·`CritiqueDocumentModal.tsx`(449줄) 장문 함수 및 `usePhotoDetail`<->`usePhotoDetailQuery` 순환 참조가 존재함.
+  - 진행률이 `15% -> 10%`로 역행하며 구형 `[1/6]` 및 `'한국어 번역'`(`CritiqueProgressWidget`) 라벨이 노출되고, 상세 패널/문서 모달에서 `hideScoreboard`로 `[?] 점수 산출 가이드` 버튼이 사라지며 `CritiqueCard` 내부에서 `createPortal` 누락으로 `ScoringGuideModal`이 클리핑됨.
+- **권장 개선안 (Suggested Diff)**:
+  ```text
+  - `conftest.py` 픽스처 갱신 후 `MagicMock` 분기 및 레거시 번역/3-Way VQA 코드를 제거하고, `PhotoDetail` 타입 분리·인쇄 템플릿(`critiquePrintTemplate.ts`)/문서 액션 훅 분리로 파일/함수 크기 축소
+  - 진행률을 단조 증가(`[1/3]~[3/3]`)로 교정하고 `CritiqueProgressWidget` 단계명을 `[시각 채점 / 지각 앵커 / 심층 비평 / 평론 완성]`으로 동기화, `ScoringGuideModal`에 `createPortal(..., document.body)` 및 `ScoreHudStrip`/문서 마스트헤드 `[?]` 버튼 연결
   ```
 - **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)

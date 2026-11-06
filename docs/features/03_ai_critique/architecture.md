@@ -37,7 +37,7 @@ backend/app/
 │   ├── ai_parser.py                   # [기존] UniPercept 단일패스 통합 지각 프롬프트 및 Gemma 4 지각 앵커 기반 비평 프롬프트
 │   ├── mlx_adapters.py                # [기존] GemmaAdapter에 generate_perceptual_critique(지각 앵커 기반 직접 심층 비평)
 │   ├── unipercept_adapter.py          # [기존] 단일 패스 통합 지각 VQA 및 디코딩 파라미터 정상화 (Word Salad 방지)
-│   └── unipercept_utils.py            # [기존] InternVL 동적 패치 타일링 및 이미지 전처리 유틸리티
+│   └── unipercept_utils.py            # [기존] UniPercept 단일 패치(448x448) 이미지 전처리 및 점수 토큰 매핑 유틸리티
 
 src/
 ├── types/critique.ts                  # [기존] CritiqueItem(overall_score, iaa_score, iqa_score, ista_score, critique_en 포함)
