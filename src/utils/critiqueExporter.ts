@@ -347,7 +347,15 @@ export async function exportCritiqueToMarkdown(
     ``,
     `---`,
     ``,
-    critiqueText
+    critiqueText,
+    ...(photo?.ai_analysis?.critique_en ? [
+      ``,
+      `---`,
+      ``,
+      `### UniPercept 8B VQA Original Feedback (English)`,
+      ``,
+      photo.ai_analysis.critique_en
+    ] : [])
   ].filter(line => line !== null).join('\n');
 
   let selectedPath: string | null = null;

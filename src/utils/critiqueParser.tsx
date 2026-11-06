@@ -15,6 +15,18 @@ export function extractScoreboard(text: string): { scores: ParsedScores | null; 
   const match = text.match(scoreboardRegex);
 
   if (!match) {
+    const fallbackMatch = text.match(/\[품질\/미학\s*점수:\s*(\d+)점/i);
+    if (fallbackMatch) {
+      return {
+        scores: {
+          overall: parseInt(fallbackMatch[1], 10),
+          iaa: null,
+          iqa: null,
+          ista: null,
+        },
+        remainingText: text.replace(fallbackMatch[0], '').trim(),
+      };
+    }
     return { scores: null, remainingText: text };
   }
 
@@ -51,20 +63,63 @@ export type MarkdownBlock =
 
 export function determineThemeType(text: string): 'aesthetic' | 'defect' | 'advice' | 'camera' | 'structure' | 'general' {
   const lower = text.toLowerCase();
-  if (lower.includes('미학') || lower.includes('iaa') || lower.includes('장점') || lower.includes('개성') || text.includes('🎨') || text.includes('🌟')) {
-    return 'aesthetic';
-  }
-  if (lower.includes('화질') || lower.includes('광학') || lower.includes('iqa') || lower.includes('exif') || lower.includes('장비') || lower.includes('카메라') || lower.includes('습관') || text.includes('📷')) {
-    return 'camera';
-  }
-  if (lower.includes('구조') || lower.includes('질감') || lower.includes('ista') || lower.includes('재질') || lower.includes('텍스처')) {
-    return 'structure';
-  }
-  if (lower.includes('결함') || lower.includes('왜곡') || lower.includes('실책') || lower.includes('보완') || lower.includes('취약') || text.includes('🔍') || text.includes('⚠️')) {
+  // 1. Defect & aberration checks (e.g., "구도 및 화질 결함과 왜곡 위치 지적", "반복 지적된 기술적 취약점")
+  if (
+    lower.includes('결함') ||
+    lower.includes('왜곡') ||
+    lower.includes('실책') ||
+    lower.includes('보완') ||
+    lower.includes('취약') ||
+    text.includes('🔍') ||
+    text.includes('⚠️')
+  ) {
     return 'defect';
   }
-  if (lower.includes('조언') || lower.includes('가이드라인') || lower.includes('솔루션') || lower.includes('재촬영') || lower.includes('개선') || text.includes('💡') || text.includes('🚀')) {
+  // 2. Advice & practical guideline checks (e.g., "현장 재촬영 및 보정 실전 기술 조언", "차세대 실전 가이드라인")
+  if (
+    lower.includes('조언') ||
+    lower.includes('가이드라인') ||
+    lower.includes('솔루션') ||
+    lower.includes('재촬영') ||
+    lower.includes('개선') ||
+    text.includes('💡') ||
+    text.includes('🚀')
+  ) {
     return 'advice';
+  }
+  // 3. Aesthetic checks (e.g., "시각적 미학 및 EXIF 광학 진단", "미학 및 구도 평가 (IAA)", "독창적 장점 및 시각적 개성")
+  if (
+    lower.includes('미학') ||
+    lower.includes('iaa') ||
+    lower.includes('장점') ||
+    lower.includes('개성') ||
+    text.includes('🎨') ||
+    text.includes('🌟')
+  ) {
+    return 'aesthetic';
+  }
+  // 4. Structure & texture checks (e.g., "구조 및 질감 분석 (ISTA)", "재질", "텍스처")
+  if (
+    lower.includes('구조') ||
+    lower.includes('질감') ||
+    lower.includes('ista') ||
+    lower.includes('재질') ||
+    lower.includes('텍스처')
+  ) {
+    return 'structure';
+  }
+  // 5. Camera, optical, and gear checks (e.g., "화질 및 광학 기술 평가 (IQA)", "EXIF 촬영 습관 및 카메라 장비 활용 패턴")
+  if (
+    lower.includes('화질') ||
+    lower.includes('광학') ||
+    lower.includes('iqa') ||
+    lower.includes('exif') ||
+    lower.includes('장비') ||
+    lower.includes('카메라') ||
+    lower.includes('습관') ||
+    text.includes('📷')
+  ) {
+    return 'camera';
   }
   return 'general';
 }
@@ -120,7 +175,13 @@ export function parseMarkdownToBlocks(text: string): MarkdownBlock[] {
       const isHash = headingMatch[1].startsWith('#');
       const level = isHash ? headingMatch[1].length : 2;
       const numberPrefix = isHash ? (headingMatch[2] ? `${headingMatch[2]}.` : undefined) : `${headingMatch[1]}.`;
-      const title = (isHash ? headingMatch[3] : headingMatch[2]).trim();
+      let title = (isHash ? headingMatch[3] : headingMatch[2]).trim();
+      if (title.startsWith('**') && title.endsWith('**')) {
+        title = title.slice(2, -2).trim();
+      }
+      if (title.startsWith('[') && title.endsWith(']')) {
+        title = title.slice(1, -1).trim();
+      }
 
       pushBlock({
         type: 'section',
