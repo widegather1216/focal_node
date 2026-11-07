@@ -13,6 +13,12 @@ KNOWN_MODEL_SIZES: Dict[str, int] = {
     "widegather/unipercept-mirror": 24952254453,
 }
 
+KNOWN_MODEL_LABELS: Dict[str, str] = {
+    "google/siglip2-base-patch16-224": "SigLIP 2 (검색 엔진)",
+    "mlx-community/gemma-4-12B-it-8bit": "Gemma 4 (비전 분석 엔진)",
+    "widegather/unipercept-mirror": "UniPercept (전문가 비평 엔진)",
+}
+
 _size_cache: Dict[str, tuple[float, int]] = {}
 _size_cache_lock = threading.RLock()
 
@@ -54,7 +60,28 @@ class ModelDownloadStatusTracker:
             if cls._instance is None:
                 cls._instance = super(ModelDownloadStatusTracker, cls).__new__(cls)
                 cls._instance._statuses: Dict[str, Dict[str, Any]] = {}
+                cls._instance._init_default_statuses()
             return cls._instance
+
+    def _init_default_statuses(self):
+        now = time.time()
+        for repo_id, total_bytes in KNOWN_MODEL_SIZES.items():
+            label = KNOWN_MODEL_LABELS.get(repo_id, repo_id)
+            self._statuses[repo_id] = {
+                "repo_id": repo_id,
+                "label": label,
+                "status": "pending",
+                "downloaded_bytes": 0,
+                "total_bytes": total_bytes,
+                "progress": 0,
+                "error_message": None,
+                "updated_at": now
+            }
+
+    def reset_statuses(self):
+        with self._lock:
+            self._statuses = {}
+            self._init_default_statuses()
 
     def update_status(
         self,

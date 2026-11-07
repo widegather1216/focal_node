@@ -116,3 +116,86 @@ def test_download_models_background_all_success(monkeypatch, capsys):
     assert "[Downloader] Download process finished with errors." not in captured.out
 
 
+def test_model_download_status_tracker_initial_pending_state():
+    """TC-CF-03 / DEFECT-03: Tracker must pre-register KNOWN_MODEL_SIZES with pending/0%."""
+    from services.model_downloader import get_model_download_tracker, KNOWN_MODEL_SIZES
+
+    tracker = get_model_download_tracker()
+    tracker.reset_statuses()
+    statuses = tracker.get_all_statuses()
+
+    assert len(statuses) >= len(KNOWN_MODEL_SIZES)
+    for repo_id, total_bytes in KNOWN_MODEL_SIZES.items():
+        assert repo_id in statuses
+        assert statuses[repo_id]["status"] == "pending"
+        assert statuses[repo_id]["progress"] == 0
+        assert statuses[repo_id]["downloaded_bytes"] == 0
+        assert statuses[repo_id]["total_bytes"] == total_bytes
+
+
+def test_calculate_overall_progress_requires_all_known_models():
+    """TC-CF-03 / DEFECT-03: _calculate_overall_progress must not return is_all_done=True when only 1 model is cached."""
+    from main import _calculate_overall_progress
+
+    # 1. Only 1 model cached out of 3 known models
+    partial_statuses = {
+        "google/siglip2-base-patch16-224": {
+            "status": "cached",
+            "downloaded_bytes": 1539458338,
+            "total_bytes": 1539458338,
+            "progress": 100,
+        }
+    }
+    result_partial = _calculate_overall_progress(partial_statuses)
+    assert result_partial["is_all_done"] is False
+
+    # 2. All 3 models present, but 2 are still pending
+    mixed_statuses = {
+        "google/siglip2-base-patch16-224": {
+            "status": "cached",
+            "downloaded_bytes": 1539458338,
+            "total_bytes": 1539458338,
+            "progress": 100,
+        },
+        "mlx-community/gemma-4-12B-it-8bit": {
+            "status": "pending",
+            "downloaded_bytes": 0,
+            "total_bytes": 12748518855,
+            "progress": 0,
+        },
+        "widegather/unipercept-mirror": {
+            "status": "pending",
+            "downloaded_bytes": 0,
+            "total_bytes": 24952254453,
+            "progress": 0,
+        },
+    }
+    result_mixed = _calculate_overall_progress(mixed_statuses)
+    assert result_mixed["is_all_done"] is False
+
+    # 3. All 3 models completed or cached
+    all_done_statuses = {
+        "google/siglip2-base-patch16-224": {
+            "status": "cached",
+            "downloaded_bytes": 1539458338,
+            "total_bytes": 1539458338,
+            "progress": 100,
+        },
+        "mlx-community/gemma-4-12B-it-8bit": {
+            "status": "completed",
+            "downloaded_bytes": 12748518855,
+            "total_bytes": 12748518855,
+            "progress": 100,
+        },
+        "widegather/unipercept-mirror": {
+            "status": "cached",
+            "downloaded_bytes": 24952254453,
+            "total_bytes": 24952254453,
+            "progress": 100,
+        },
+    }
+    result_done = _calculate_overall_progress(all_done_statuses)
+    assert result_done["is_all_done"] is True
+
+
+

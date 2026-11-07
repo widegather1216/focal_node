@@ -47,7 +47,10 @@ export function useModelDownloadStatus() {
             setDownloadError(errorModel.error_message || '모델 다운로드 중 오류가 발생했습니다.');
             scheduleNext(5000);
           } else {
-            const isAllDone = data.overall?.is_all_done || (statusList.length > 0 && statusList.every(item => item.status === 'completed' || item.status === 'cached'));
+            const isAllDone = typeof data.overall?.is_all_done === 'boolean'
+              ? data.overall.is_all_done
+              : (statusList.length >= 3 && statusList.every((item) => item.status === 'completed' || item.status === 'cached'));
+
             if (isAllDone) {
               setDownloadProgress(100);
               setDownloadError(null);
@@ -56,9 +59,12 @@ export function useModelDownloadStatus() {
                   setIsDownloadingModel(false);
                 }
               }, 800);
+              // Slow poll (15s) when all models are cached/idle
+              scheduleNext(15000);
+            } else {
+              // Fast poll (2500ms) during initialization or pending transitions
+              scheduleNext(2500);
             }
-            // Slow poll (15s) when all models are cached/idle
-            scheduleNext(15000);
           }
         }
       } catch (err) {

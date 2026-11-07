@@ -36,7 +36,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Import DB configurations and SQLAlchemy ORM models
 from database import run_migrations
-from services.model_downloader import start_background_model_downloader
+from services.model_downloader import start_background_model_downloader, KNOWN_MODEL_SIZES
 from utils.process import start_parent_watcher
 
 import api.photos
@@ -92,7 +92,7 @@ def _calculate_overall_progress(statuses: dict) -> dict:
     total_dl = sum(item.get("downloaded_bytes", 0) for item in statuses.values())
     total_sz = sum(item.get("total_bytes", 0) for item in statuses.values())
     overall_progress = min(100, int((total_dl / total_sz) * 100)) if total_sz > 0 else 0
-    is_all_done = len(statuses) > 0 and all(item.get("status") in ("completed", "cached") for item in statuses.values())
+    is_all_done = len(statuses) >= len(KNOWN_MODEL_SIZES) and all(item.get("status") in ("completed", "cached") for item in statuses.values())
     downloading_item = next((item for item in statuses.values() if item.get("status") == "downloading"), None)
     current_label = downloading_item.get("label", "") if downloading_item else ""
 
@@ -109,7 +109,7 @@ def get_model_download_status():
     from services.model_downloader import get_model_download_tracker, start_background_model_downloader
     tracker = get_model_download_tracker()
     statuses = tracker.get_all_statuses()
-    if not statuses:
+    if not statuses or all(item.get("status") == "pending" for item in statuses.values()):
         start_background_model_downloader()
         statuses = tracker.get_all_statuses()
 
