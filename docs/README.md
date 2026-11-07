@@ -8,10 +8,10 @@
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
 - **Active 도메인**: [`00_core_foundation`](./features/00_core_foundation/README.md)
-- **현재 단계 (Stage)**: `🩹 Debugging (모델 다운로더 결함 DEFECT-02~04 해결 대기)`
-- **직전 완료 작업**: [`00_core_foundation`](./features/00_core_foundation/README.md) 도메인 `DEFECT-01` 해결 완료 (손상된 모델 인덱스 JSON 파싱 실패 시 `valid=False` 반환 및 결함 가중치 영구 캐시 오염 차단, 단위 테스트 `TC-CF-04` 통과 및 백엔드 107종 회귀 테스트 전수 통과)
+- **현재 단계 (Stage)**: `🩹 Debugging (모델 다운로더 결함 DEFECT-03~04 해결 대기)`
+- **직전 완료 작업**: [`00_core_foundation`](./features/00_core_foundation/README.md) 도메인 `DEFECT-02` 해결 완료 (모델 다운로드 실패 시 `model-download-completed` 거짓 성공 이벤트 조기 발행 차단 및 에러 전파 보장, 단위 테스트 2종 추가, 백엔드 109종 및 프론트엔드 빌드 전수 통과)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"00_core_foundation 도메인의 DEFECT-02 티켓 해결해줘"` *(다운로드 실패 모델 무시 및 거짓 성공 이벤트 조기 발행 방지)*
+  > `"00_core_foundation 도메인의 DEFECT-03 티켓 해결해줘"` *(ModelDownloadStatusTracker 미초기화 및 모델 1종 완료 시 조기 is_all_done: true 반환 및 15초 폴링 블랙아웃 방지)*
 
 ---
 
@@ -19,7 +19,7 @@
 
 | 도메인 (Bounded Context) | 생명주기 상태 | 구현 진척도 (Active Step 1~4) | QA 인수 통과율 | 미해결 티켓 (`🚨D` / `🧐R`) | 최근 작업 요약 |
 | :--- | :--- :---: | :---: | :---: | :---: | :--- |
-| 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `3/5 (60%)` | `3 / 0` | DEFECT-01 해결 완료 (손상 인덱스 valid=False 차단), DEFECT-02~04 대기 |
+| 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `3/5 (60%)` | `2 / 0` | DEFECT-01~02 해결 완료 (손상 인덱스 valid=False, 실패 시 거짓 완료 차단), DEFECT-03~04 대기 |
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 📐 Planning | `[□□□□] 0/4` | `3/6 (50%)` | `0 / 0` | REFACTOR-01 해결 완료 (타입 일원화, Repo 캡슐화, 예외 로깅) |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 📐 Planning | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 거리 임계값 + RRF 랭킹 + 35mm/점수 필터 + 스마트 앨범 Step 1~4 대기 |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `11/13 (85%)` | `2 / 6` | UniPercept 취소 미해제(`DEFECT-02`)·VQA 불능(`DEFECT-03`) 및 `REFACTOR` 6건 대기 |
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-07]` `[systematic-debugger]` [`00_core_foundation`]**: DEFECT-02 결함 해결 완료 (`5a1f3b3` / `model_downloader.py` 내 `download_models_background`에서 모델별 다운로드 결과를 수집하여 모든 모델 성공 시에만 `[Downloader] Completed all model downloads.` 출력 및 `True` 반환하도록 교정, 실패 시 `[Downloader] Download process finished with errors.` 출력 및 `False` 반환하여 Tauri Rust 호스트 `lib.rs`의 `model-download-completed` 거짓 성공 이벤트 조기 발행 차단, `useTauriEvents.ts` 에러 보존 가드 적용, 단위 테스트 2종 추가, 백엔드 109종 회귀 테스트 및 `npm run build` 100% 통과, `verification.md`/`README.md` 동기화).
 
 - **`[2026-11-07]` `[systematic-debugger]` [`00_core_foundation`]**: DEFECT-01 결함 해결 완료 (`793caed` / `model_downloader.py` 내 `get_missing_sharded_files` 및 `is_snapshot_weights_valid` 교정: 손상된 인덱스 JSON 파싱 실패 또는 빈 `weight_map` 감지 시 결함 인덱스를 missing 목록에 추가하고 `valid=False`를 반환하도록 조치하여 결함 모델의 영구 캐시 오염 원천 방지, 단위 테스트 `test_is_snapshot_weights_valid_corrupted_index` 추가 및 `TC-CF-04` PASS, 백엔드 107종 테스트 전수 통과, `verification.md`/`README.md` 동기화).
 

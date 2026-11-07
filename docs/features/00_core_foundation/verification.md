@@ -1,8 +1,8 @@
 # 🧪 [00_core_foundation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT 3건 해결 대기)`
+- **검증 상태**: `🩹 Debugging (DEFECT 2건 해결 대기)`
 - **인수 조건 통과율**: `3 / 5 (60%)`
-- **미해결 티켓**: `🚨 DEFECT: 3건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 2건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -26,7 +26,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Happy** | `TC-CF-01` | 동적 포트 사이드카 연결 | 앱 콜드 스타트 | `[Sidecar] PORT` 감지 및 갤러리 진입 | `PASS` |
 | **Boundary**| `TC-CF-02` | 모델 60초 Keep-alive 언로드 | Gemma 4 추론 후 60초 유휴 | 60초 후 가중치 메모리 해제 확인 | `PASS` |
-| **Negative**| `TC-CF-03` | 모델 미다운로드 상태 기동 | 로컬 HF 캐시 미존재 | `ModelDownloadModal` 노출 및 진행률 표시 | `FAIL (DEFECT-02, DEFECT-03)` |
+| **Negative**| `TC-CF-03` | 모델 미다운로드 상태 기동 | 로컬 HF 캐시 미존재 | `ModelDownloadModal` 노출 및 진행률 표시 | `FAIL (DEFECT-03)` |
 | **Boundary**| `TC-CF-04` | 모델 인덱스 손상 시 가중치 무결성 검증 | 손상된 index.json 주입 | 정상 가중치 오판 차단 및 재다운로드 유도 | `PASS (Fixed in DEFECT-01)` |
 | **Boundary**| `TC-CF-05` | 다운로드 재시도 시 동시성 및 파일 락 정합성 | 다운로드 중 POST /download | 중복 스레드 및 락 삭제 충돌 방지 | `FAIL (DEFECT-04)` |
 
@@ -50,13 +50,15 @@
 
 ### [DEFECT-02] 모델 다운로더의 실패 모델 무시 및 거짓 성공 이벤트(`model-download-completed`) 조기 발행
 - **심각도**: 🔴 P0 Critical (False Success / Silent Degradation)
-- **위치**: [`backend/app/services/model_downloader.py#L325-L339`](../../../backend/app/services/model_downloader.py#L325-L339), [`src-tauri/src/lib.rs#L322-L324`](../../../src-tauri/src/lib.rs#L322-L324), [`src/hooks/useTauriEvents.ts#L113-L125`](../../../src/hooks/useTauriEvents.ts#L113-L125)
+- **위치**: [`backend/app/services/model_downloader.py#L347-L378`](../../../backend/app/services/model_downloader.py#L347-L378), [`src-tauri/src/lib.rs#L322-L324`](../../../src-tauri/src/lib.rs#L322-L324), [`src/hooks/useTauriEvents.ts#L106-L110`](../../../src/hooks/useTauriEvents.ts#L106-L110)
 - **근본 원인 분석**:
   - `download_models_background()`가 `download_with_retry()`의 반환값(`bool`)을 확인하지 않고, SigLIP 2나 Gemma 4가 실패(`False`, `status="error"`)해도 무조건 다음 모델로 진행한 뒤 마지막에 `print("[Downloader] Completed all model downloads.")`를 무조건 출력함.
-  - Rust 호스트(`lib.rs`)가 이를 감지하여 `model-download-completed`를 emit하고, 프론트엔드 `useTauriEvents.ts`가 `setDownloadProgress(100)`, `setDownloadError(null)`, `setIsDownloadingModel(false)`를 실행하여 에러를 삼키고 모달을 정상 완료 상태로 닫아버림.
-- **수정 계획**:
-  - `download_models_background()`에서 각 모델 다운로드 결과를 수집하여, 하나라도 실패하면 `[Downloader] Download process finished with errors.`를 출력하고 `[Downloader] Completed all model downloads.`는 모든 모델이 성공(`cached` 또는 `completed`)했을 때만 출력하도록 수정.
-- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+  - Rust 호스트(`lib.rs`)가 이를 감지하여 `model-download-completed`를 emit하고, 프론트엔드 `useTauriEvents.ts`가 `setIsDownloadingModel(false)`를 실행하여 에러를 삼키고 모달을 정상 완료 상태로 닫아버림.
+- **해결 내역**:
+  - **수정 파일**: [`backend/app/services/model_downloader.py`](../../../backend/app/services/model_downloader.py#L347-L378), [`src-tauri/src/lib.rs`](../../../src-tauri/src/lib.rs#L322-L324), [`src/hooks/useTauriEvents.ts`](../../../src/hooks/useTauriEvents.ts#L106-L110), [`backend/tests/test_model_downloader.py`](../../../backend/tests/test_model_downloader.py#L84-L120)
+  - **원인 및 조치**: `download_models_background`에서 모델 다운로드 결과(`results`)를 취합하여 모든 모델이 성공(`True`)했을 때만 `[Downloader] Completed all model downloads.` 출력 및 `True`를 반환하도록 수정. 모델 다운로드 실패 시 `[Downloader] Download process finished with errors.`를 출력하고 `False`를 반환하여 Rust의 `model-download-completed` 조기 발행을 차단함. 추가로 Rust 호스트(`lib.rs`)의 완료 문자열 일치 조건을 엄격화하고 `useTauriEvents.ts`에서 에러 상태 시 모달을 닫지 않도록 가드를 보강함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_model_downloader.py` (`PASS`, 6 passed), `npm run build` (`PASS`)
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
 
 ### [DEFECT-03] `ModelDownloadStatusTracker` 미초기화 및 `_calculate_overall_progress`의 모델 1종 완료 시 조기 `is_all_done: true` 반환 및 15초 폴링 블랙아웃 레이스
 - **심각도**: 🟠 P1 High (Premature Completion & Polling Blackout Race)
