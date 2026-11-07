@@ -1,8 +1,8 @@
 # 🧪 [03_ai_critique] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (UniPercept VQA 불능 DEFECT-03 및 REFACTOR 6건 해결 대기)`
-- **인수 조건 통과율**: `12 / 13 (92%)`
-- **미해결 티켓**: `🚨 DEFECT: 1건` | `🧐 REFACTOR: 6건`
+- **검증 상태**: `🩹 Debugging (DEFECT 전수 해결 완료, REFACTOR 6건 해결 대기)`
+- **인수 조건 통과율**: `13 / 13 (100%)`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 6건`
 
 ---
 
@@ -62,7 +62,7 @@
 | **Happy** | `TC-CRT-08` | 기존 DB 사진 overall_score 자동 재계산 백필 | 기존 iaa/iqa/ista 보유 DB 기동 | run_migrations()에서 EXIF 조인 후 새 점수 백필 | `PASS` |
 | **Happy** | `TC-CRT-09` | 점수 가이드 모달 열람 및 닫기 | 스코어보드 [?] 버튼 클릭 | ScoringGuideModal 열림, ESC/닫기 동작 (`tsc & build`) | `PASS` |
 | **Boundary**| `TC-CRT-10` | 비평 취소 시 VLM 즉시 강제 언로드 및 GPU 동기화 | 비평 추론 도중 `[취소]` 클릭 | Gemma/UniPercept 즉시 언로드 및 MPS 캐시 100% 반환 | `PASS (Fixed in DEFECT-02)` |
-| **Happy** | `TC-CRT-11` | UniPercept 단일 패스 지각 앵커 추출 및 어휘 붕괴 방지 | 고해상도 테스트 사진 입력 | 150토큰 내외 지각 앵커 정상 영문 도출, 어휘 붕괴 0건 | `FAIL (DEFECT-03)` |
+| **Happy** | `TC-CRT-11` | UniPercept 단일 패스 지각 앵커 추출 및 어휘 붕괴 방지 | 고해상도 테스트 사진 입력 | 150토큰 내외 지각 앵커 정상 영문 도출, 어휘 붕괴 0건 | `PASS (Fixed in DEFECT-03)` |
 | **Happy** | `TC-CRT-12` | Gemma 4 지각 앵커 기반 직결 심층 비평 생성 | 지각 앵커 + VR 점수 + EXIF 주입 | 3대 표준 헤더 + 한 줄 총평 + 실전 조언 한국어 완성 | `PASS` |
 | **Boundary**| `TC-CRT-13` | UniPercept VQA 오류 시 Gemma 4 자율 비평 폴백 | UniPercept VQA 예외 강제 발생 | Gemma 4 직접 심층 비평으로 정상 폴백 생성 완료 | `PASS` |
 
@@ -81,19 +81,11 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_critique_cancellation.py backend/tests/test_unipercept.py -v` 및 전체 115종 (`PASS`)
 
 ### [DEFECT-03] `transformers 5.x` `return_dict` 인자 충돌로 인한 UniPercept VQA 모드 100% 실패 및 에러 은폐 결함
-- **심각도**: 🔴 Must Fix (UniPercept VQA 지각 앵커 기능 완전 불능)
-- **위치**: `backend/app/services/unipercept_adapter.py#L74-L80, #L431-L454, #L552-L569`
-- **근본 원인 분석 (Root Causes)**:
-  1. **`transformers==5.12.1`과 `InternVLChatModel.chat()` 간 시그니처 충돌**: `_run_single_vqa_domain_inference`(`#L442`)가 호출하는 `self.model.chat()` 내부 `InternVLChatModel.generate()`는 `self.language_model.generate(..., return_dict=return_dict)`(`None`)를 전달함. 반면 현재 가상환경의 `transformers==5.12.1`(`generation/utils.py#L3830`)은 프리필 단계에서 `self(**model_inputs, return_dict=True)`를 호출하여 **`TypeError: Qwen2ForCausalLM(...) got multiple values for keyword argument 'return_dict'`가 100% 발생**함 (VR 채점 `#L190-L205`는 `model.chat` 없이 직접 `language_model(...)` forward를 호출해 정상 동작했던 것).
-  2. **예외 삼킴(`#L556-L558`)으로 인한 거짓 성공 처리**: `generate_perceptual_anchor_vqa`가 위 `TypeError`를 잡아서 `anchor_text = "Perceptual analysis error: ..."` 문자열로 둔갑시킨 뒤 정상 반환함. 그 결과 Gemma 4는 UniPercept VQA 진단 없이 자체 비전 인코더만으로 한국어 비평을 작성하고, DB `critique_en`(`RAW EN` 카드)에는 에러 문자열이 그대로 저장됨.
-  3. **`model.eval()` 누락**: `_load_model_locked()`에서 `from_pretrained(...).to(self.device)` 직후 `.eval()` 모드 전환이 누락됨.
-- **수정 계획 (Suggested Fix)**:
-  ```text
-  - `_load_model_locked()`에서 `self.model.eval()` 명시 호출
-  - `self.model.chat()` 래퍼를 우회하고, VR과 동일하게 `_resolve_conversation_template` + `extract_feature(pixel_values)`(VR 단계의 `vit_embeds` 재사용 가능)로 `inputs_embeds`를 구성한 뒤 `self.model.language_model.generate(inputs_embeds=..., attention_mask=..., eos_token_id=..., pad_token_id=..., use_cache=True, **generation_config)`를 `return_dict` 없이 직접 호출 (출력에서 `<think>...</think>` 및 종료 토큰 정제)
-  - VQA 추론 실패 시 에러 문자열을 반환하지 않고 예외를 그대로 전파(`raise`)하여 `ChatService` 자율 폴백이 정상 동작하도록 교정
-  ```
-- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`unipercept_adapter.py`](../../../backend/app/services/unipercept_adapter.py#L73-L115), [`unipercept_adapter.py`](../../../backend/app/services/unipercept_adapter.py#L496-L710), [`test_unipercept.py`](../../../backend/tests/test_unipercept.py#L502-L686)
+  - **원인 및 조치**: ① `_load_model_locked()`의 기본 및 FP32 폴백 로드 직후 `self.model.eval()`을 명시 호출하도록 보강, ② `_build_vqa_query`·`_clean_vqa_response`·`_generate_with_language_model` 헬퍼를 구현하여 실제 `InternVLChatModel`(`hasattr(self.model, "language_model") and hasattr(self.model, "extract_feature") and self.tokenizer is not None`)에서는 `self.model.chat()`을 우회하고 `extract_feature(pixel_values)`로 구성한 `inputs_embeds`를 `self.model.language_model.generate(...)`(`return_dict` 제외, `use_cache=True`)에 직접 전달한 뒤 `<think>...</think>` 및 종료 토큰을 정제하여 반환하도록 조치(더미 `chat` 모킹 객체 100% 하위 호환 유지), ③ `generate_perceptual_anchor_vqa`에서 VQA 추론 실패 시 `"Perceptual analysis error: ..."` 문자열로 삼키지 않고 예외를 그대로 `raise`하여 `ChatService`의 Gemma 4 자율 폴백(`TC-CRT-13`)이 정상 작동하도록 교정.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_unipercept.py -v` (`19 passed`) 및 전체 `./venv/bin/pytest backend/tests/ -v` (`118 passed`) (`PASS`)
 
 ---
 
