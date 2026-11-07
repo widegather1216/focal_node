@@ -1,8 +1,8 @@
 # 🧪 [00_core_foundation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT 1건 해결 대기)`
-- **인수 조건 통과율**: `4 / 5 (80%)`
-- **미해결 티켓**: `🚨 DEFECT: 1건` | `🧐 REFACTOR: 0건`
+- **검증 상태**: `🟢 Sign-Off (전체 인수 조건 100% PASS & 미해결 티켓 0건)`
+- **인수 조건 통과율**: `5 / 5 (100%)`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -28,7 +28,7 @@
 | **Boundary**| `TC-CF-02` | 모델 60초 Keep-alive 언로드 | Gemma 4 추론 후 60초 유휴 | 60초 후 가중치 메모리 해제 확인 | `PASS` |
 | **Negative**| `TC-CF-03` | 모델 미다운로드 상태 기동 | 로컬 HF 캐시 미존재 | `ModelDownloadModal` 노출 및 진행률 표시 | `PASS (Fixed in DEFECT-03)` |
 | **Boundary**| `TC-CF-04` | 모델 인덱스 손상 시 가중치 무결성 검증 | 손상된 index.json 주입 | 정상 가중치 오판 차단 및 재다운로드 유도 | `PASS (Fixed in DEFECT-01)` |
-| **Boundary**| `TC-CF-05` | 다운로드 재시도 시 동시성 및 파일 락 정합성 | 다운로드 중 POST /download | 중복 스레드 및 락 삭제 충돌 방지 | `FAIL (DEFECT-04)` |
+| **Boundary**| `TC-CF-05` | 다운로드 재시도 시 동시성 및 파일 락 정합성 | 다운로드 중 POST /download | 중복 스레드 및 락 삭제 충돌 방지 | `PASS (Fixed in DEFECT-04)` |
 
 ---
 
@@ -76,14 +76,16 @@
 
 ### [DEFECT-04] `start_background_model_downloader(force=True)` 재시도 시 고아 스레드 증식 및 HF 파일 락 삭제 레이스
 - **심각도**: 🟠 P1 High (Concurrency Race & Cache Corruption)
-- **위치**: [`backend/app/services/model_downloader.py#L228-L241, #L343-L351`](../../../backend/app/services/model_downloader.py#L228-L241), [`backend/app/main.py#L121-L131`](../../../backend/app/main.py#L121-L131)
+- **위치**: [`backend/app/services/model_downloader.py#L410-L422`](../../../backend/app/services/model_downloader.py#L410-L422), [`backend/app/main.py#L121-L131`](../../../backend/app/main.py#L121-L131)
 - **근본 원인 분석**:
   - `POST /api/system/models/download` 호출 시 `start_background_model_downloader(force=True)`가 호출됨.
   - `force=True` 조건으로 인해 이전 스레드가 여전히 실행 중임에도 불구하고 새 스레드가 생성되어 `_downloader_thread`를 덮어쓰고 고아 스레드가 됨.
   - 2번째 스레드가 시작되며 `clear_stale_hf_locks()`를 호출해 1번째 스레드가 점유 중인 `.lock` 파일을 강제 삭제하고 동일 캐시 경로에 동시 다운로드를 실행하여 HF 세션 충돌 및 파일 손상이 발생함.
-- **수정 계획**:
-  - `start_background_model_downloader`에서 `_downloader_thread.is_alive()`가 `True`인 경우 `force=True`여도 중복 스레드를 띄우지 않고 기존 스레드를 재사용하도록 가드 적용.
-- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+- **해결 내역**:
+  - **수정 파일**: [`backend/app/services/model_downloader.py`](../../../backend/app/services/model_downloader.py#L410-L422), [`backend/tests/test_model_downloader.py`](../../../backend/tests/test_model_downloader.py#L201-L260)
+  - **원인 및 조치**: `start_background_model_downloader`에서 기존 스레드가 활성 상태(`_downloader_thread is not None and _downloader_thread.is_alive()`)인 경우 `force=True` 여부와 무관하게 즉시 `False`를 반환하도록 가드 절(Guard Clause)을 적용. 기존 다운로드 스레드가 고아화되는 것을 차단하고 `clear_stale_hf_locks()` 호출로 인한 HF 파일 락 삭제 충돌 및 중복 다운로드 세션 레이스를 원천 차단함. 스레드 종료 후에만 `force=True`로 재시작을 허용하도록 보장함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_model_downloader.py` (`PASS`, 9 passed), `./venv/bin/pytest backend/tests/` (`PASS`, 112 passed)
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
 
 ---
 
