@@ -1,8 +1,8 @@
 # 🧪 [00_core_foundation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT 4건 해결 대기)`
-- **인수 조건 통과율**: `2 / 5 (40%)`
-- **미해결 티켓**: `🚨 DEFECT: 4건` | `🧐 REFACTOR: 0건`
+- **검증 상태**: `🩹 Debugging (DEFECT 3건 해결 대기)`
+- **인수 조건 통과율**: `3 / 5 (60%)`
+- **미해결 티켓**: `🚨 DEFECT: 3건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -27,7 +27,7 @@
 | **Happy** | `TC-CF-01` | 동적 포트 사이드카 연결 | 앱 콜드 스타트 | `[Sidecar] PORT` 감지 및 갤러리 진입 | `PASS` |
 | **Boundary**| `TC-CF-02` | 모델 60초 Keep-alive 언로드 | Gemma 4 추론 후 60초 유휴 | 60초 후 가중치 메모리 해제 확인 | `PASS` |
 | **Negative**| `TC-CF-03` | 모델 미다운로드 상태 기동 | 로컬 HF 캐시 미존재 | `ModelDownloadModal` 노출 및 진행률 표시 | `FAIL (DEFECT-02, DEFECT-03)` |
-| **Boundary**| `TC-CF-04` | 모델 인덱스 손상 시 가중치 무결성 검증 | 손상된 index.json 주입 | 정상 가중치 오판 차단 및 재다운로드 유도 | `FAIL (DEFECT-01)` |
+| **Boundary**| `TC-CF-04` | 모델 인덱스 손상 시 가중치 무결성 검증 | 손상된 index.json 주입 | 정상 가중치 오판 차단 및 재다운로드 유도 | `PASS (Fixed in DEFECT-01)` |
 | **Boundary**| `TC-CF-05` | 다운로드 재시도 시 동시성 및 파일 락 정합성 | 다운로드 중 POST /download | 중복 스레드 및 락 삭제 충돌 방지 | `FAIL (DEFECT-04)` |
 
 ---
@@ -36,15 +36,17 @@
 
 ### [DEFECT-01] `is_snapshot_weights_valid`의 손상된 인덱스 JSON 파싱 실패 시 `valid=True` 오판 및 결함 모델 영구 캐시 오염
 - **심각도**: 🔴 P0 Critical (Silent Degradation / False Validation)
-- **위치**: [`backend/app/services/model_downloader.py#L120-L158`](../../../backend/app/services/model_downloader.py#L120-L158)
+- **위치**: [`backend/app/services/model_downloader.py#L120-L179`](../../../backend/app/services/model_downloader.py#L120-L179)
 - **근본 원인 분석**:
   - `is_snapshot_weights_valid`는 `model.safetensors.index.json` 또는 `pytorch_model.bin.index.json` 존재 시 `len(get_missing_sharded_files(snapshot_dir)) == 0`으로 유효성을 판단함.
   - `get_missing_sharded_files`는 `json.load(f)` 실패 시 예외를 로깅만 하고 빈 리스트(`[]`)를 반환함.
   - 이로 인해 다운로드 중단 등으로 1바이트만 남은 깨진 인덱스 파일만 있고 가중치 파일이 0개인 디렉토리도 `len(missing) == 0`이 되어 `valid=True`로 통과됨.
   - `_is_model_cached()`가 이를 `status="cached"`로 오판하여 실제 가중치 다운로드를 영구 건너뛰며, 추론 시 크래시를 유발함.
-- **수정 계획**:
-  - `get_missing_sharded_files`에서 인덱스 파일 파싱 실패 시 결함 센티넬 문자열을 반환하거나, `is_snapshot_weights_valid`에서 인덱스 파싱 예외 발생 시 즉시 `False`를 반환하도록 교정.
-- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+- **해결 내역**:
+  - **수정 파일**: [`backend/app/services/model_downloader.py`](../../../backend/app/services/model_downloader.py#L120-L179), [`backend/tests/test_model_downloader.py`](../../../backend/tests/test_model_downloader.py#L55-L82)
+  - **원인 및 조치**: `get_missing_sharded_files`에서 인덱스 파일 파싱 실패(`json.load` 예외), 비딕셔너리 구조 또는 비어있는 `weight_map` 감지 시 결함 인덱스 파일 자체를 `missing` 목록에 추가하도록 교정. `is_snapshot_weights_valid`에서 인덱스 파싱 예외 발생 시 `False`를 반환하도록 안전하게 래핑하여 결함 모델의 영구 캐시 오판 및 런타임 추론 크래시를 원천 방지함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_model_downloader.py` (`PASS`, 4 passed)
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
 
 ### [DEFECT-02] 모델 다운로더의 실패 모델 무시 및 거짓 성공 이벤트(`model-download-completed`) 조기 발행
 - **심각도**: 🔴 P0 Critical (False Success / Silent Degradation)

@@ -1,8 +1,8 @@
 # 🏛️ [00_core_foundation] Core Foundation & System Architecture
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (모델 다운로더 결함 DEFECT-01~04 해결 대기)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (모델 다운로더 결함 DEFECT-02~04 해결 대기)`
 - **구현 진척도**: `[■■■■] 4/4 Steps`
-- **미해결 티켓 현황**: `🚨 DEFECT: 4건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 3건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -29,12 +29,13 @@
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-11-06 / deep-bug-hunter / 00_core_foundation 딥디버깅 결함 발권 (1cd1786 / 손상 인덱스 valid 오판 DEFECT-01, 실패 모델 무시 및 거짓 성공 이벤트 DEFECT-02, 미초기화 및 15초 폴링 블랙아웃 DEFECT-03, force=True 고아 스레드 및 HF 락 충돌 DEFECT-04)`
+- **직전 완료 작업**: `2026-11-07 / systematic-debugger / DEFECT-01 해결 (793caed / 손상된 모델 인덱스 파싱 실패 시 valid=False 반환 및 캐시 오염 방지)`
 - **생성/수정된 핵심 파일**:
-  - [`docs/features/00_core_foundation/verification.md`](./verification.md): `DEFECT-01~04` 4건 발권 및 테스트 매트릭스 갱신
-  - [`docs/features/00_core_foundation/README.md`](./README.md): 도메인 수명주기 `🩹 Debugging` 전환
+  - [`backend/app/services/model_downloader.py`](../../../backend/app/services/model_downloader.py): `get_missing_sharded_files` 및 `is_snapshot_weights_valid` 결함 인덱스 방어
+  - [`backend/tests/test_model_downloader.py`](../../../backend/tests/test_model_downloader.py): `test_is_snapshot_weights_valid_corrupted_index` 단위 테스트 추가
+  - [`docs/features/00_core_foundation/verification.md`](./verification.md): `DEFECT-01` RESOLVED, `TC-CF-04` PASS
 - **검증 완료된 테스트 실행 명령어**:
-  - `./venv/bin/pytest backend/tests/test_model_downloader.py backend/tests/test_backend_hardening.py backend/tests/test_concurrency_hardening.py`
-  - `./venv/bin/pytest backend/tests/` (98 passed)
+  - `./venv/bin/pytest backend/tests/test_model_downloader.py` (4 passed)
+  - `./venv/bin/pytest backend/tests/` (107 passed)
 - **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - `systematic-debugger` 스킬을 연결하여 `00_core_foundation`의 최우선 런타임 결함 `DEFECT-01`부터 순차 해결 권장 (`"00_core_foundation 도메인의 DEFECT-01 티켓 해결해줘"`).
+  - `systematic-debugger` 스킬을 연결하여 `00_core_foundation`의 차순위 런타임 결함 `DEFECT-02` 해결 권장 (`"00_core_foundation 도메인의 DEFECT-02 티켓 해결해줘"`).
