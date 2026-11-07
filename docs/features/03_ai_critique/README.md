@@ -1,8 +1,8 @@
 # 🤖 [03_ai_critique] On-Demand AI Critique & Editorial Export
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (UniPercept 취소 미해제 DEFECT-02·VQA 불능 DEFECT-03 및 REFACTOR 6건 해결 대기)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (UniPercept VQA 불능 DEFECT-03 및 REFACTOR 6건 해결 대기)`
 - **구현 진척도**: `[■■■■] 4/4 Steps (Active Iteration Step 1~4 구현 완료)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 2건` | `🧐 REFACTOR: 6건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 1건` | `🧐 REFACTOR: 6건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -36,6 +36,7 @@
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
 - **Recent Commits**:
+  - `d2ec389` - `fix(critique): prevent unipercept 28gb memory leak and reload race on cancel`
   - `d848988` - `docs(critique): record code audit matrix findings and register defect tickets`
   - `9081f9c` - `docs(critique): promote hybrid pipeline spec to As-Is and complete step 4`
   - `a3afb63` - `fix(critique): improve markdown parser header tagging and export English anchor appendix`
@@ -43,12 +44,14 @@
   - `a9b398b` - `docs(critique): specify hybrid perceptual anchor pipeline with gemma 4 direct critique`
   - `756e6be` - `refactor(critique): eliminate silent fail blocks and decompose long adapter methods`
   - `1f0151c` - `refactor(critique): decompose monolithic critique components for SRP conformance`
-- **직전 완료 작업**: `2026-11-06 / clean-code-auditor / 전 계층 7대 매트릭스 감사 및 UniPercept 취소 미해제(DEFECT-02)·VQA 불능(DEFECT-03) 근본 원인 규명 완료 (DEFECT 2건·REFACTOR 6건 대기)`
-- **감사 완료 범위 및 핵심 발견 사항**:
-  1. **정적 분석기 결과**: `npx tsc --noEmit` (`PASS`), `npm run build` (`PASS`), `./venv/bin/pytest backend/tests/ -v` (`106 passed`), `transformers==5.12.1` `generate` 재현 검증 완료
-  2. **🚨 핵심 런타임 결함 (`DEFECT-02~03` — 최우선 해결)**:
-     - `DEFECT-02` (`TC-CRT-10 FAIL`): 비평 중단 시 `task.cancel()`이 코루틴만 먼저 종료해 `self.model is None`(로딩 중) 상태에서 빈 `unload_model()`이 실행되거나, `generate_perceptual_anchor_vqa`가 `check_cancelled` 전에 `_load_model_locked()`를 호출해 28GB를 디스크에서 재적재 후 방치함
-     - `DEFECT-03` (`TC-CRT-11 FAIL`): `transformers==5.12.1`의 `_prefill(..., return_dict=True)`와 `InternVLChatModel.chat()`의 `return_dict=None` 전달이 충돌하여 VQA가 100% `TypeError`로 실패하고, `#L556-L558` 예외 삼킴으로 인해 `"Perceptual analysis error: ..."` 문자열이 정상 앵커로 위장 저장됨
+- **직전 완료 작업**: `2026-11-07 / systematic-debugger / DEFECT-02 (비평 중단 시 asyncio.to_thread 워커 스레드 레이스 및 28GB 메모리 미해제 결함) 해결 및 회귀 검증 완료 (DEFECT 1건·REFACTOR 6건 대기)`
+- **해결 완료 및 잔여 티켓 현황**:
+  1. **✅ `DEFECT-02` 해결 (`TC-CRT-10 PASS`)**:
+     - 수정 파일: `backend/app/services/base_model.py`, `backend/app/services/unipercept_adapter.py`, `backend/tests/test_critique_cancellation.py`
+     - `_acquire_model_for_request`에서 `_load_model_locked()` 전후로 취소 여부를 점검하여 취소된 작업의 디스크 28GB 재적재를 원천 차단하고, 10~15초 로딩 구간 취소 시 락 내부에서 즉시 `_unload_model_locked()` 실행
+     - `generate_full_ensemble_critique` 최외곽 `finally` 및 `_release_model_for_request`에서 워커 스레드 직접 언로드 보장, `_on_unload()`에서 `_cached_weight_tensor` 및 서브모듈 참조 해제, `CritiqueCancelledException` 삼킴 방지 가드 적용
+  2. **🚨 잔여 런타임 결함 (`DEFECT-03` — 최우선 해결)**:
+     - `DEFECT-03` (`TC-CRT-11 FAIL`): `transformers==5.12.1`의 `_prefill(..., return_dict=True)`와 `InternVLChatModel.chat()`의 `return_dict=None` 전달이 충돌하여 VQA가 100% `TypeError`로 실패하고, 예외 삼킴으로 인해 `"Perceptual analysis error: ..."` 문자열이 정상 앵커로 위장 저장됨
   3. **🔴 Must Fix 리팩토링 (`REFACTOR-04~07`)**:
      - `REFACTOR-04`: `CritiqueDocumentModal.tsx` 조기 `return null` 이후 `useMemo` 호출로 인한 모달 오픈 즉시 런타임 크래시·전역 키 가로채기 및 PDF 내보내기 미이스케이프 `innerHTML`(XSS)·다크 인라인 색상 역전
      - `REFACTOR-05`: `PATCH /api/photos/{id}/metadata` 응답의 비평/평점 필드 누락(캐시 유실), `DELETE /critique/{id}` 후 인메모리 상태 미삭제 부활, 취소 시 워커 스레드 `task.cancel()` 비스레드안전 호출 및 `PhotoRepository` 우회 쿼리
@@ -58,7 +61,7 @@
 - **검증 완료된 테스트 실행 명령어**:
   - `npx tsc --noEmit` (`PASS`)
   - `npm run build` (`PASS`)
-  - `./venv/bin/pytest backend/tests/ -v` (`106 passed`)
+  - `./venv/bin/pytest backend/tests/ -v` (`115 passed`)
 - **다음 세션 포커스 및 추천 실행 프롬프트**:
-  - 최우선 런타임 결함인 `DEFECT-02`(취소 시 28GB 미해제) 및 `DEFECT-03`(VQA `return_dict` 충돌)부터 순차 해결합니다 (`systematic-debugger`).
-  - 👉 추천 프롬프트: `"03_ai_critique 도메인의 DEFECT-02 티켓 해결해줘"`
+  - 최우선 런타임 결함인 `DEFECT-03`(VQA `return_dict` 충돌 및 에러 은폐)을 이어서 해결합니다 (`systematic-debugger`).
+  - 👉 추천 프롬프트: `"03_ai_critique 도메인의 DEFECT-03 티켓 해결해줘"`

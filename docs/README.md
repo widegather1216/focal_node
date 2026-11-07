@@ -8,10 +8,10 @@
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
 - **Active 도메인**: [`03_ai_critique`](./features/03_ai_critique/README.md)
-- **현재 단계 (Stage)**: `🩹 Debugging (UniPercept 런타임 결함 DEFECT-02 해결 대기)`
-- **직전 완료 작업**: [`00_core_foundation`](./features/00_core_foundation/README.md) 도메인 `DEFECT-04` 해결 완료 (`start_background_model_downloader`에 활성 스레드 가드 절 적용으로 `force=True` 중복 호출 시 고아 스레드 증식 및 HF 파일 락 삭제 충돌 차단, 단위 테스트 1종 추가, 백엔드 112종 및 프론트엔드 빌드 100% 통과, 00_core_foundation 전수 Sign-Off)
+- **현재 단계 (Stage)**: `🩹 Debugging (UniPercept VQA 런타임 결함 DEFECT-03 해결 대기)`
+- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 `DEFECT-02` 해결 완료 (`UniPerceptAdapter` 모델 획득/해제 시 취소 가드로 28GB 디스크 재적재 및 로딩 중 취소 후 메모리 상주 원천 차단, `generate_full_ensemble_critique` 최외곽 `finally` 언로드 및 `_on_unload` MPS 텐서 해제, 단위 테스트 3종 추가 및 백엔드 115종 전수 통과)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"03_ai_critique 도메인의 DEFECT-02 티켓 해결해줘"` *(비평 중단 시 asyncio.to_thread 워커 스레드 레이스 및 28GB 메모리 미해제 방지)*
+  > `"03_ai_critique 도메인의 DEFECT-03 티켓 해결해줘"` *(transformers 5.x return_dict 인자 충돌로 인한 UniPercept VQA 100% 실패 및 에러 은폐 결함 해결)*
 
 ---
 
@@ -22,7 +22,7 @@
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `5/5 (100%)` | `0 / 0` | DEFECT-01~04 전수 해결 완료 (손상 인덱스 valid=False, 실패 시 거짓 완료 차단, 1종 조기완료 차단, 중복 스레드/락 삭제 가드), Sign-Off 완료 |
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 📐 Planning | `[□□□□] 0/4` | `3/6 (50%)` | `0 / 0` | REFACTOR-01 해결 완료 (타입 일원화, Repo 캡슐화, 예외 로깅) |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 📐 Planning | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 거리 임계값 + RRF 랭킹 + 35mm/점수 필터 + 스마트 앨범 Step 1~4 대기 |
-| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `11/13 (85%)` | `2 / 6` | UniPercept 취소 미해제(`DEFECT-02`)·VQA 불능(`DEFECT-03`) 및 `REFACTOR` 6건 대기 |
+| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `12/13 (92%)` | `1 / 6` | `DEFECT-02` 해결 완료 (취소 시 28GB 재적재 차단 및 즉시 언로드), `DEFECT-03`·`REFACTOR` 6건 대기 |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 📐 Planning | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 2` | 통계 차트 클릭 갤러리 드릴다운(`Click-to-Filter`) Step 3~4 대기 |
 
 *(※ 상태 범례: `📐 Planning` | `🛠️ Implementing` | `🧐 Auditing` | `🧪 QA Testing` | `🩹 Debugging` | `🟢 Sign-Off`)*
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-07]` `[systematic-debugger]` [`03_ai_critique`]**: DEFECT-02 결함 해결 완료 (`d2ec389` / `UniPerceptAdapter._acquire_model_for_request`에서 `_load_model_locked()` 전후로 취소 여부를 검증하여 취소된 요청의 28GB 디스크 재적재 차단 및 10~15초 로딩 구간 취소 시 락 내부에서 즉시 언로드, `generate_full_ensemble_critique` 최외곽 `finally` 및 `_release_model_for_request`에서 워커 스레드 직접 언로드 보장, `_on_unload()`에서 `_cached_weight_tensor` 및 서브모듈 참조 해제, `CritiqueCancelledException` 삼킴 방지 가드 및 회귀 단위 테스트 3종 추가, `TC-CRT-10 PASS`, 백엔드 115종 및 프론트엔드 빌드 전수 통과).
 
 - **`[2026-11-07]` `[systematic-debugger]` [`00_core_foundation`]**: DEFECT-04 결함 해결 완료 (`d596f7b` / `start_background_model_downloader`에 `_downloader_thread and _downloader_thread.is_alive()` 가드 절을 적용하여 `force=True` 중복 호출 시 새 스레드로 덮어쓰고 고아 스레드가 증식하는 버그 차단, `clear_stale_hf_locks()`로 인한 HF 캐시 파일 락 삭제 충돌 및 동시 다운로드 레이스 원천 차단, `POST /api/system/models/download` 호출 시 이미 실행 중이면 `started: false` 안전 반환 및 스레드 종료 후 재시작 허용, 단위 테스트 `test_start_background_model_downloader_prevents_duplicate_threads_when_alive` 추가, 백엔드 112종 및 프론트엔드 빌드 전수 통과, 00_core_foundation `5/5 (100%)` 전체 `🟢 Sign-Off` 완료).
 

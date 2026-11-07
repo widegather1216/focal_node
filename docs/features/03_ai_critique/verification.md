@@ -1,8 +1,8 @@
 # 🧪 [03_ai_critique] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (UniPercept 취소 미해제 DEFECT-02·VQA 불능 DEFECT-03 및 REFACTOR 6건 해결 대기)`
-- **인수 조건 통과율**: `11 / 13 (85%)`
-- **미해결 티켓**: `🚨 DEFECT: 2건` | `🧐 REFACTOR: 6건`
+- **검증 상태**: `🩹 Debugging (UniPercept VQA 불능 DEFECT-03 및 REFACTOR 6건 해결 대기)`
+- **인수 조건 통과율**: `12 / 13 (92%)`
+- **미해결 티켓**: `🚨 DEFECT: 1건` | `🧐 REFACTOR: 6건`
 
 ---
 
@@ -61,7 +61,7 @@
 | **Boundary**| `TC-CRT-07` | EXIF 누락/비정상값 시 표준 폴백 및 클램핑 | EXIF 없음, 극단값(IAA 100, IQA 0 등) | 표준 모드 가중치 폴백 및 0~100 클램핑 | `PASS` |
 | **Happy** | `TC-CRT-08` | 기존 DB 사진 overall_score 자동 재계산 백필 | 기존 iaa/iqa/ista 보유 DB 기동 | run_migrations()에서 EXIF 조인 후 새 점수 백필 | `PASS` |
 | **Happy** | `TC-CRT-09` | 점수 가이드 모달 열람 및 닫기 | 스코어보드 [?] 버튼 클릭 | ScoringGuideModal 열림, ESC/닫기 동작 (`tsc & build`) | `PASS` |
-| **Boundary**| `TC-CRT-10` | 비평 취소 시 VLM 즉시 강제 언로드 및 GPU 동기화 | 비평 추론 도중 `[취소]` 클릭 | Gemma/UniPercept 즉시 언로드 및 MPS 캐시 100% 반환 | `FAIL (DEFECT-02)` |
+| **Boundary**| `TC-CRT-10` | 비평 취소 시 VLM 즉시 강제 언로드 및 GPU 동기화 | 비평 추론 도중 `[취소]` 클릭 | Gemma/UniPercept 즉시 언로드 및 MPS 캐시 100% 반환 | `PASS (Fixed in DEFECT-02)` |
 | **Happy** | `TC-CRT-11` | UniPercept 단일 패스 지각 앵커 추출 및 어휘 붕괴 방지 | 고해상도 테스트 사진 입력 | 150토큰 내외 지각 앵커 정상 영문 도출, 어휘 붕괴 0건 | `FAIL (DEFECT-03)` |
 | **Happy** | `TC-CRT-12` | Gemma 4 지각 앵커 기반 직결 심층 비평 생성 | 지각 앵커 + VR 점수 + EXIF 주입 | 3대 표준 헤더 + 한 줄 총평 + 실전 조언 한국어 완성 | `PASS` |
 | **Boundary**| `TC-CRT-13` | UniPercept VQA 오류 시 Gemma 4 자율 비평 폴백 | UniPercept VQA 예외 강제 발생 | Gemma 4 직접 심층 비평으로 정상 폴백 생성 완료 | `PASS` |
@@ -74,20 +74,11 @@
 - **현재 상태**: 🟢 RESOLVED — `_unload_critique_models(force=True)`, `task.cancel()`, `torch.mps.synchronize()` 적용으로 1차 조치 완료 (UniPercept 워커 스레드 레이스는 `DEFECT-02`로 후속 추적)
 
 ### [DEFECT-02] 비평 중단(취소) 시 `asyncio.to_thread` 워커 스레드 레이스 및 재로드로 인한 UniPercept 28GB 메모리 미해제 결함
-- **심각도**: 🔴 Must Fix (28GB RAM 상주 잔류)
-- **위치**: `backend/app/services/unipercept_adapter.py#L19-L23, #L333-L398, #L521-L533, #L894-L959`, `backend/app/services/chat_service.py#L208-L227, #L421-L432`
-- **근본 원인 분석 (Root Causes)**:
-  1. **비동기 코루틴 취소와 OS 워커 스레드 수명주기 분리**: `cancel_critique()`에서 `task.cancel()` 호출 시 이벤트 루프의 `await asyncio.to_thread(adapter.generate_full_ensemble_critique, ...)`는 즉시 중단되어 `unload_model()`을 먼저 실행하고 종료되지만, OS 워커 스레드(`Thread A`)는 계속 실행됨.
-  2. **로딩 구간(10~15초) 취소 시 빈 언로드 및 사후 적재 방치**: `Thread A`가 28GB 가중치를 읽는 `_load_model_locked()` 도중(`self.model is None`) 중단 버튼을 누르면 취소 측 `unload_model()`은 `self.model is None`이므로 아무 작업 없이 종료되고, 직후 로딩을 마친 `Thread A`가 취소 예외로 빠져나가며 **이후 누구도 `unload_model()`을 다시 호출하지 않음**.
-  3. **취소 체크보다 앞선 `_load_model_locked()` 호출로 인한 28GB 재적재**: `generate_vr_scores`(`#L335`)와 `generate_perceptual_anchor_vqa`(`#L523`) 모두 `check_cancelled(photo_id)` 이전에 `_load_model_locked()`를 먼저 호출함. VR 직후 중단 시 취소 스레드가 모델을 내린 직후 `Thread A`가 `#L523`에 진입해 **28GB를 디스크에서 다시 로드**한 뒤 `#L532`에서 취소 종료되어 메모리에 영구 잔류함.
-  4. **MPS 텐서 잔류 및 Keep-alive 설정 불일치**: `generate_vr_scores`의 `del pixel_values`(`#L392`)가 `finally` 밖에 있어 취소 시 누락되며, `_on_unload()`에서 MPS 텐서 `_cached_weight_tensor`(`#L211`)를 해제하지 않고 `keep_alive_timeout=60.0` 스레드가 구동됨.
-- **수정 계획 (Suggested Fix)**:
-  ```text
-  - `generate_full_ensemble_critique` 내부 최외곽 `try ... finally:`에서 워커 스레드 자신이 직접 `self.unload_model()`을 보장 실행하도록 이동
-  - `with GPU_LOCK: with self.lock:` 블록 내 `_load_model_locked()` 호출 직전에 `check_cancelled(photo_id)` 가드를 배치해 취소된 작업의 모델 로드/재로드 원천 차단
-  - `del pixel_values`를 `finally`로 이동하고, `_on_unload()`에서 `self._cached_weight_tensor = None` 해제 및 서브모듈 참조 정리 수행
-  ```
-- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`base_model.py`](../../../backend/app/services/base_model.py#L39-L80), [`unipercept_adapter.py`](../../../backend/app/services/unipercept_adapter.py#L17-L170), [`test_critique_cancellation.py`](../../../backend/tests/test_critique_cancellation.py#L251-L340)
+  - **원인 및 조치**: Devil's Advocate 사전 검증을 거쳐 ① `_acquire_model_for_request`에서 `GPU_LOCK -> self.lock` 획득 직후 `_load_model_locked()` 호출 전후로 `check_cancelled(photo_id)`를 검사하여 취소된 요청의 28GB 디스크 재적재를 원천 차단하고 10~15초 로딩 도중 취소 시 락 해제 전 즉시 `_unload_model_locked()`를 수행하도록 교정, ② `_release_model_for_request`(Lock Inversion 방지를 위해 `self.lock` 해제 후 `unload_model()` 호출) 및 `generate_full_ensemble_critique` 최외곽 `finally` 블록에서 워커 스레드 자신이 직접 언로드를 보장하도록 수정, ③ `_release_pixel_values`를 `finally`로 일원화하고 `_on_unload()`에서 `_cached_weight_tensor`·`_cached_preferential_ids` 및 서브모듈 참조를 해제하며 `keep_alive_timeout=0.0` 적용, ④ `CritiqueCancelledException`이 내부 `except Exception:`에 삼켜지지 않도록 재전파(`raise`) 가드 추가.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_critique_cancellation.py backend/tests/test_unipercept.py -v` 및 전체 115종 (`PASS`)
 
 ### [DEFECT-03] `transformers 5.x` `return_dict` 인자 충돌로 인한 UniPercept VQA 모드 100% 실패 및 에러 은폐 결함
 - **심각도**: 🔴 Must Fix (UniPercept VQA 지각 앵커 기능 완전 불능)
