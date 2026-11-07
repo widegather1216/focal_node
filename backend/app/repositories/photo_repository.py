@@ -157,10 +157,75 @@ class PhotoRepository:
         self.db.refresh(db_image)
         return db_image
 
-    def list_critiques(self, sort_by: str = "recent") -> List[tuple]:
+    def get_ai_analysis(self, photo_id: str) -> Optional[models.AIAnalysis]:
+        """
+        Fetches the AIAnalysis record for a given photo_id.
+        """
+        return self.db.query(models.AIAnalysis).filter(models.AIAnalysis.image_id == photo_id).first()
+
+    def update_caption_and_tags(self, photo_id: str, caption: str, tags: List[str]) -> models.AIAnalysis:
+        """
+        Updates the user-edited caption and tags for a photo, creating AIAnalysis if missing.
+        """
+        import json
+        ai_record = self.get_ai_analysis(photo_id)
+        if not ai_record:
+            ai_record = models.AIAnalysis(image_id=photo_id)
+            self.db.add(ai_record)
+
+        ai_record.caption = caption
+        ai_record.tags = json.dumps(tags)
+        ai_record.is_user_edited = True
+        self.db.commit()
+        self.db.refresh(ai_record)
+        return ai_record
+
+    def upsert_critique(
+        self,
+        photo_id: str,
+        critique_text: str,
+        updated_at: Any,
+        critique_en: Optional[str] = None,
+        overall_score: Optional[float] = None,
+        iaa_score: Optional[float] = None,
+        iqa_score: Optional[float] = None,
+        ista_score: Optional[float] = None,
+    ) -> models.AIAnalysis:
+        """
+        Inserts or updates critique text, raw English anchor, and normalized 4-dimension scores.
+        """
+        ai_record = self.get_ai_analysis(photo_id)
+        if not ai_record:
+            ai_record = models.AIAnalysis(
+                image_id=photo_id,
+                critique=critique_text,
+                critique_en=critique_en,
+                overall_score=overall_score,
+                iaa_score=iaa_score,
+                iqa_score=iqa_score,
+                ista_score=ista_score,
+                critique_updated_at=updated_at,
+            )
+            self.db.add(ai_record)
+        else:
+            ai_record.critique = critique_text
+            ai_record.critique_en = critique_en
+            ai_record.overall_score = overall_score
+            ai_record.iaa_score = iaa_score
+            ai_record.iqa_score = iqa_score
+            ai_record.ista_score = ista_score
+            ai_record.critique_updated_at = updated_at
+        self.db.commit()
+        return ai_record
+
+    def list_critiques(
+        self,
+        sort_by: str = "recent",
+        photo_ids: Optional[List[str]] = None
+    ) -> List[tuple]:
         """
         Returns list of (AIAnalysis, Image, ImageMetadata) tuples with non-empty critiques.
-        Supports sorting by:
+        Supports optional photo_ids filtering (with 900-chunking) and sorting by:
         - 'recent': ordered by critique_updated_at DESC
         - 'overall_score': ordered by overall_score DESC, then critique_updated_at DESC
         - 'iaa_score': ordered by iaa_score DESC, then critique_updated_at DESC
@@ -172,6 +237,8 @@ class PhotoRepository:
             .filter(models.AIAnalysis.critique.isnot(None))
             .filter(models.AIAnalysis.critique != "")
         )
+        if photo_ids:
+            query = self._build_chroma_id_filter(query, photo_ids)
         if sort_by == "overall_score":
             return query.order_by(
                 models.AIAnalysis.overall_score.desc().nullslast(),
@@ -188,7 +255,7 @@ class PhotoRepository:
         """
         Clears stored critique and normalized score data for a photo.
         """
-        ai = self.db.query(models.AIAnalysis).filter(models.AIAnalysis.image_id == photo_id).first()
+        ai = self.get_ai_analysis(photo_id)
         if not ai:
             return False
         ai.critique = None

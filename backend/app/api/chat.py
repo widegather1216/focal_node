@@ -89,10 +89,12 @@ def get_all_critiques(
 @router.delete("/critique/{photo_id}")
 def delete_photo_critique(photo_id: str, db: Session = Depends(get_db)):
     """
-    Clears the stored critique for a photo.
+    Clears the stored critique for a photo and removes any cached in-memory status.
     """
+    from services.critique_status import critique_status_manager
     photo_repo = PhotoRepository(db)
     photo_repo.delete_critique(photo_id)
+    critique_status_manager.clear(photo_id)
     return {"status": "ok", "photo_id": photo_id}
 
 @router.post("/critique-summary", response_model=schemas.CritiqueSummaryResponse)

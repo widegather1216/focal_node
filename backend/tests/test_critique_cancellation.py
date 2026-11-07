@@ -206,6 +206,42 @@ def test_cancel_critique_cancels_asyncio_task():
             cs._critique_tasks.pop(test_id, None)
 
 
+@pytest.mark.asyncio
+async def test_cancel_critique_from_worker_thread_uses_call_soon_threadsafe():
+    """
+    REFACTOR-05 verification:
+    When cancel_critique is called from a synchronous worker thread while a real
+    asyncio.Task is running on the event loop, it must schedule cancellation safely
+    across the thread boundary via loop.call_soon_threadsafe(task.cancel).
+    """
+    import asyncio
+    import services.chat_service as cs
+
+    test_id = "test_threadsafe_cancel_photo"
+    task_started = asyncio.Event()
+
+    async def long_running_coro():
+        task_started.set()
+        await asyncio.sleep(10)
+
+    real_task = asyncio.create_task(long_running_coro())
+    await task_started.wait()
+
+    with cs._critique_tasks_lock:
+        cs._critique_tasks[test_id] = real_task
+
+    try:
+        with patch("services.chat_service._unload_critique_models"):
+            await asyncio.to_thread(cs.ChatService.cancel_critique, test_id)
+
+        with pytest.raises(asyncio.CancelledError):
+            await real_task
+        assert real_task.cancelled()
+    finally:
+        with cs._critique_tasks_lock:
+            cs._critique_tasks.pop(test_id, None)
+
+
 def test_clear_device_caches_calls_mps_synchronize():
     """
     TC-CRT-10 reproduction:

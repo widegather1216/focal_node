@@ -138,17 +138,11 @@ def patch_photo_metadata(
         
     try:
         updated_ai = photo_service.update_photo_metadata(db, id, payload.caption, payload.tags)
-        tags_list, aesthetic_tags_list = _parse_ai_tags(updated_ai)
-                
+        ai_payload = updated_ai.to_dict() if hasattr(updated_ai, "to_dict") else models.AIAnalysis.empty_dict()
         return {
             "status": "success",
             "id": id,
-            "ai_analysis": {
-                "caption": updated_ai.caption,
-                "tags": tags_list,
-                "aesthetic_tags": aesthetic_tags_list,
-                "is_user_edited": updated_ai.is_user_edited
-            }
+            "ai_analysis": ai_payload
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update metadata: {str(e)}")

@@ -56,9 +56,9 @@ class CritiqueStatusManager:
         # Useful when sleep/resume occurs or memory status was cleared
         try:
             from database import SessionLocal
-            import models
+            from repositories.photo_repository import PhotoRepository
             with SessionLocal() as db:
-                ai = db.query(models.AIAnalysis).filter(models.AIAnalysis.image_id == photo_id).first()
+                ai = PhotoRepository(db).get_ai_analysis(photo_id)
                 if ai and ai.critique:
                     updated_at_str = ai.critique_updated_at.isoformat() if ai.critique_updated_at else None
                     return {

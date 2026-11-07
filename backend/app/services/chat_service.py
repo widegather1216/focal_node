@@ -4,11 +4,12 @@ from typing import Dict, Any, List, Optional
 from database import SessionLocal
 import models
 import schemas
+from repositories.photo_repository import PhotoRepository
 from services.ai_factory import get_gemma_adapter
 
 def _get_photo_and_metadata(photo_id: str) -> tuple[str, dict]:
     with SessionLocal() as db:
-        img = db.query(models.Image).filter(models.Image.id == photo_id).first()
+        img = PhotoRepository(db).get_by_id(photo_id)
         if not img:
             raise ValueError("Photo not found")
             
@@ -81,28 +82,16 @@ def _save_critique_to_db(
             print(f"[ChatService] Failed to parse updated_at string '{updated_at}': {date_err}", flush=True)
 
     with SessionLocal() as db:
-        ai_record = db.query(models.AIAnalysis).filter(models.AIAnalysis.image_id == photo_id).first()
-        if not ai_record:
-            ai_record = models.AIAnalysis(
-                image_id=photo_id,
-                critique=critique_text,
-                critique_en=critique_en,
-                overall_score=overall_score,
-                iaa_score=iaa_score,
-                iqa_score=iqa_score,
-                ista_score=ista_score,
-                critique_updated_at=updated_at
-            )
-            db.add(ai_record)
-        else:
-            ai_record.critique = critique_text
-            ai_record.critique_en = critique_en
-            ai_record.overall_score = overall_score
-            ai_record.iaa_score = iaa_score
-            ai_record.iqa_score = iqa_score
-            ai_record.ista_score = ista_score
-            ai_record.critique_updated_at = updated_at
-        db.commit()
+        PhotoRepository(db).upsert_critique(
+            photo_id=photo_id,
+            critique_text=critique_text,
+            updated_at=updated_at,
+            critique_en=critique_en,
+            overall_score=overall_score,
+            iaa_score=iaa_score,
+            iqa_score=iqa_score,
+            ista_score=ista_score,
+        )
 
 def _clear_device_caches() -> None:
     try:
@@ -148,25 +137,7 @@ def _unload_critique_models(force: bool = False) -> None:
 
 def _fetch_critiques_from_db(photo_ids: Optional[List[str]]) -> List[Dict[str, Any]]:
     with SessionLocal() as db:
-        query = (
-            db.query(models.AIAnalysis, models.Image, models.ImageMetadata)
-            .join(models.Image, models.AIAnalysis.image_id == models.Image.id)
-            .outerjoin(models.ImageMetadata, models.Image.id == models.ImageMetadata.image_id)
-            .filter(models.AIAnalysis.critique.isnot(None))
-            .filter(models.AIAnalysis.critique != "")
-        )
-        if photo_ids:
-            if len(photo_ids) > 900:
-                from sqlalchemy import or_
-                conditions = [
-                    models.Image.id.in_(photo_ids[i:i+900])
-                    for i in range(0, len(photo_ids), 900)
-                ]
-                query = query.filter(or_(*conditions))
-            else:
-                query = query.filter(models.Image.id.in_(photo_ids))
-            
-        results = query.all()
+        results = PhotoRepository(db).list_critiques(sort_by="recent", photo_ids=photo_ids)
         if not results:
             raise ValueError("요약할 AI 비평 데이터가 존재하지 않습니다.")
 
@@ -418,6 +389,14 @@ class ChatService:
         )
 
     @staticmethod
+    def _cancel_task_threadsafe(task: asyncio.Task) -> None:
+        loop = task.get_loop() if hasattr(task, "get_loop") else None
+        if isinstance(loop, asyncio.AbstractEventLoop) and loop.is_running():
+            loop.call_soon_threadsafe(task.cancel)
+        else:
+            task.cancel()
+
+    @staticmethod
     def cancel_critique(photo_id: str) -> None:
         """
         Cancels critique task for photo_id and immediately frees model memory from RAM.
@@ -427,7 +406,7 @@ class ChatService:
         with _critique_tasks_lock:
             task = _critique_tasks.get(photo_id)
             if task and not task.done():
-                task.cancel()
+                ChatService._cancel_task_threadsafe(task)
         _unload_critique_models(force=True)
 
     @staticmethod

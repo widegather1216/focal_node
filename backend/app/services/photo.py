@@ -201,19 +201,7 @@ def register_photos_batch_atomic(db: Session, batch_data: list[dict]) -> None:
 
 def update_photo_metadata(db: Session, image_id: str, caption: str, tags: list[str]) -> DBAIAnalysis:
     """
-    Updates the caption and tag metadata, setting is_user_edited to True.
+    Updates the caption and tag metadata, setting is_user_edited to True via PhotoRepository.
     """
-    db_ai = db.query(DBAIAnalysis).filter(DBAIAnalysis.image_id == image_id).first()
-    if not db_ai:
-        db_ai = DBAIAnalysis(image_id=image_id)
-        db.add(db_ai)
-        
-    db_ai.caption = caption
-    db_ai.tags = json.dumps(tags)
-    # Note: aesthetic_tags are AI-generated, but if user edits them, we could add logic here.
-    # We will assume update_photo_metadata only updates caption and general tags for now.
-    db_ai.is_user_edited = True
-    
-    db.commit()
-    db.refresh(db_ai)
-    return db_ai
+    from repositories.photo_repository import PhotoRepository
+    return PhotoRepository(db).update_caption_and_tags(image_id, caption, tags)

@@ -302,6 +302,8 @@ def test_api_get_all_critiques_sorting_parameters(client, db_session):
 
 
 def test_api_delete_critique_endpoint(client, db_session):
+    from services.critique_status import critique_status_manager
+
     now = datetime.now(timezone.utc)
     _create_test_photo(db_session, "api_del", "api_del.jpg")
     ai = models.AIAnalysis(
@@ -314,9 +316,28 @@ def test_api_delete_critique_endpoint(client, db_session):
     db_session.add(ai)
     db_session.commit()
 
+    # Populate in-memory status to simulate completed critique in CritiqueStatusManager
+    critique_status_manager.update(
+        "api_del",
+        4,
+        4,
+        "비평 완료",
+        100,
+        status="completed",
+        critique="To be deleted",
+        critique_en="English",
+        overall_score=80.0,
+    )
+    assert critique_status_manager.get("api_del")["status"] == "completed"
+
     del_resp = client.delete("/api/chat/critique/api_del")
     assert del_resp.status_code == 200
     assert del_resp.json() == {"status": "ok", "photo_id": "api_del"}
+
+    # Verify in-memory status was also cleared so zombie completed status does not resurrect
+    after_status = critique_status_manager.get("api_del")
+    assert after_status["status"] == "idle"
+    assert after_status["critique"] is None
 
     list_resp = client.get("/api/chat/critiques")
     assert list_resp.status_code == 200

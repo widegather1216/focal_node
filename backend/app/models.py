@@ -80,19 +80,7 @@ class Image(Base):
             "capture_date": meta.capture_date.isoformat() if meta and meta.capture_date else None,
         }
 
-        ai_data = {
-            "caption": ai.caption if ai else None,
-            "tags": _parse_json_list(ai.tags if ai else None),
-            "aesthetic_tags": _parse_json_list(ai.aesthetic_tags if ai else None),
-            "is_user_edited": ai.is_user_edited if ai else False,
-            "critique": ai.critique if ai else None,
-            "critique_en": ai.critique_en if ai else None,
-            "overall_score": ai.overall_score if ai else None,
-            "iaa_score": ai.iaa_score if ai else None,
-            "iqa_score": ai.iqa_score if ai else None,
-            "ista_score": ai.ista_score if ai else None,
-            "critique_updated_at": ai.critique_updated_at.isoformat() if ai and ai.critique_updated_at else None
-        }
+        ai_data = ai.to_dict() if ai else AIAnalysis.empty_dict()
         
         return {
             "id": self.id,
@@ -146,6 +134,39 @@ class AIAnalysis(Base):
 
     # Relationships
     image = relationship("Image", back_populates="ai_analysis_rel")
+
+    @staticmethod
+    def empty_dict() -> dict:
+        return {
+            "caption": None,
+            "tags": [],
+            "aesthetic_tags": [],
+            "is_user_edited": False,
+            "critique": None,
+            "critique_en": None,
+            "overall_score": None,
+            "iaa_score": None,
+            "iqa_score": None,
+            "ista_score": None,
+            "critique_updated_at": None,
+        }
+
+    def to_dict(self) -> dict:
+        updated_at = self.critique_updated_at
+        updated_at_str = updated_at.isoformat() if hasattr(updated_at, "isoformat") else (str(updated_at) if updated_at else None)
+        return {
+            "caption": self.caption,
+            "tags": _parse_json_list(self.tags),
+            "aesthetic_tags": _parse_json_list(self.aesthetic_tags),
+            "is_user_edited": bool(self.is_user_edited),
+            "critique": self.critique,
+            "critique_en": self.critique_en,
+            "overall_score": self.overall_score,
+            "iaa_score": self.iaa_score,
+            "iqa_score": self.iqa_score,
+            "ista_score": self.ista_score,
+            "critique_updated_at": updated_at_str,
+        }
 
 
 class IndexedFolder(Base):
