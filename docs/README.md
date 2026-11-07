@@ -8,10 +8,10 @@
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
 - **Active 도메인**: [`03_ai_critique`](./features/03_ai_critique/README.md)
-- **현재 단계 (Stage)**: `🩹 Debugging (DEFECT 전수 해결 및 REFACTOR-04~05 완료, Must Fix 리팩토링 REFACTOR-06 해결 대기)`
-- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 `REFACTOR-05` 해결 완료 (`AIAnalysis.to_dict()` 헬퍼 도입으로 `PATCH /api/photos/{id}/metadata` 응답 시 `critique`/`critique_en` 및 4종 평점 등 전체 11개 필드 보존 반환, `DELETE /api/chat/critique/{photo_id}`에서 `critique_status_manager.clear(photo_id)` 호출로 인메모리 좀비 상태 부활 차단, `ChatService._cancel_task_threadsafe`를 통해 워커 스레드 취소 시 `loop.call_soon_threadsafe(task.cancel)` 적용, `PhotoRepository`에 `get_ai_analysis`·`upsert_critique`·`list_critiques(photo_ids=...)`·`update_caption_and_tags` 캡슐화, 회귀 단위 테스트 보강 및 백엔드 119종·프론트엔드 빌드 전수 통과)
+- **현재 단계 (Stage)**: `🩹 Debugging (DEFECT 전수 해결 및 REFACTOR-04~06 완료, Must Fix 리팩토링 REFACTOR-07 해결 대기)`
+- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 `REFACTOR-06` 해결 완료 (`unipercept_utils`/`adapter` 상단 `torch`/`torchvision`/`transformers` Eager Import 제거 및 `_LazyTorchProxy`/호환 패치 지연 호출로 부팅 지연 원천 차단(Rule 2.5), `config.CONFIG_DIR` 격리 적용(Rule 2.6), Gemma 추론 및 VQA 예외 삼킴 제거로 DB 오염 방지 및 `status="error"`/자율 폴백 보장, `load_pil_image`에 `min_dimension=1024` 및 `MAX_CONCURRENT_DECODES=3` 세마포어 적용(Rule 2.3), `GemmaAdapter` CPU RAW 디코딩을 `GPU_LOCK` 외부로 분리(Rule 2.4), `generate_full_ensemble_critique`에서 1회 1024px 디코딩 후 VR+VQA 및 Gemma 간 공유로 중복 디코딩 낭비 해소, `task.add_done_callback` 고아 태스크 누수 방지 및 `CritiqueStatusManager` 100개 상한 축출 정책 적용, 신규 회귀 테스트 `test_refactor_06_hygiene.py` 6종 추가 및 백엔드 125종·프론트엔드 빌드 전수 통과)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"03_ai_critique 도메인의 REFACTOR-06 티켓 해결해줘"` *(UniPercept Eager Import·추론 예외 삼킴·RAW 저해상도 디코딩 및 GPU_LOCK/메모리 누수 교정)*
+  > `"03_ai_critique 도메인의 REFACTOR-07 티켓 해결해줘"` *(허수 단위 테스트 실검증 전환 및 /api/chat/* 라우트 커버리지 보강)*
 
 ---
 
@@ -22,7 +22,7 @@
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `5/5 (100%)` | `0 / 0` | DEFECT-01~04 전수 해결 완료 (손상 인덱스 valid=False, 실패 시 거짓 완료 차단, 1종 조기완료 차단, 중복 스레드/락 삭제 가드), Sign-Off 완료 |
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 📐 Planning | `[□□□□] 0/4` | `3/6 (50%)` | `0 / 0` | REFACTOR-01 해결 완료 (타입 일원화, Repo 캡슐화, 예외 로깅) |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 📐 Planning | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 거리 임계값 + RRF 랭킹 + 35mm/점수 필터 + 스마트 앨범 Step 1~4 대기 |
-| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `13/13 (100%)` | `0 / 4` | `DEFECT-02~03` 및 `REFACTOR-04~05` 해결 완료, `REFACTOR` 4건 대기 |
+| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `13/13 (100%)` | `0 / 3` | `DEFECT-02~03` 및 `REFACTOR-04~06` 해결 완료, `REFACTOR` 3건 대기 |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 📐 Planning | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 2` | 통계 차트 클릭 갤러리 드릴다운(`Click-to-Filter`) Step 3~4 대기 |
 
 *(※ 상태 범례: `📐 Planning` | `🛠️ Implementing` | `🧐 Auditing` | `🧪 QA Testing` | `🩹 Debugging` | `🟢 Sign-Off`)*
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-07]` `[systematic-debugger]` [`03_ai_critique`]**: REFACTOR-06 리팩토링 티켓 해결 완료 (`e53f9b4` / `unipercept_utils.py` 및 `unipercept_adapter.py` 상단 `torch`/`torchvision`/`transformers` Eager Import 제거 및 `_LazyTorchProxy`/호환 패치 지연 호출로 부팅 지연 원천 차단(Rule 2.5), `config.CONFIG_DIR` 격리 적용(Rule 2.6), `GemmaAdapter` 추론 메서드 및 VQA에서 예외 삼킴 제거로 DB 오염 방지 및 `status="error"`/ADR-05 자율 폴백 보장, `load_pil_image`에 `min_dimension=1024` 및 `MAX_CONCURRENT_DECODES=3` 세마포어 적용(Rule 2.3), `GemmaAdapter` CPU RAW 디코딩을 `GPU_LOCK` 외부로 분리(Rule 2.4), `generate_full_ensemble_critique`에서 1회 1024px 디코딩 후 VR+VQA 및 Gemma 간 공유로 중복 디코딩 낭비 해소, `ChatService.generate_photo_critique`에 `task.add_done_callback(_cleanup_task)` 적용으로 고아 태스크 누수 방지, `CritiqueStatusManager` 100개 상한 축출 정책 적용, 신규 회귀 테스트 `test_refactor_06_hygiene.py` 6종 추가, 백엔드 125종 및 프론트엔드 빌드 전수 통과).
 
 - **`[2026-11-07]` `[systematic-debugger]` [`03_ai_critique`]**: REFACTOR-05 리팩토링 티켓 해결 완료 (`5d55cea` / `models.py`에 `AIAnalysis.to_dict()`/`empty_dict()` 도입 및 `PATCH /api/photos/{id}/metadata`가 비평·영문 앵커·4종 평점 등 11개 필드를 전수 보존 반환하도록 수정, `DELETE /api/chat/critique/{photo_id}`에서 `critique_status_manager.clear(photo_id)` 호출로 좀비 상태 부활 차단, `ChatService._cancel_task_threadsafe`에서 `loop.call_soon_threadsafe(task.cancel)` 스레드 경계 안전 취소 적용, `PhotoRepository`에 `get_ai_analysis`·`upsert_critique`·`list_critiques(photo_ids=...)`·`update_caption_and_tags` 캡슐화, 회귀 테스트 추가 및 백엔드 119종·프론트엔드 빌드 전수 통과).
 

@@ -1,8 +1,8 @@
 # 🧪 [03_ai_critique] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT 전수 해결 완료, REFACTOR 4건 해결 대기)`
+- **검증 상태**: `🩹 Debugging (DEFECT 전수 해결 완료, REFACTOR 3건 해결 대기)`
 - **인수 조건 통과율**: `13 / 13 (100%)`
-- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 4건`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 3건`
 
 ---
 
@@ -126,20 +126,11 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/ -v` (`119 passed`), `npx tsc --noEmit && npm run build` (`PASS`)
 
 ### [REFACTOR-06] UniPercept Eager Import(Rule 2.5)·추론 예외 삼킴(폴백 무력화/DB 오염)·RAW 저해상도 디코딩 및 `GPU_LOCK`/메모리 누수 교정
-- **심각도**: 🔴 Must Fix (즉시 조치·QA 진입 차단)
-- **위치**: `backend/app/services/unipercept_adapter.py#L5-L33, #L211, #L227, #L527-L559`, `backend/app/services/unipercept_utils.py#L8-L23`, `backend/app/services/mlx_adapters.py#L245, #L313-L331, #L376-L414, #L497-L508`, `backend/app/services/chat_service.py#L442-L456`, `backend/app/services/critique_status.py#L10-L54`
-- **위반 규칙**: Rule 2.3 (RAW 디코딩 품질/세마포어), Rule 2.4 (`GPU_LOCK` 범위·MPS 해제·태스크 누수 방지), Rule 2.5 (Heavy AI 지연 임포트), Rule 2.6 (`CONFIG_DIR` 격리), Rule 4.3 & ADR-05 (자율 폴백 보장)
-- **발견된 문제**:
-  - `unipercept_adapter.py`·`unipercept_utils.py` 상단에서 `torch`·`torchvision`·`transformers`를 Eager Import하고 임포트 시점 전역 몽키패칭을 수행하며, `~/.config/focal_node` 경로가 하드코딩됨(Rule 2.5, 2.6 위반).
-  - `generate_perceptual_anchor_vqa` 및 `GemmaAdapter` 추론 메서드가 예외를 삼키고 에러 안내문을 정상 문자열로 반환하여, ADR-05 자율 폴백이 무력화되고 에러 문구가 정상 비평(`completed`)으로 SQLite DB에 영구 저장됨.
-  - RAW 비평 시 `min_dimension=None` 호출로 160x120 초저해상도 썸네일이 채점되는 결함, VR+VQA 2회 중복 RAW 디코딩, `GPU_LOCK` 내부 CPU RAW 디코딩 블로킹, `_cached_weight_tensor` MPS 미해제, 슬립/연결 해제 시 `_critique_tasks` 및 `_statuses` 메모리 누수가 존재함.
-- **권장 개선안 (Suggested Diff)**:
-  ```text
-  - `torch`/`torchvision`/`transformers` 및 호환성 패치를 `_load_model_locked()` 내부로 지연 이동하고 `config.CONFIG_DIR` 사용
-  - VQA 및 Gemma 추론 실패 시 캐시 정리 후 예외를 명시적으로 `raise`하여 `ChatService` 자율 폴백 및 `error` 상태 전이가 정상 작동하도록 수정
-  - RAW 비평 디코딩 시 `GPU_LOCK` 진입 전 `min_dimension=1024` 및 공통 디코딩 세마포어를 적용해 VR+VQA 간 PIL 이미지를 1회 공유하고, `_on_unload()` 텐서 해제·`task.add_done_callback` 정리·`_statuses` 크기 상한 적용
-  ```
-- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`image.py`](../../../backend/app/utils/image.py#L13-L87), [`unipercept_utils.py`](../../../backend/app/services/unipercept_utils.py#L1-L60), [`unipercept_adapter.py`](../../../backend/app/services/unipercept_adapter.py#L1-L1212), [`mlx_adapters.py`](../../../backend/app/services/mlx_adapters.py#L235-L515), [`chat_service.py`](../../../backend/app/services/chat_service.py#L205-L445), [`critique_status.py`](../../../backend/app/services/critique_status.py#L8-L125), [`test_refactor_06_hygiene.py`](../../../backend/tests/test_refactor_06_hygiene.py#L1-L170)
+  - **원인 및 조치**: ① `unipercept_utils.py` 및 `unipercept_adapter.py`에서 `torch`, `torchvision`, `transformers` 상단 Eager Import를 제거하고 `_LazyTorchProxy` 및 `patch_transformers_tied_weights()`를 도입하여 서버 부팅 지연 원천 차단(Rule 2.5), UniPercept 체크포인트 탐색 경로에 하드코딩된 경로 대신 `config.CONFIG_DIR` 격리 적용(Rule 2.6), ② `GemmaAdapter` 추론 메서드(`generate_deep_critique`, `_execute_perceptual_critique_generation`, `generate_critique_summary`) 및 `generate_perceptual_anchor_vqa`에서 실패 시 에러 안내 문자열을 반환하여 DB에 정상 비평(`completed`)으로 오염 저장되던 Silent Fail을 제거하고 예외를 명시적으로 `raise`하여 `ChatService`의 `status="error"` 전이 및 ADR-05 자율 비평 폴백(`TC-CRT-13`) 정상 보장, ③ `load_pil_image`에 `min_dimension` 인자를 추가하고 `_RAW_DECODE_SEMAPHORE = threading.Semaphore(MAX_CONCURRENT_DECODES=3)`로 동시 RAW 디코딩 메모리 폭증을 차단하며(Rule 2.3), `GemmaAdapter` 내부의 CPU RAW 디코딩을 `GPU_LOCK` 외부로 분리(Rule 2.4), `generate_full_ensemble_critique`에서 1024px 고해상도 디코딩 이미지를 1회 생성하여 VR 채점과 VQA 지각 앵커 간 공유 및 `ChatService` Gemma 연계 시 재디코딩 낭비 해소, ④ `ChatService.generate_photo_critique`에 `task.add_done_callback(_cleanup_task)`를 등록하여 클라이언트 슬립/연결 해제 시 `_critique_tasks` 고아 누수를 원천 방지하고 `CritiqueStatusManager`에 `max_history=100` 및 완료/취소 상태 선별 축출 정책을 적용해 인메모리 누수 차단.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/ -v` (`125 passed`), `npx tsc --noEmit && npm run build` (`PASS`)
 
 ### [REFACTOR-07] 허수 단위 테스트(`test_ensemble_math.py`, `TC-CRT-12/13`) 프로덕션 실검증 전환 및 `/api/chat/*` 라우트 커버리지 보강
 - **심각도**: 🔴 Must Fix (즉시 조치·QA 진입 차단)
