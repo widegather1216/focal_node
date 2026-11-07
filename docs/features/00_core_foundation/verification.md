@@ -1,8 +1,8 @@
 # 🧪 [00_core_foundation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT 2건 해결 대기)`
-- **인수 조건 통과율**: `3 / 5 (60%)`
-- **미해결 티켓**: `🚨 DEFECT: 2건` | `🧐 REFACTOR: 0건`
+- **검증 상태**: `🩹 Debugging (DEFECT 1건 해결 대기)`
+- **인수 조건 통과율**: `4 / 5 (80%)`
+- **미해결 티켓**: `🚨 DEFECT: 1건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -26,7 +26,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Happy** | `TC-CF-01` | 동적 포트 사이드카 연결 | 앱 콜드 스타트 | `[Sidecar] PORT` 감지 및 갤러리 진입 | `PASS` |
 | **Boundary**| `TC-CF-02` | 모델 60초 Keep-alive 언로드 | Gemma 4 추론 후 60초 유휴 | 60초 후 가중치 메모리 해제 확인 | `PASS` |
-| **Negative**| `TC-CF-03` | 모델 미다운로드 상태 기동 | 로컬 HF 캐시 미존재 | `ModelDownloadModal` 노출 및 진행률 표시 | `FAIL (DEFECT-03)` |
+| **Negative**| `TC-CF-03` | 모델 미다운로드 상태 기동 | 로컬 HF 캐시 미존재 | `ModelDownloadModal` 노출 및 진행률 표시 | `PASS (Fixed in DEFECT-03)` |
 | **Boundary**| `TC-CF-04` | 모델 인덱스 손상 시 가중치 무결성 검증 | 손상된 index.json 주입 | 정상 가중치 오판 차단 및 재다운로드 유도 | `PASS (Fixed in DEFECT-01)` |
 | **Boundary**| `TC-CF-05` | 다운로드 재시도 시 동시성 및 파일 락 정합성 | 다운로드 중 POST /download | 중복 스레드 및 락 삭제 충돌 방지 | `FAIL (DEFECT-04)` |
 
@@ -62,17 +62,17 @@
 
 ### [DEFECT-03] `ModelDownloadStatusTracker` 미초기화 및 `_calculate_overall_progress`의 모델 1종 완료 시 조기 `is_all_done: true` 반환 및 15초 폴링 블랙아웃 레이스
 - **심각도**: 🟠 P1 High (Premature Completion & Polling Blackout Race)
-- **위치**: [`backend/app/services/model_downloader.py#L52-L58`](../../../backend/app/services/model_downloader.py#L52-L58), [`backend/app/main.py#L91-L105`](../../../backend/app/main.py#L91-L105), [`src/hooks/useModelDownloadStatus.ts#L50-L63`](../../../src/hooks/useModelDownloadStatus.ts#L50-L63)
+- **위치**: [`backend/app/services/model_downloader.py#L52-L78`](../../../backend/app/services/model_downloader.py#L52-L78), [`backend/app/main.py#L91-L105`](../../../backend/app/main.py#L91-L105), [`src/hooks/useModelDownloadStatus.ts#L50-L65`](../../../src/hooks/useModelDownloadStatus.ts#L50-L65)
 - **근본 원인 분석**:
   - `ModelDownloadStatusTracker`가 `self._statuses = {}`로 시작하여 `KNOWN_MODEL_SIZES`의 3개 모델이 등록되지 않은 상태로 기동됨.
   - `_calculate_overall_progress`는 `len(statuses) > 0 and all(...)`로 전체 완료를 판단하여, 1번째 모델(SigLIP 2)만 캐시 확인된 순간 `is_all_done: true`, `progress: 100`을 반환함.
   - 프론트엔드 `useModelDownloadStatus.ts`는 이를 받아 모달을 닫고 15초 슬로우 폴링으로 전환함. 그 사이 2번째 모델(Gemma 4, 12GB) 다운로드가 시작되지만 프론트엔드는 15초 동안 인지하지 못해 미완성 모델 크래시 또는 15초 뒤 모달이 재오픈되는 레이스가 발생함.
-  - 또한 콜드 스타트 시 `statuses`가 빈 딕셔너리(`{}`)일 때도 `scheduleNext(15000)`이 호출되어 최초 15초간 다운로드 감지가 지연됨.
-- **수정 계획**:
-  - `ModelDownloadStatusTracker` 초기화 시 `KNOWN_MODEL_SIZES`의 모든 모델을 `status="pending"`, `progress=0`으로 사전 등록.
-  - `_calculate_overall_progress`에서 `len(statuses) >= len(KNOWN_MODEL_SIZES)` 검사를 필수 조건으로 강제.
-  - `useModelDownloadStatus.ts`에서 대기/초기화 상태일 때는 15초가 아닌 2~3초 간격으로 폴링하도록 수정.
-- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+  - 또한 대기/초기화 상태에서 `scheduleNext(15000)`이 호출되어 최초 15초간 다운로드 감지가 지연됨.
+- **해결 내역**:
+  - **수정 파일**: [`backend/app/services/model_downloader.py`](../../../backend/app/services/model_downloader.py#L16-L78), [`backend/app/main.py`](../../../backend/app/main.py#L91-L115), [`src/hooks/useModelDownloadStatus.ts`](../../../src/hooks/useModelDownloadStatus.ts#L50-L65), [`backend/tests/test_model_downloader.py`](../../../backend/tests/test_model_downloader.py#L120-L195)
+  - **원인 및 조치**: `ModelDownloadStatusTracker` 싱글톤 초기화 시 `KNOWN_MODEL_SIZES`의 3개 모델을 `status="pending"`, `progress=0`으로 사전 등록하고 `reset_statuses()`를 추가함. `_calculate_overall_progress`에서 `len(statuses) >= len(KNOWN_MODEL_SIZES)` 검사를 필수 조건으로 강제하여 모델 1종 완료 시 조기 `is_all_done: true` 반환을 원천 차단함. `useModelDownloadStatus.ts`에서 대기/초기화 상태일 때 15초가 아닌 빠른 폴링(2500ms)을 유지하고 `is_all_done`이 진성 참일 때만 15초 슬로우 폴링으로 전환하도록 교정함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_model_downloader.py` (`PASS`, 8 passed), `npm run build` (`PASS`)
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
 
 ### [DEFECT-04] `start_background_model_downloader(force=True)` 재시도 시 고아 스레드 증식 및 HF 파일 락 삭제 레이스
 - **심각도**: 🟠 P1 High (Concurrency Race & Cache Corruption)
