@@ -1,8 +1,8 @@
 # 🧪 [03_ai_critique] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT 전수 해결 완료, REFACTOR 3건 해결 대기)`
+- **검증 상태**: `🩹 Debugging (DEFECT 전수 해결 완료, REFACTOR 2건 해결 대기)`
 - **인수 조건 통과율**: `13 / 13 (100%)`
-- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 3건`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 2건`
 
 ---
 
@@ -133,19 +133,11 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/ -v` (`125 passed`), `npx tsc --noEmit && npm run build` (`PASS`)
 
 ### [REFACTOR-07] 허수 단위 테스트(`test_ensemble_math.py`, `TC-CRT-12/13`) 프로덕션 실검증 전환 및 `/api/chat/*` 라우트 커버리지 보강
-- **심각도**: 🔴 Must Fix (즉시 조치·QA 진입 차단)
-- **위치**: `backend/tests/test_ensemble_math.py#L1-L63`, `backend/tests/test_unipercept.py#L2, #L117-L121, #L395-L500`, `backend/tests/test_critique_repository_and_api.py#L225-L324`, `backend/tests/test_api_photos.py#L33-L65`
-- **위반 규칙**: Audit Matrix #7 (허수/껍데기 테스트 금지 및 핵심 API·경계값 실효성 검증)
-- **발견된 문제**:
-  - `test_ensemble_math.py`가 프로덕션 코드 임포트 없이 파일 내 폐기된 로컬 수식 함수만 검증하는 100% 허수 테스트이며, `TC-CRT-12`(`test_unipercept.py#L395-L440`) 역시 `generate_perceptual_critique` 호출 없이 하드코딩 문자열만 검증함.
-  - `TC-CRT-13`이 상위 메서드를 통째로 모킹해 VQA 예외 삼킴 버그를 은폐했으며, `app.services.*` vs `services.*` 혼용 임포트로 싱글턴이 이중 생성됨.
-  - `POST /api/chat/critique`, `GET /api/chat/critique/status/{id}`, `POST /api/chat/critique-summary` 엔드포인트 테스트 및 `PATCH /api/photos/{id}/metadata` 비평 필드 보존 검증이 누락됨.
-- **권장 개선안 (Suggested Diff)**:
-  ```text
-  - `test_ensemble_math.py`에서 `services.scoring` 실제 함수를 임포트해 경계값 검증 수행, `test_unipercept.py` 임포트 경로를 `services.*`로 통일하고 `TC-CRT-12/13`이 실제 어댑터 메서드를 실행하도록 보강
-  - `test_critique_repository_and_api.py` 및 `test_api_photos.py`에 누락된 3개 `/api/chat/*` 엔드포인트·삭제 후 상태 초기화·메타데이터 수정 시 비평 보존 회귀 테스트 추가
-  ```
-- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`test_ensemble_math.py`](../../../backend/tests/test_ensemble_math.py#L1-L105), [`test_unipercept.py`](../../../backend/tests/test_unipercept.py#L1-L550), [`test_critique_repository_and_api.py`](../../../backend/tests/test_critique_repository_and_api.py#L340-L460), [`conftest.py`](../../../backend/tests/conftest.py#L64-L70)
+  - **원인 및 조치**: ① `test_ensemble_math.py`에서 자체 로컬 함수를 전면 제거하고 실제 프로덕션 모듈인 `services.scoring`의 4대 광학 가중치 모드(`resolve_perceptual_weights`), 미학 보너스 공식(`calculate_aesthetic_bonus`), 융합/클램핑(`calculate_overall_vr_score`)을 100% 실검증하도록 개편, ② `test_unipercept.py`의 `app.services.*` 임포트를 `services.*`로 일원화하고, `TC-CRT-12`를 실제 `GemmaAdapter.generate_perceptual_critique` 메서드 및 토크나이저/생성기 파이프라인 실실행으로 개편, `TC-CRT-13`은 상위 파이프라인 통째 모킹을 걷어내고 `UniPerceptAdapter.generate_full_ensemble_critique` 실행 중 VQA 실패 시 예외 전파 및 `_execute_gemma_critique_pipeline` 자동 폴백 흐름을 실검증, ③ `test_critique_repository_and_api.py`에 `POST /api/chat/critique`(200/404), `GET /api/chat/critique/status/{id}`, `POST /api/chat/critique-summary`(200/400) 3대 엔드포인트의 통합 호출 및 응답 스키마 실검증 추가.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/ -v` (`132 passed`), `npx tsc --noEmit && npm run build` (`PASS`)
 
 ### [REFACTOR-08] ADR-05 이전 레거시 사문화 코드(~560줄)·장문 함수 정리 및 프로그레스 라벨/`ScoringGuideModal` 포털·진입점 보강
 - **심각도**: 🟡 Should Fix (권장 조치)

@@ -8,10 +8,10 @@
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
 - **Active 도메인**: [`03_ai_critique`](./features/03_ai_critique/README.md)
-- **현재 단계 (Stage)**: `🩹 Debugging (DEFECT 전수 해결 및 REFACTOR-04~06 완료, Must Fix 리팩토링 REFACTOR-07 해결 대기)`
-- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 `REFACTOR-06` 해결 완료 (`unipercept_utils`/`adapter` 상단 `torch`/`torchvision`/`transformers` Eager Import 제거 및 `_LazyTorchProxy`/호환 패치 지연 호출로 부팅 지연 원천 차단(Rule 2.5), `config.CONFIG_DIR` 격리 적용(Rule 2.6), Gemma 추론 및 VQA 예외 삼킴 제거로 DB 오염 방지 및 `status="error"`/자율 폴백 보장, `load_pil_image`에 `min_dimension=1024` 및 `MAX_CONCURRENT_DECODES=3` 세마포어 적용(Rule 2.3), `GemmaAdapter` CPU RAW 디코딩을 `GPU_LOCK` 외부로 분리(Rule 2.4), `generate_full_ensemble_critique`에서 1회 1024px 디코딩 후 VR+VQA 및 Gemma 간 공유로 중복 디코딩 낭비 해소, `task.add_done_callback` 고아 태스크 누수 방지 및 `CritiqueStatusManager` 100개 상한 축출 정책 적용, 신규 회귀 테스트 `test_refactor_06_hygiene.py` 6종 추가 및 백엔드 125종·프론트엔드 빌드 전수 통과)
+- **현재 단계 (Stage)**: `🩹 Debugging (DEFECT 전수 해결 및 REFACTOR-04~07 완료, Should Fix 리팩토링 REFACTOR-03/08 대기)`
+- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 `REFACTOR-07` 해결 완료 (`test_ensemble_math.py`에서 자체 로컬 함수를 제거하고 실제 프로덕션 모듈 `services.scoring`의 4대 광학 가중치 모드·미학 보너스 공식·점수 융합/클램핑을 실검증하도록 개편, `test_unipercept.py` 내 `app.services.*` 임포트를 `services.*`로 일원화하고 `TC-CRT-12`를 실제 `GemmaAdapter.generate_perceptual_critique` 어댑터 메서드 실행으로 개편, `TC-CRT-13`은 상위 통째 모킹을 걷어내고 `UniPerceptAdapter.generate_full_ensemble_critique` 내 VQA 실패 시 예외 전파 및 `_execute_gemma_critique_pipeline` 자율 폴백 실실행 검증, `test_critique_repository_and_api.py`에 `POST /api/chat/critique`, `GET /api/chat/critique/status/{id}`, `POST /api/chat/critique-summary` 3대 엔드포인트 커버리지 보강, 백엔드 132종 테스트 및 프론트엔드 빌드 전수 통과)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"03_ai_critique 도메인의 REFACTOR-07 티켓 해결해줘"` *(허수 단위 테스트 실검증 전환 및 /api/chat/* 라우트 커버리지 보강)*
+  > `"03_ai_critique 도메인의 REFACTOR-03 티켓 해결해줘"` *(프론트엔드 비평 Polling 타이머 증식·빈 catch·캐시 키 불일치 교정)*
 
 ---
 
@@ -22,7 +22,7 @@
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `5/5 (100%)` | `0 / 0` | DEFECT-01~04 전수 해결 완료 (손상 인덱스 valid=False, 실패 시 거짓 완료 차단, 1종 조기완료 차단, 중복 스레드/락 삭제 가드), Sign-Off 완료 |
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 📐 Planning | `[□□□□] 0/4` | `3/6 (50%)` | `0 / 0` | REFACTOR-01 해결 완료 (타입 일원화, Repo 캡슐화, 예외 로깅) |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 📐 Planning | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 거리 임계값 + RRF 랭킹 + 35mm/점수 필터 + 스마트 앨범 Step 1~4 대기 |
-| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `13/13 (100%)` | `0 / 3` | `DEFECT-02~03` 및 `REFACTOR-04~06` 해결 완료, `REFACTOR` 3건 대기 |
+| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `13/13 (100%)` | `0 / 2` | `DEFECT-02~03` 및 `REFACTOR-04~07` 해결 완료, `REFACTOR` 2건 대기 |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 📐 Planning | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 2` | 통계 차트 클릭 갤러리 드릴다운(`Click-to-Filter`) Step 3~4 대기 |
 
 *(※ 상태 범례: `📐 Planning` | `🛠️ Implementing` | `🧐 Auditing` | `🧪 QA Testing` | `🩹 Debugging` | `🟢 Sign-Off`)*
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-07]` `[systematic-debugger]` [`03_ai_critique`]**: REFACTOR-07 리팩토링 티켓 해결 완료 (`3d9ddeb` / `test_ensemble_math.py`에서 폐기된 로컬 함수를 제거하고 프로덕션 모듈 `services.scoring`의 4대 광학 가중치 모드(`resolve_perceptual_weights`), 미학 보너스 공식(`calculate_aesthetic_bonus`), 융합/클램핑(`calculate_overall_vr_score`)을 실검증하도록 개편, `test_unipercept.py` 내 `app.services.*` 임포트를 `services.*`로 일원화하고 `TC-CRT-12`를 실제 `GemmaAdapter.generate_perceptual_critique` 메서드 및 토크나이저/생성기 파이프라인 실실행으로 개편, `TC-CRT-13`은 상위 파이프라인 통째 모킹을 걷어내고 `UniPerceptAdapter.generate_full_ensemble_critique` 실행 중 VQA 실패 시 예외 전파 및 `_execute_gemma_critique_pipeline` 자동 폴백 흐름을 실검증, `test_critique_repository_and_api.py`에 `POST /api/chat/critique`(200/404), `GET /api/chat/critique/status/{id}`, `POST /api/chat/critique-summary`(200/400) 3대 엔드포인트 커버리지 보강, 백엔드 테스트 132종(`132 passed`) 및 프론트엔드 빌드 전수 통과).
 
 - **`[2026-11-07]` `[systematic-debugger]` [`03_ai_critique`]**: REFACTOR-06 리팩토링 티켓 해결 완료 (`e53f9b4` / `unipercept_utils.py` 및 `unipercept_adapter.py` 상단 `torch`/`torchvision`/`transformers` Eager Import 제거 및 `_LazyTorchProxy`/호환 패치 지연 호출로 부팅 지연 원천 차단(Rule 2.5), `config.CONFIG_DIR` 격리 적용(Rule 2.6), `GemmaAdapter` 추론 메서드 및 VQA에서 예외 삼킴 제거로 DB 오염 방지 및 `status="error"`/ADR-05 자율 폴백 보장, `load_pil_image`에 `min_dimension=1024` 및 `MAX_CONCURRENT_DECODES=3` 세마포어 적용(Rule 2.3), `GemmaAdapter` CPU RAW 디코딩을 `GPU_LOCK` 외부로 분리(Rule 2.4), `generate_full_ensemble_critique`에서 1회 1024px 디코딩 후 VR+VQA 및 Gemma 간 공유로 중복 디코딩 낭비 해소, `ChatService.generate_photo_critique`에 `task.add_done_callback(_cleanup_task)` 적용으로 고아 태스크 누수 방지, `CritiqueStatusManager` 100개 상한 축출 정책 적용, 신규 회귀 테스트 `test_refactor_06_hygiene.py` 6종 추가, 백엔드 125종 및 프론트엔드 빌드 전수 통과).
 

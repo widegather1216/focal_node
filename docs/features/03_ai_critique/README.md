@@ -1,8 +1,8 @@
 # 🤖 [03_ai_critique] On-Demand AI Critique & Editorial Export
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT 전수 해결 완료, REFACTOR 3건 해결 대기)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT 전수 해결 완료, REFACTOR 2건 해결 대기)`
 - **구현 진척도**: `[■■■■] 4/4 Steps (Active Iteration Step 1~4 구현 완료)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 3건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 2건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -36,6 +36,8 @@
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
 - **Recent Commits**:
+  - `3d9ddeb` - `test(critique): replace hollow tests with real scoring and chat api tests`
+  - `e8a5e0f` - `docs(critique): mark REFACTOR-06 resolved and sync control tower`
   - `e53f9b4` - `refactor(critique): eliminate eager imports, silent errors, and redundant raw decoding`
   - `caaa345` - `docs(critique): mark REFACTOR-05 resolved and sync control tower`
   - `5d55cea` - `refactor(critique): encapsulate photo repository queries and fix metadata/cancel state bugs`
@@ -52,21 +54,22 @@
   - `a9b398b` - `docs(critique): specify hybrid perceptual anchor pipeline with gemma 4 direct critique`
   - `756e6be` - `refactor(critique): eliminate silent fail blocks and decompose long adapter methods`
   - `1f0151c` - `refactor(critique): decompose monolithic critique components for SRP conformance`
-- **직전 완료 작업**: `2026-11-07 / systematic-debugger / REFACTOR-06 (UniPercept Eager Import·추론 예외 삼킴·RAW 저해상도 디코딩 및 GPU_LOCK/메모리 누수 교정) 해결 및 회귀 검증 완료 (DEFECT 0건·REFACTOR 3건 대기)`
+- **직전 완료 작업**: `2026-11-07 / systematic-debugger / REFACTOR-07 (허수 단위 테스트 실검증 전환 및 /api/chat/* 라우트 커버리지 보강) 해결 및 회귀 검증 완료 (DEFECT 0건·REFACTOR 2건 대기)`
 - **해결 완료 및 잔여 티켓 현황**:
-  1. **✅ `DEFECT-02~03` & `REFACTOR-04~06` 해결 완료 (`TC-CRT-10~13 PASS`, `13/13 100%`)**:
+  1. **✅ `DEFECT-02~03` & `REFACTOR-04~07` 해결 완료 (`TC-CRT-10~13 PASS`, `13/13 100%`)**:
      - `DEFECT-02`: `_acquire_model_for_request` 취소 가드로 28GB 디스크 재적재 및 로딩 중 취소 후 메모리 상주 원천 차단, 최외곽 `finally` 언로드 및 `_on_unload()` MPS 텐서 해제
      - `DEFECT-03`: `_load_model_locked()`에서 `self.model.eval()` 명시 호출, `_generate_with_language_model` 헬퍼로 `InternVLChatModel.chat()`의 `return_dict` 시그니처 충돌을 우회하고 `self.model.language_model.generate(...)` 직접 호출 및 `<think>`/종료 토큰 정제, VQA 추론 실패 시 예외 전파(`raise`)
      - `REFACTOR-04`: `CritiqueDocumentModal.tsx` Rules of Hooks 크래시 해소, 전역 키 가드, PDF XSS 이스케이프 및 다크 잉크 컬러 오버라이드
      - `REFACTOR-05`: `AIAnalysis.to_dict()` 11개 필드 보존 반환, `critique_status_manager.clear()` 좀비 상태 차단, `ChatService._cancel_task_threadsafe`, `PhotoRepository` 캡슐화
-     - `REFACTOR-06`: 수정 파일 `utils/image.py`, `services/unipercept_utils.py`, `services/unipercept_adapter.py`, `services/mlx_adapters.py`, `services/chat_service.py`, `services/critique_status.py`, `tests/test_refactor_06_hygiene.py` — `unipercept_utils`/`adapter`의 `torch`/`torchvision`/`transformers` Eager Import를 제거하고 `_LazyTorchProxy` 및 `patch_transformers_tied_weights()` 적용(Rule 2.5), `config.CONFIG_DIR` 격리 적용(Rule 2.6), Gemma 추론 및 VQA 예외 삼킴 제거로 DB 오염 차단 및 `status="error"`/자율 폴백 보장, `load_pil_image`에 `min_dimension=1024` 및 `MAX_CONCURRENT_DECODES=3` 세마포어 적용(Rule 2.3), `GemmaAdapter` CPU RAW 디코딩을 `GPU_LOCK` 외부로 분리(Rule 2.4), `generate_full_ensemble_critique`에서 1회 1024px 디코딩 후 VR+VQA 및 Gemma 간 공유, `task.add_done_callback` 고아 태스크 누수 방지, `CritiqueStatusManager` 100개 상한 축출 정책 적용
-  2. **🔴 Must Fix 리팩토링 (`REFACTOR-07` — 우선 해결)**:
-     - `REFACTOR-07`: 프로덕션 미임포트 허수 테스트(`test_ensemble_math.py`, `TC-CRT-12`) 실검증 전환 및 `/api/chat/*` 누락 라우트 테스트 보강
-  3. **🟡 Should Fix (`REFACTOR-03`, `REFACTOR-08`)**: 3중 비평 Polling 타이머 증식·빈 `catch`·캐시 키 불일치 수정 및 ADR-05 이전 사문화 코드(~560줄)·UI 진행률 라벨/`ScoringGuideModal` 포털 보강
+     - `REFACTOR-06`: `unipercept_utils`/`adapter`의 `torch`/`torchvision`/`transformers` Eager Import 제거(`_LazyTorchProxy`, `patch_transformers_tied_weights()`, Rule 2.5), `config.CONFIG_DIR` 격리(Rule 2.6), Gemma 추론 및 VQA 예외 삼킴 제거로 DB 오염 차단 및 `status="error"`/자율 폴백 보장, `load_pil_image`에 `min_dimension=1024` 및 `MAX_CONCURRENT_DECODES=3` 세마포어(Rule 2.3), `GemmaAdapter` CPU RAW 디코딩 `GPU_LOCK` 외부 분리(Rule 2.4), 1회 1024px 디코딩 공유, `task.add_done_callback` 누수 방지, `CritiqueStatusManager` 100개 상한 정책 적용
+     - `REFACTOR-07`: `test_ensemble_math.py`에서 `services.scoring` 실제 4대 광학 가중치/보너스/융합 실검증 전환, `test_unipercept.py`의 `app.services.*` 임포트 통일 및 `TC-CRT-12/13` 실제 어댑터 파이프라인/VQA 실패 시 Gemma 자율 폴백 실실행 검증, `test_critique_repository_and_api.py`에 `POST /api/chat/critique`, `GET /api/chat/critique/status/{id}`, `POST /api/chat/critique-summary` 3대 엔드포인트 커버리지 보강 (132 passed)
+  2. **🟡 Should Fix 리팩토링 (`REFACTOR-03`, `REFACTOR-08`)**:
+     - `REFACTOR-03`: 프론트엔드 3중 비평 Polling 타이머 증식·빈 `catch`·`ApiClient` 우회 및 캐시 키 불일치 수정
+     - `REFACTOR-08`: ADR-05 이전 레거시 사문화 코드(~560줄)·장문 함수 정리 및 프로그레스 라벨/`ScoringGuideModal` 포털·진입점 보강
 - **검증 완료된 테스트 실행 명령어**:
   - `npx tsc --noEmit` (`PASS`)
   - `npm run build` (`PASS`)
-  - `./venv/bin/pytest backend/tests/ -v` (`125 passed`)
+  - `./venv/bin/pytest backend/tests/ -v` (`132 passed`)
 - **다음 세션 포커스 및 추천 실행 프롬프트**:
-  - `REFACTOR-06`이 해결되었으므로, 다음 최우선 `🔴 Must Fix` 티켓인 `REFACTOR-07`(허수 단위 테스트 실검증 전환 및 `/api/chat/*` 라우트 커버리지 보강)을 이어서 해결합니다 (`systematic-debugger`).
-  - 👉 추천 프롬프트: `"03_ai_critique 도메인의 REFACTOR-07 티켓 해결해줘"`
+  - `REFACTOR-07`이 해결되어 Must Fix 결함이 모두 해소되었으므로, 다음 우선 순위인 `REFACTOR-03`(프론트엔드 비평 Polling 타이머 증식·빈 `catch`·캐시 키 불일치 교정)을 해결합니다 (`systematic-debugger`).
+  - 👉 추천 프롬프트: `"03_ai_critique 도메인의 REFACTOR-03 티켓 해결해줘"`
