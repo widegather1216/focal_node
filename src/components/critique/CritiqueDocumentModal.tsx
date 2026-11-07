@@ -79,8 +79,9 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
     }
   }, [isPopout, closeCritiqueDocument]);
 
-  // Keyboard shortcut listener (ESC / Cmd+W)
+  // Keyboard shortcut listener (ESC / Cmd+W) — active only when modal is open or in popout window
   useEffect(() => {
+    if (!critiqueDocumentPhotoId && !isPopout) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -92,7 +93,19 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleClose]);
+  }, [critiqueDocumentPhotoId, isPopout, handleClose]);
+
+  // Reset transient viewer & export states when switching photos
+  useEffect(() => {
+    setImgError(false);
+    setCopied(false);
+    setExported(false);
+    setPdfExported(false);
+    setLastSavedPath(null);
+    setExportProgress((prev) => (prev.active ? { ...prev, active: false } : prev));
+    handleResetZoom();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [critiqueDocumentPhotoId]);
 
   // Window title update for standalone/popout mode
   useEffect(() => {
@@ -101,32 +114,9 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
     }
   }, [isPopout, photo?.file_name]);
 
-  if (!critiqueDocumentPhotoId) return null;
-
-  const thumbUrl = api.getPhotoThumbnailUrl(critiqueDocumentPhotoId);
-  const originalUrl = `${api.getPhotoOriginalUrl(critiqueDocumentPhotoId)}?raw=true`;
-  const imageUrl = imgError ? thumbUrl : originalUrl;
-
-  const meta = photo?.metadata;
-  const formattedDate = photo?.ai_analysis?.critique_updated_at
-    ? new Date(photo.ai_analysis.critique_updated_at).toLocaleDateString('ko-KR', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      })
-    : meta?.capture_date
-    ? new Date(meta.capture_date).toLocaleDateString('ko-KR', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      })
-    : null;
-
   const critiqueText = photo?.ai_analysis?.critique || '';
 
-  // Extract editorial masthead scores & summary
+  // Extract editorial masthead scores & summary (must run before conditional return to obey Rules of Hooks)
   const mastheadData = useMemo(() => {
     if (!critiqueText) return { scores: null, summary: null };
     const { scores: extractedScores, remainingText } = extractScoreboard(critiqueText);
@@ -157,6 +147,29 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
 
     return { scores, summary };
   }, [critiqueText, photo?.ai_analysis]);
+
+  if (!critiqueDocumentPhotoId) return null;
+
+  const thumbUrl = api.getPhotoThumbnailUrl(critiqueDocumentPhotoId);
+  const originalUrl = `${api.getPhotoOriginalUrl(critiqueDocumentPhotoId)}?raw=true`;
+  const imageUrl = imgError ? thumbUrl : originalUrl;
+
+  const meta = photo?.metadata;
+  const formattedDate = photo?.ai_analysis?.critique_updated_at
+    ? new Date(photo.ai_analysis.critique_updated_at).toLocaleDateString('ko-KR', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    : meta?.capture_date
+    ? new Date(meta.capture_date).toLocaleDateString('ko-KR', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      })
+    : null;
 
   // Text copy handler
   const handleCopyText = async () => {
@@ -360,6 +373,25 @@ export const CritiqueDocumentModal: React.FC<CritiqueDocumentModalProps> = ({ is
               color: #111 !important;
               box-shadow: none !important;
               border: none !important;
+            }
+            .print-paper h1,
+            .print-paper h2,
+            .print-paper h3,
+            .print-paper h4,
+            .print-paper strong,
+            .print-paper th {
+              color: #111827 !important;
+            }
+            .print-paper p,
+            .print-paper li,
+            .print-paper td,
+            .print-paper em,
+            .print-paper blockquote,
+            .print-paper span:not(.font-mono) {
+              color: #374151 !important;
+            }
+            .print-paper button {
+              display: none !important;
             }
           }
         `}</style>

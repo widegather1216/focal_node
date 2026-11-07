@@ -20,6 +20,19 @@ export interface ExportProgressState {
 }
 
 /**
+ * Escapes HTML special characters to prevent DOM XSS when interpolating metadata into print templates.
+ */
+export function escapeHtml(value: string | number | null | undefined): string {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/**
  * Fetches an image URL and converts it to a Base64 data URL for safe offline canvas rendering.
  */
 export async function fetchImageAsDataUrl(url: string): Promise<string> {
@@ -189,20 +202,57 @@ export function generatePrintHtml(
       .focal-pdf-report-container .critique-body {
         font-size: 13.5px;
         line-height: 1.7;
-        color: #374151;
+        color: #374151 !important;
+      }
+      .focal-pdf-report-container .critique-body button,
+      .focal-pdf-report-container .critique-body div:has(> button:only-child) {
+        display: none !important;
+      }
+      .focal-pdf-report-container .critique-body h1,
+      .focal-pdf-report-container .critique-body h2,
+      .focal-pdf-report-container .critique-body h3,
+      .focal-pdf-report-container .critique-body h4,
+      .focal-pdf-report-container .critique-body strong,
+      .focal-pdf-report-container .critique-body th {
+        color: #111827 !important;
       }
       .focal-pdf-report-container .critique-body h1,
       .focal-pdf-report-container .critique-body h2,
       .focal-pdf-report-container .critique-body h3 {
-        color: #111827;
         margin-top: 20px;
         margin-bottom: 8px;
         font-weight: 700;
         letter-spacing: -0.01em;
       }
+      .focal-pdf-report-container .critique-body section h3 {
+        margin-top: 0;
+        margin-bottom: 0;
+      }
       .focal-pdf-report-container .critique-body h2 {
         border-bottom: 1px solid #e5e7eb;
         padding-bottom: 6px;
+      }
+      .focal-pdf-report-container .critique-body p,
+      .focal-pdf-report-container .critique-body li,
+      .focal-pdf-report-container .critique-body td,
+      .focal-pdf-report-container .critique-body em,
+      .focal-pdf-report-container .critique-body blockquote,
+      .focal-pdf-report-container .critique-body div,
+      .focal-pdf-report-container .critique-body span:not(.font-mono) {
+        color: #374151 !important;
+      }
+      .focal-pdf-report-container .critique-body section,
+      .focal-pdf-report-container .critique-body tr,
+      .focal-pdf-report-container .critique-body th,
+      .focal-pdf-report-container .critique-body td {
+        border-color: #e5e7eb !important;
+      }
+      .focal-pdf-report-container .critique-body code {
+        background: #f3f4f6 !important;
+        color: #be123c !important;
+      }
+      .focal-pdf-report-container .critique-body pre {
+        color: #111827 !important;
       }
       .focal-pdf-report-container .critique-body p {
         margin: 0 0 12px 0;
@@ -210,10 +260,10 @@ export function generatePrintHtml(
       .focal-pdf-report-container .critique-body blockquote {
         margin: 12px 0;
         padding: 8px 16px;
-        background: #fdf2f4;
-        border-left: 3px solid #e11d48;
+        background: #fdf2f4 !important;
+        border-left: 3px solid #e11d48 !important;
         font-style: italic;
-        color: #4b5563;
+        color: #4b5563 !important;
         border-radius: 0 6px 6px 0;
       }
       .focal-pdf-report-container .critique-body ul,
@@ -239,31 +289,31 @@ export function generatePrintHtml(
       <div class="header">
         <div>
           <div class="subtitle">AI Photo Critique & Aesthetic Analysis Report</div>
-          <h1 class="title">${photo?.file_name || '사진 비평 리포트'}</h1>
+          <h1 class="title">${escapeHtml(photo?.file_name || '사진 비평 리포트')}</h1>
         </div>
-        ${formattedDate ? `<div class="date">${formattedDate}</div>` : ''}
+        ${formattedDate ? `<div class="date">${escapeHtml(formattedDate)}</div>` : ''}
       </div>
 
       <div class="photo-card">
-        <img src="${imageUrl}" alt="${photo?.file_name || '사진'}" />
+        <img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(photo?.file_name || '사진')}" />
       </div>
 
       <div class="exif-grid">
         <div class="exif-item">
           <span class="exif-label">Camera</span>
-          <span class="exif-value">${meta?.camera_model || '정보 없음'}</span>
+          <span class="exif-value">${escapeHtml(meta?.camera_model || '정보 없음')}</span>
         </div>
         <div class="exif-item">
           <span class="exif-label">Lens</span>
-          <span class="exif-value">${meta?.lens_model || '정보 없음'}</span>
+          <span class="exif-value">${escapeHtml(meta?.lens_model || '정보 없음')}</span>
         </div>
         <div class="exif-item">
           <span class="exif-label">Focal & Aperture</span>
-          <span class="exif-value">${[meta?.focal_length ? `${meta.focal_length}mm` : null, meta?.f_number ? `f/${meta.f_number}` : null].filter(Boolean).join(' · ') || '정보 없음'}</span>
+          <span class="exif-value">${escapeHtml([meta?.focal_length ? `${meta.focal_length}mm` : null, meta?.f_number ? `f/${meta.f_number}` : null].filter(Boolean).join(' · ') || '정보 없음')}</span>
         </div>
         <div class="exif-item">
           <span class="exif-label">Exposure & ISO</span>
-          <span class="exif-value">${[meta?.shutter_speed ? `${meta.shutter_speed}s` : null, meta?.iso ? `ISO ${meta.iso}` : null].filter(Boolean).join(' · ') || '정보 없음'}</span>
+          <span class="exif-value">${escapeHtml([meta?.shutter_speed ? `${meta.shutter_speed}s` : null, meta?.iso ? `ISO ${meta.iso}` : null].filter(Boolean).join(' · ') || '정보 없음')}</span>
         </div>
       </div>
 
@@ -272,22 +322,22 @@ export function generatePrintHtml(
         ${scores.overall !== null ? `
         <div class="score-card primary">
           <div class="score-label">종합 지각 평점</div>
-          <div class="score-val">${scores.overall} / 100</div>
+          <div class="score-val">${escapeHtml(scores.overall)} / 100</div>
         </div>` : ''}
         ${scores.iaa !== null ? `
         <div class="score-card">
           <div class="score-label">IAA (미학 & 구도)</div>
-          <div class="score-val">${scores.iaa}</div>
+          <div class="score-val">${escapeHtml(scores.iaa)}</div>
         </div>` : ''}
         ${scores.iqa !== null ? `
         <div class="score-card">
           <div class="score-label">IQA (화질 & 광학)</div>
-          <div class="score-val">${scores.iqa}</div>
+          <div class="score-val">${escapeHtml(scores.iqa)}</div>
         </div>` : ''}
         ${scores.ista !== null ? `
         <div class="score-card">
           <div class="score-label">ISTA (구조 & 질감)</div>
-          <div class="score-val">${scores.ista}</div>
+          <div class="score-val">${escapeHtml(scores.ista)}</div>
         </div>` : ''}
       </div>` : ''}
 
@@ -445,7 +495,9 @@ export async function exportCritiqueToPdf(
     await delay(80);
 
     const paperElem = document.getElementById('critique-rendered-body');
-    const contentHtml = paperElem ? paperElem.innerHTML : critiqueText;
+    const contentHtml = paperElem
+      ? paperElem.innerHTML
+      : `<p>${escapeHtml(critiqueText).replace(/\n/g, '<br />')}</p>`;
 
     const printHtml = generatePrintHtml(
       photo,
