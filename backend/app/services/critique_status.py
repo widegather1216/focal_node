@@ -6,10 +6,28 @@ class CritiqueCancelledException(Exception):
     pass
 
 class CritiqueStatusManager:
-    def __init__(self):
+    def __init__(self, max_history: int = 100):
         self._statuses: Dict[str, Dict[str, Any]] = {}
         self._cancelled_ids: Set[str] = set()
         self._lock = threading.Lock()
+        self._max_history = max_history
+
+    def _evict_stale_statuses_locked(self) -> None:
+        """Evicts oldest completed/cancelled/error statuses when exceeding max_history to prevent unbounded RAM growth."""
+        while len(self._statuses) >= self._max_history:
+            evict_key = None
+            for key, val in self._statuses.items():
+                if val.get("status") in ("completed", "cancelled", "error"):
+                    evict_key = key
+                    break
+            if evict_key is None:
+                evict_key = next(iter(self._statuses))
+            del self._statuses[evict_key]
+            self._cancelled_ids.discard(evict_key)
+
+        if len(self._cancelled_ids) > self._max_history * 2:
+            stale_cancel = next(iter(self._cancelled_ids))
+            self._cancelled_ids.discard(stale_cancel)
 
     def update(
         self,
@@ -31,6 +49,8 @@ class CritiqueStatusManager:
             # If already cancelled, do not overwrite status unless explicitly resetting
             if photo_id in self._cancelled_ids and status != "cancelled":
                 return
+            if photo_id not in self._statuses:
+                self._evict_stale_statuses_locked()
             self._statuses[photo_id] = {
                 "photo_id": photo_id,
                 "step": step,
@@ -98,6 +118,8 @@ class CritiqueStatusManager:
 
     def request_cancel(self, photo_id: str):
         with self._lock:
+            if photo_id not in self._statuses:
+                self._evict_stale_statuses_locked()
             self._cancelled_ids.add(photo_id)
             self._statuses[photo_id] = {
                 "photo_id": photo_id,

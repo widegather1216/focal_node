@@ -234,19 +234,21 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                 }
             ]
             
+            from utils.image import is_raw_image, decode_raw_to_pil
+            from PIL import Image
+            if isinstance(image_path, Image.Image):
+                image_input = image_path
+            elif is_raw_image(image_path):
+                image_input = decode_raw_to_pil(image_path, min_dimension=1024)
+            else:
+                image_input = image_path
+
             with GPU_LOCK:
                 try:
                     tokenizer = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
                     prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
                     
                     from mlx_vlm import generate
-                    from utils.image import is_raw_image, decode_raw_to_pil
-                    
-                    if is_raw_image(image_path):
-                        image_input = decode_raw_to_pil(image_path)
-                    else:
-                        image_input = image_path
-                        
                     # In mlx_vlm, generate accepts `image` as a file path, URL, or PIL Image
                     result = generate(self.model, self.processor, prompt=prompt, image=image_input, verbose=False)
                     output = result.text if hasattr(result, "text") else str(result)
@@ -302,19 +304,21 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                 }
             ]
             
+            from utils.image import is_raw_image, decode_raw_to_pil
+            from PIL import Image
+            if isinstance(image_path, Image.Image):
+                image_input = image_path
+            elif is_raw_image(image_path):
+                image_input = decode_raw_to_pil(image_path, min_dimension=1024)
+            else:
+                image_input = image_path
+
             with GPU_LOCK:
                 try:
                     tokenizer = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
                     prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
                     
                     from mlx_vlm import generate
-                    from utils.image import is_raw_image, decode_raw_to_pil
-                    
-                    if is_raw_image(image_path):
-                        image_input = decode_raw_to_pil(image_path)
-                    else:
-                        image_input = image_path
-                        
                     result = generate(self.model, self.processor, prompt=prompt, image=image_input, verbose=False)
                     output = result.text if hasattr(result, "text") else str(result)
                 except RuntimeError as e:
@@ -325,10 +329,10 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                     except Exception as clear_err:
                         print(f"[GemmaAdapter] Cache clear note: {clear_err}", flush=True)
                     gc.collect()
-                    return "시스템 메모리가 부족하여 비평을 완료하지 못했습니다. 다른 프로그램을 종료 후 다시 시도해주세요."
+                    raise
                 except Exception as e:
                     print(f"[GemmaAdapter] Unexpected critique inference error: {e}", flush=True)
-                    return "사진 비평 생성 중 알 수 없는 오류가 발생했습니다."
+                    raise
             
             return output.strip()
         except CritiqueCancelledException:
@@ -367,12 +371,23 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
     def _execute_perceptual_critique_generation(
         self,
         messages: list,
-        image_path: str,
+        image_path: Any,
         scores_dict: Optional[dict],
         photo_id: Optional[str]
     ) -> str:
         from services.critique_status import critique_status_manager, CritiqueCancelledException
         from services.ai_parser import format_score_info_text
+        from utils.image import is_raw_image, decode_raw_to_pil
+        from PIL import Image
+
+        # Decode image outside GPU_LOCK to prevent CPU decode blocking GPU per Rule 2.4
+        if isinstance(image_path, Image.Image):
+            image_input = image_path
+        elif is_raw_image(image_path):
+            image_input = decode_raw_to_pil(image_path, min_dimension=1024)
+        else:
+            image_input = image_path
+
         with GPU_LOCK:
             if photo_id:
                 critique_status_manager.check_cancelled(photo_id)
@@ -385,13 +400,6 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                 prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
                 from mlx_vlm import generate
-                from utils.image import is_raw_image, decode_raw_to_pil
-
-                if is_raw_image(image_path):
-                    image_input = decode_raw_to_pil(image_path)
-                else:
-                    image_input = image_path
-
                 result = generate(self.model, self.processor, prompt=prompt, image=image_input, max_tokens=3072, verbose=False)
                 output = (result.text if hasattr(result, "text") else str(result)).strip()
 
@@ -408,10 +416,10 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                 except Exception as clear_err:
                     print(f"[GemmaAdapter] Cache clear note: {clear_err}", flush=True)
                 gc.collect()
-                return "시스템 메모리가 부족하여 비평을 완료하지 못했습니다. 불필요한 앱을 종료 후 다시 시도해주세요."
+                raise
             except Exception as e:
                 print(f"[GemmaAdapter] Unexpected perceptual critique inference error: {e}", flush=True)
-                return "사진 비평 생성 중 알 수 없는 오류가 발생했습니다."
+                raise
 
     def generate_perceptual_critique(
         self,
@@ -502,10 +510,10 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
                     except Exception as clear_err:
                         print(f"[GemmaAdapter] Cache clear note: {clear_err}", flush=True)
                     gc.collect()
-                    return "메모리가 부족하여 종합 요약을 완료하지 못했습니다. 불필요한 앱을 종료 후 다시 시도해주세요."
+                    raise
                 except Exception as e:
                     print(f"[GemmaAdapter] Unexpected critique summary error: {e}", flush=True)
-                    return "비평 종합 요약 생성 중 오류가 발생했습니다."
+                    raise
 
             return output.strip()
         finally:

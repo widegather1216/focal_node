@@ -206,9 +206,11 @@ async def _execute_unipercept_critique_pipeline(
     try:
         critique_status_manager.check_cancelled(photo_id)
         gemma = get_gemma_adapter()
+        # Share pre-decoded PIL image from UniPercept to eliminate redundant RAW decode per Rule 2.3
+        critique_image = res_dict.get("pil_img") if (isinstance(res_dict, dict) and res_dict.get("pil_img")) else file_path
         critique_text = await asyncio.to_thread(
             gemma.generate_perceptual_critique,
-            file_path,
+            critique_image,
             meta_data,
             scores_dict,
             raw_en,
@@ -232,8 +234,10 @@ async def _execute_unipercept_critique_pipeline(
         raise
     except Exception as gemma_err:
         print(f"[ChatService] Gemma 4 perceptual critique fallback: {gemma_err}", flush=True)
-        fallback_text = f"{_build_scoreboard_header(scores_dict)}{raw_en}" if scores_dict else raw_en
-        return fallback_text, scores_dict, raw_en
+        if raw_en and raw_en.strip():
+            fallback_text = f"{_build_scoreboard_header(scores_dict)}{raw_en}" if scores_dict else raw_en
+            return fallback_text, scores_dict, raw_en
+        raise
 
 async def _execute_gemma_critique_pipeline(
     file_path: str, meta_data: dict, photo_id: str
@@ -302,6 +306,9 @@ async def _run_critique_pipeline(payload: schemas.CritiqueRequest) -> Dict[str, 
             critique_text = str(pipeline_result or "")
             scores_dict = None
             raw_en = None
+
+        if not critique_text or not critique_text.strip():
+            raise RuntimeError("Critique generation resulted in empty or invalid critique.")
 
         overall_score, iaa_score, iqa_score, ista_score = _extract_score_floats(scores_dict, critique_text)
         critique_en = raw_en.strip() if (raw_en and isinstance(raw_en, str) and raw_en.strip()) else None
@@ -425,6 +432,14 @@ class ChatService:
             else:
                 task = asyncio.create_task(_run_critique_pipeline(payload))
                 _critique_tasks[photo_id] = task
+
+                def _cleanup_task(t: asyncio.Task) -> None:
+                    with _critique_tasks_lock:
+                        if _critique_tasks.get(photo_id) is t:
+                            del _critique_tasks[photo_id]
+
+                if hasattr(task, "add_done_callback"):
+                    task.add_done_callback(_cleanup_task)
 
         try:
             # Shield the background critique task so client disconnect (e.g. sleep) does not cancel execution

@@ -1,13 +1,28 @@
+from __future__ import annotations
+
 import os
 import gc
 import re
 import time
-import torch
 import threading
 from typing import Dict, Any, Optional, Tuple
 
+class _LazyTorchProxy:
+    """Lazily loads heavy torch module on first access to satisfy Rule 2.5."""
+    def __getattr__(self, name: str) -> Any:
+        import torch
+        globals()["torch"] = torch
+        return getattr(torch, name)
+
+torch = _LazyTorchProxy()
+
 from services.base_model import BaseKeepAliveModel, GPU_LOCK
-from services.unipercept_utils import build_transform, score2aestoken, AESTHETICS_TOKEN_LIST
+from services.unipercept_utils import (
+    build_transform,
+    score2aestoken,
+    AESTHETICS_TOKEN_LIST,
+    patch_transformers_tied_weights,
+)
 from services.scoring import (
     resolve_perceptual_weights,
     calculate_aesthetic_bonus,
@@ -22,14 +37,15 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         self._cached_preferential_ids = None
         self._cached_weight_tensor = None
         
-        # Check if local model directory exists
+        # Check if local model directory exists using isolated CONFIG_DIR per Rule 2.6
+        from config import CONFIG_DIR
         custom_path = os.environ.get("UNIPERCEPT_MODEL_PATH")
         local_candidates = [
             custom_path,
             os.path.abspath("checkpoints/UniPercept"),
             os.path.abspath("checkpoints/unipercept"),
-            os.path.expanduser("~/.config/focal_node/models/UniPercept"),
-            os.path.expanduser("~/.config/focal_node/models/unipercept"),
+            os.path.join(CONFIG_DIR, "models", "UniPercept"),
+            os.path.join(CONFIG_DIR, "models", "unipercept"),
         ]
         
         self.is_local_path = False
@@ -43,9 +59,32 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         self.model = None
         self.processor = None
         self.tokenizer = None
-        self.device = "mps" if torch.backends.mps.is_available() else "cpu"
-        # bfloat16 for MPS stability (prevents float16 underflow NaN during generation)
-        self.torch_dtype = torch.bfloat16 if self.device == "mps" else torch.float32
+        self._device = None
+        self._torch_dtype = None
+
+    @property
+    def device(self) -> str:
+        """Lazily resolves compute device (mps or cpu) per Rule 2.5."""
+        if self._device is None:
+            import torch
+            self._device = "mps" if torch.backends.mps.is_available() else "cpu"
+        return self._device
+
+    @device.setter
+    def device(self, val: str):
+        self._device = val
+
+    @property
+    def torch_dtype(self):
+        """Lazily resolves torch_dtype (bfloat16 for MPS stability) per Rule 2.5."""
+        if self._torch_dtype is None:
+            import torch
+            self._torch_dtype = torch.bfloat16 if self.device == "mps" else torch.float32
+        return self._torch_dtype
+
+    @torch_dtype.setter
+    def torch_dtype(self, val):
+        self._torch_dtype = val
 
     def _load_model_locked(self):
         """
@@ -57,6 +96,7 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             self._start_keep_alive_timer_locked()
             return
 
+        import torch
         # Pre-load cache cleanup for MPS
         gc.collect()
         if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
@@ -66,6 +106,7 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                 print(f"[UniPerceptAdapter] Warning pre-clearing MPS cache: {err}", flush=True)
 
         print(f"[UniPerceptAdapter] Lazy loading UniPercept model ({self.model_id}) on {self.device} ({self.torch_dtype})...", flush=True)
+        patch_transformers_tied_weights()
         from transformers import AutoModel, AutoTokenizer, AutoProcessor
         
         extra_kwargs = {"local_files_only": True} if (self.is_local_path or os.path.exists(os.path.expanduser("~/.cache/huggingface/hub"))) else {}
@@ -97,6 +138,7 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         except Exception as e:
             print(f"[UniPerceptAdapter] Primary load failed ({e}). Falling back to AutoModel default config...", flush=True)
             try:
+                import torch
                 self.torch_dtype = torch.float32
                 self.model = AutoModel.from_pretrained(
                     self.model_id,
@@ -131,6 +173,12 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                         setattr(self.model, attr, None)
                     except Exception:
                         pass
+        try:
+            import torch
+            if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+                torch.mps.empty_cache()
+        except Exception:
+            pass
 
     def _acquire_model_for_request(self, photo_id: Optional[str] = None) -> None:
         """
@@ -171,13 +219,12 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         if pixel_values is None:
             return
         del pixel_values
-        if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
-            try:
+        try:
+            import torch
+            if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
                 torch.mps.empty_cache()
-            except Exception as clear_err:
-                print(f"[UniPerceptAdapter] Pixel values cache clear warning: {clear_err}", flush=True)
-
-
+        except Exception as clear_err:
+            print(f"[UniPerceptAdapter] Pixel values cache clear warning: {clear_err}", flush=True)
 
     @staticmethod
     def _resolve_conversation_template(model) -> Optional[Any]:
@@ -229,7 +276,7 @@ class UniPerceptAdapter(BaseKeepAliveModel):
 
     def compute_official_vr_score(
         self,
-        pixel_values: torch.Tensor,
+        pixel_values: Any,
         desc: str,
         photo_id: Optional[str] = None
     ) -> float:
@@ -246,6 +293,7 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             if self.model is None or self.tokenizer is None:
                 return 70.0
 
+            import torch
             num_patches = pixel_values.shape[0] if pixel_values is not None else 1
             template = self._resolve_conversation_template(self.model)
             query = self._build_vr_score_query(desc, template, self.model, num_patches)
@@ -292,9 +340,17 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         return final_score
 
     @staticmethod
-    def _load_pil_image(image_path: str):
+    def _load_pil_image(image_input: Any, min_dimension: Optional[int] = 1024):
+        """
+        Loads image as PIL Image in RGB mode with high resolution (min_dimension=1024)
+        to prevent degraded low-res thumbnail scoring per Rule 2.3.
+        If image_input is already a PIL Image, returns it immediately without re-decoding.
+        """
+        from PIL import Image
+        if isinstance(image_input, Image.Image):
+            return image_input
         from utils.image import load_pil_image
-        return load_pil_image(image_path)
+        return load_pil_image(image_input, min_dimension=min_dimension)
 
     @staticmethod
     def _format_exif_desc(metadata: Optional[Dict[str, Any]]) -> str:
@@ -313,7 +369,23 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             parts.append(f"ISO {metadata['iso']}")
         return f"[EXIF: {', '.join(parts)}]\n" if parts else ""
 
-    def _prepare_pixel_values(self, pil_img, photo_id: Optional[str] = None) -> torch.Tensor:
+    def _safe_load_pil_image(self, image_input: Any) -> Any:
+        try:
+            return self._load_pil_image(image_input, min_dimension=1024)
+        except TypeError:
+            return self._load_pil_image(image_input)
+
+    def _safe_prepare_pixel_values(self, pil_img: Any, photo_id: Optional[str] = None) -> Any:
+        if pil_img is None:
+            return None
+        try:
+            return self._prepare_pixel_values(pil_img, photo_id=photo_id)
+        except TypeError:
+            return self._prepare_pixel_values(pil_img)
+
+    def _prepare_pixel_values(self, pil_img, photo_id: Optional[str] = None, **kwargs: Any) -> Any:
+        if pil_img is None:
+            return None
         target_dtype = self.torch_dtype
         if self.model is not None and hasattr(self.model, "parameters"):
             try:
@@ -396,6 +468,8 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         max_retries: int = 3,
         f_number: Optional[float] = None,
         iso: Optional[float] = None,
+        pil_img: Optional[Any] = None,
+        pixel_values: Optional[Any] = None,
         **kwargs: Any
     ) -> Dict[str, Any]:
         """
@@ -404,12 +478,13 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         Step 2: IQA Score (Quality)
         Step 3: ISTA Score (Structure & Texture)
         Overall = EXIF-adaptive fusion (Mode A/B/C/D weights + aesthetic bonus)
+        Reuses pre-decoded pil_img and pixel_values when available to prevent duplicate decoding.
         """
         self._acquire_model_for_request(photo_id)
-        pixel_values = None
+        should_release_pixels = False
 
         try:
-            if (not os.path.exists(image_path) and not hasattr(self.model, "chat")) or self.model is None:
+            if (pil_img is None and not os.path.exists(image_path) and not hasattr(self.model, "chat")) or self.model is None:
                 return {"overall": 70, "iaa": 70, "iqa": 70, "ista": 70, "raw_vr_text": ""}
 
             vr_start_time = time.time()
@@ -417,8 +492,11 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             print("[UniPercept] 🚀 [VR 모드 시작] 3단계 정밀 지각 점수 산출 파이프라인 가동...", flush=True)
             print("=" * 70, flush=True)
 
-            pil_img = self._load_pil_image(image_path)
-            pixel_values = self._prepare_pixel_values(pil_img)
+            if pil_img is None:
+                pil_img = self._safe_load_pil_image(image_path)
+            if pixel_values is None:
+                pixel_values = self._safe_prepare_pixel_values(pil_img, photo_id=photo_id)
+                should_release_pixels = True
 
             domains = [
                 ("iaa", "aesthetics", "미학 점수 (IAA)", 1, 10),
@@ -473,7 +551,9 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             }
 
         finally:
-            self._release_pixel_values(pixel_values)
+            if should_release_pixels:
+                self._release_pixel_values(pixel_values)
+            self._release_model_for_request(photo_id)
             self._release_model_for_request(photo_id)
 
     @staticmethod
@@ -657,7 +737,10 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         image_path: str,
         metadata: Optional[Dict[str, Any]] = None,
         scores_context: Optional[Dict[str, Any]] = None,
-        photo_id: Optional[str] = None
+        photo_id: Optional[str] = None,
+        pil_img: Optional[Any] = None,
+        pixel_values: Optional[Any] = None,
+        **kwargs: Any
     ) -> str:
         """
         Runs single-pass integrated perceptual VQA to extract a 3-4 sentence
@@ -665,13 +748,17 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         optical distortions, and surface textures.
         Uses normalized decoding parameters (repetition_penalty=1.0, do_sample=True,
         temperature=0.7, top_p=0.9) to eliminate vocabulary collapse.
+        Reuses pre-decoded pil_img and pixel_values when provided.
         """
         self._acquire_model_for_request(photo_id)
-        pixel_values = None
+        should_release_pixels = False
 
         try:
-            if (not os.path.exists(image_path) and not hasattr(self.model, "chat")) or self.model is None:
-                return "The image could not be analyzed or the model is not loaded."
+            if self.model is None and not hasattr(self, "_mock_vqa_mode"):
+                raise RuntimeError("UniPercept model is not loaded for VQA analysis.")
+
+            if pil_img is None and not os.path.exists(image_path) and not hasattr(self.model, "chat"):
+                raise FileNotFoundError(f"Image not found at path: {image_path}")
 
             if photo_id:
                 from services.critique_status import critique_status_manager
@@ -682,11 +769,14 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             from services.ai_parser import UNIPERCEPT_VQA_SINGLE_PASS_PROMPT
             from services.critique_status import CritiqueCancelledException
 
-            pil_img = self._load_pil_image(image_path)
+            if pil_img is None:
+                pil_img = self._safe_load_pil_image(image_path)
             exif_desc = self._format_exif_desc(metadata)
             score_desc = self._format_score_guidance_desc(scores_context)
             prompt_text = f"{exif_desc}{score_desc}{UNIPERCEPT_VQA_SINGLE_PASS_PROMPT}"
-            pixel_values = self._prepare_pixel_values(pil_img)
+            if pixel_values is None:
+                pixel_values = self._safe_prepare_pixel_values(pil_img, photo_id=photo_id)
+                should_release_pixels = True
 
             generation_config = dict(
                 max_new_tokens=512,
@@ -710,7 +800,8 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             print(f"[UniPercept] ✅ Single-pass perceptual anchor generated ({len(anchor_text)} chars, {elapsed:.2f}초)", flush=True)
             return anchor_text
         finally:
-            self._release_pixel_values(pixel_values)
+            if should_release_pixels:
+                self._release_pixel_values(pixel_values)
             self._release_model_for_request(photo_id)
 
     def _execute_all_vqa_steps(
@@ -1034,24 +1125,34 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         - Stage 1 Math: Overall = EXIF-adaptive fusion (services.scoring)
         - Stage 2: VQA Mode -> Pure deep photographic critique without score constraints
         - Merges scores scoreboard and VQA critique for translation by Gemma.
+        Decodes high-res image once (min_dimension=1024) and shares pil_img and pixel_values
+        across both VR scoring and VQA perceptual anchor generation.
         """
+        pixel_values = None
         try:
             if photo_id:
                 from services.critique_status import critique_status_manager
                 critique_status_manager.check_cancelled(photo_id)
 
+            # Pre-decode image once at 1024px minimum resolution and prepare pixel_values
+            pil_img = self._safe_load_pil_image(image_path)
+            if hasattr(self, "_prepare_pixel_values") and self.model is not None:
+                pixel_values = self._safe_prepare_pixel_values(pil_img, photo_id=photo_id)
+
             eff_f_number = f_number if f_number is not None else (metadata.get("f_number") if metadata else None)
             eff_iso = iso if iso is not None else (metadata.get("iso") if metadata else None)
 
             print("[UniPerceptAdapter] [Stage 1/2] Computing 3-Way VR scores (IAA / IQA / ISTA)...", flush=True)
-            # 1. Stage 1: VR Mode (Fast 3-Metric Score Extraction)
+            # 1. Stage 1: VR Mode (reusing pre-decoded pil_img and pixel_values)
             vr_result = self.generate_vr_scores(
                 image_path,
                 metadata=metadata,
                 photo_id=photo_id,
                 max_retries=3,
                 f_number=eff_f_number,
-                iso=eff_iso
+                iso=eff_iso,
+                pil_img=pil_img,
+                pixel_values=pixel_values
             )
             if photo_id:
                 critique_status_manager.check_cancelled(photo_id)
@@ -1071,9 +1172,14 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             print(f"[UniPerceptAdapter] [Stage 1/2] VR Scores computed: Overall={final_overall}, IAA={final_iaa}, IQA={final_iqa}, ISTA={final_ista}", flush=True)
 
             print("[UniPerceptAdapter] [Stage 2/2] Generating single-pass perceptual anchor...", flush=True)
-            # 2. Stage 2: Single-pass VQA (Score-Conditioned Perceptual Anchor)
+            # 2. Stage 2: Single-pass VQA (reusing pre-decoded pil_img and pixel_values)
             anchor_text = self.generate_perceptual_anchor_vqa(
-                image_path, metadata=metadata, scores_context=scores_summary, photo_id=photo_id
+                image_path,
+                metadata=metadata,
+                scores_context=scores_summary,
+                photo_id=photo_id,
+                pil_img=pil_img,
+                pixel_values=pixel_values
             )
             if photo_id:
                 critique_status_manager.check_cancelled(photo_id)
@@ -1084,9 +1190,11 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                 "quality_score": final_overall,
                 "scores": scores_summary,
                 "text_comp": anchor_text,
-                "raw_vr_text": vr_result.get("raw_vr_text", "")
+                "raw_vr_text": vr_result.get("raw_vr_text", ""),
+                "pil_img": pil_img
             }
         finally:
+            self._release_pixel_values(pixel_values)
             with GPU_LOCK:
                 with self.lock:
                     if self.active_requests <= 0:

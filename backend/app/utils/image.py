@@ -2,6 +2,7 @@ import os
 import io
 import datetime
 import mimetypes
+import threading
 from typing import Optional
 from PIL import Image, ImageOps
 import rawpy
@@ -9,6 +10,10 @@ import exifread
 
 # Disable decompression bomb checks for high-resolution cameras
 Image.MAX_IMAGE_PIXELS = None
+
+# Rule 2.3: Maximum concurrent RAW decoding operations to protect unified memory
+MAX_CONCURRENT_DECODES = 3
+_RAW_DECODE_SEMAPHORE = threading.Semaphore(MAX_CONCURRENT_DECODES)
 
 RAW_EXTENSIONS = {
     ".arw": "image/x-sony-arw",
@@ -48,39 +53,42 @@ def decode_raw_to_pil(file_path: str, min_dimension: Optional[int] = None) -> Im
     then falls back to full raw post-processing.
     If min_dimension is specified, embedded thumbnails smaller than min_dimension
     are skipped in favor of raw postprocessing to guarantee adequate quality.
+    Enforces _RAW_DECODE_SEMAPHORE (MAX_CONCURRENT_DECODES=3) per Rule 2.3.
     """
-    with rawpy.imread(file_path) as raw:
-        try:
-            thumb = raw.extract_thumb()
-            if thumb.format == rawpy.ThumbFormat.JPEG:
-                with Image.open(io.BytesIO(thumb.data)) as img:
-                    img_t = ImageOps.exif_transpose(img)
-                    img_rgb = img_t.convert("RGB") if img_t.mode != "RGB" else img_t.copy()
+    with _RAW_DECODE_SEMAPHORE:
+        with rawpy.imread(file_path) as raw:
+            try:
+                thumb = raw.extract_thumb()
+                if thumb.format == rawpy.ThumbFormat.JPEG:
+                    with Image.open(io.BytesIO(thumb.data)) as img:
+                        img_t = ImageOps.exif_transpose(img)
+                        img_rgb = img_t.convert("RGB") if img_t.mode != "RGB" else img_t.copy()
+                        if min_dimension is None or (img_rgb.width >= min_dimension and img_rgb.height >= min_dimension):
+                            return img_rgb
+                elif thumb.format == rawpy.ThumbFormat.BITMAP:
+                    img_rgb = Image.fromarray(thumb.data).convert("RGB")
                     if min_dimension is None or (img_rgb.width >= min_dimension and img_rgb.height >= min_dimension):
                         return img_rgb
-            elif thumb.format == rawpy.ThumbFormat.BITMAP:
-                img_rgb = Image.fromarray(thumb.data).convert("RGB")
-                if min_dimension is None or (img_rgb.width >= min_dimension and img_rgb.height >= min_dimension):
-                    return img_rgb
-        except Exception as e:
-            print(f"[decode_raw_to_pil] Thumbnail extraction failed for {file_path}: {e}")
-            
-        # Fallback to full postprocessing if thumbnail extraction fails, is low resolution, or format is unknown
-        rgb = raw.postprocess(
-            use_camera_wb=True,
-            half_size=True,
-            no_auto_bright=True,
-            output_color=rawpy.ColorSpace.sRGB
-        )
-        return Image.fromarray(rgb)
+            except Exception as e:
+                print(f"[decode_raw_to_pil] Thumbnail extraction failed for {file_path}: {e}")
+                
+            # Fallback to full postprocessing if thumbnail extraction fails, is low resolution, or format is unknown
+            rgb = raw.postprocess(
+                use_camera_wb=True,
+                half_size=True,
+                no_auto_bright=True,
+                output_color=rawpy.ColorSpace.sRGB
+            )
+            return Image.fromarray(rgb)
 
-def load_pil_image(file_path: str) -> Image.Image:
+def load_pil_image(file_path: str, min_dimension: Optional[int] = None) -> Image.Image:
     """
     Loads any supported image (RAW or standard) as a PIL Image in RGB mode.
     Handles EXIF orientation and ensures file handles are closed properly.
+    For RAW images, forwards min_dimension to decode_raw_to_pil.
     """
     if is_raw_image(file_path):
-        return decode_raw_to_pil(file_path)
+        return decode_raw_to_pil(file_path, min_dimension=min_dimension)
     with Image.open(file_path) as raw_img:
         img_t = ImageOps.exif_transpose(raw_img)
         return img_t.convert("RGB") if img_t.mode != "RGB" else img_t.copy()
