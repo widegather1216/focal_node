@@ -81,3 +81,38 @@ def test_is_snapshot_weights_valid_corrupted_index(tmp_path):
     assert is_snapshot_weights_valid(str(array_idx_dir)) is False
 
 
+def test_download_models_background_failure_suppresses_completed(monkeypatch, capsys):
+    """TC-CF-03 / DEFECT-02: Ensure model failure does not emit completed message and returns False."""
+    from services.model_downloader import download_models_background
+
+    def mock_download_with_retry(repo_id, label, **kwargs):
+        if "siglip" in repo_id:
+            return False
+        return True
+
+    monkeypatch.setattr("services.model_downloader.download_with_retry", mock_download_with_retry)
+    monkeypatch.setattr("os.path.exists", lambda p: False)
+
+    result = download_models_background()
+    captured = capsys.readouterr()
+
+    assert result is False
+    assert "[Downloader] Completed" not in captured.out
+    assert "[Downloader] Download process finished with errors." in captured.out
+
+
+def test_download_models_background_all_success(monkeypatch, capsys):
+    """TC-CF-03 / DEFECT-02: Ensure all success outputs completed message and returns True."""
+    from services.model_downloader import download_models_background
+
+    monkeypatch.setattr("services.model_downloader.download_with_retry", lambda repo_id, label, **kwargs: True)
+    monkeypatch.setattr("os.path.exists", lambda p: False)
+
+    result = download_models_background()
+    captured = capsys.readouterr()
+
+    assert result is True
+    assert "[Downloader] Completed all model downloads." in captured.out
+    assert "[Downloader] Download process finished with errors." not in captured.out
+
+

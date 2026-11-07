@@ -344,20 +344,38 @@ def download_with_retry(repo_id: str, label: str, max_retries: int = 3, **kwargs
 
     return False
 
-def download_models_background():
-    download_with_retry("google/siglip2-base-patch16-224", "SigLIP 2 (검색 엔진)")
-    download_with_retry("mlx-community/gemma-4-12B-it-8bit", "Gemma 4 (비전 분석 엔진)")
-    
-    # Check local checkpoint folder first for UniPercept
-    local_unipercept = os.path.abspath("checkpoints/UniPercept")
-    if not (os.path.exists(local_unipercept) and is_snapshot_weights_valid(local_unipercept)):
-        # Download UniPercept public mirror seamlessly without tokens
-        download_with_retry("widegather/unipercept-mirror", "UniPercept (전문가 비평 엔진)")
-    else:
-        tracker = get_model_download_tracker()
-        tracker.update_status("widegather/unipercept-mirror", "UniPercept (전문가 비평 엔진)", status="cached")
-        
-    print("[Downloader] Completed all model downloads.", flush=True)
+def download_models_background() -> bool:
+    try:
+        results = []
+        # 1. SigLIP 2
+        res_siglip = download_with_retry("google/siglip2-base-patch16-224", "SigLIP 2 (검색 엔진)")
+        results.append(res_siglip)
+
+        # 2. Gemma 4
+        res_gemma = download_with_retry("mlx-community/gemma-4-12B-it-8bit", "Gemma 4 (비전 분석 엔진)")
+        results.append(res_gemma)
+
+        # 3. UniPercept
+        local_unipercept = os.path.abspath("checkpoints/UniPercept")
+        if not (os.path.exists(local_unipercept) and is_snapshot_weights_valid(local_unipercept)):
+            # Download UniPercept public mirror seamlessly without tokens
+            res_unipercept = download_with_retry("widegather/unipercept-mirror", "UniPercept (전문가 비평 엔진)")
+            results.append(res_unipercept)
+        else:
+            tracker = get_model_download_tracker()
+            tracker.update_status("widegather/unipercept-mirror", "UniPercept (전문가 비평 엔진)", status="cached")
+            results.append(True)
+
+        if all(results):
+            print("[Downloader] Completed all model downloads.", flush=True)
+            return True
+        else:
+            print("[Downloader] Download process finished with errors.", flush=True)
+            return False
+    except Exception as e:
+        logger.error(f"[Downloader] Unexpected error during background model download: {e}", exc_info=True)
+        print(f"[Downloader] Download process finished with errors: {e}", flush=True)
+        return False
 
 _downloader_thread: Optional[threading.Thread] = None
 _downloader_lock = threading.RLock()

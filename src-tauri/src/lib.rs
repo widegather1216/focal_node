@@ -319,7 +319,7 @@ pub fn run() {
                                     let model_name = parts[1].trim().to_string();
                                     let _ = app_handle.emit("model-download-started", model_name);
                                 }
-                            } else if line_str.contains("[Downloader] Completed") {
+                            } else if line_str.contains("[Downloader] Completed all model downloads.") {
                                 let _ = app_handle.emit("model-download-completed", ());
                             } else if line_str.contains("[Indexer] Background indexing completed.") {
                                 let _ = app_handle.emit("indexing-completed", ());

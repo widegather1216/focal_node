@@ -104,7 +104,9 @@ export function useTauriEvents() {
     });
 
     registerListener("model-download-completed", () => {
-      setIsDownloadingModel(false);
+      if (!useAppStore.getState().downloadError) {
+        setIsDownloadingModel(false);
+      }
     });
 
     return () => {
