@@ -1,8 +1,8 @@
 # 🏛️ [00_core_foundation] Core Foundation & System Architecture
 
-- **현재 상태 (Lifecycle)**: `🟢 Sign-Off (Baseline 검증 및 REFACTOR-01 완료)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (모델 다운로더 결함 DEFECT-01~04 해결 대기)`
 - **구현 진척도**: `[■■■■] 4/4 Steps`
-- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 4건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -29,13 +29,12 @@
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-11-01 / systematic-debugger / REFACTOR-01 해결 (chromadb 지연 로딩 분리 및 Silent Fail 로깅 보강)`
+- **직전 완료 작업**: `2026-11-06 / deep-bug-hunter / 00_core_foundation 딥디버깅 결함 발권 (1cd1786 / 손상 인덱스 valid 오판 DEFECT-01, 실패 모델 무시 및 거짓 성공 이벤트 DEFECT-02, 미초기화 및 15초 폴링 블랙아웃 DEFECT-03, force=True 고아 스레드 및 HF 락 충돌 DEFECT-04)`
 - **생성/수정된 핵심 파일**:
-  - [`chroma.py`](../../../backend/app/chroma.py): `import chromadb`를 `get_chroma_client()` 내부로 지연 이동하여 기동 시 eager import 제거
-  - [`base_model.py`](../../../backend/app/services/base_model.py): GPU 언로드 캐시 정리 예외에 디버그 로깅 적용 (`logger.debug`)
-  - [`model_downloader.py`](../../../backend/app/services/model_downloader.py): 파일 크기/해시/락/캐시 체크 내 4개 `except: pass` 블록에 디버그/경고 로깅 적용
+  - [`docs/features/00_core_foundation/verification.md`](./verification.md): `DEFECT-01~04` 4건 발권 및 테스트 매트릭스 갱신
+  - [`docs/features/00_core_foundation/README.md`](./README.md): 도메인 수명주기 `🩹 Debugging` 전환
 - **검증 완료된 테스트 실행 명령어**:
   - `./venv/bin/pytest backend/tests/test_model_downloader.py backend/tests/test_backend_hardening.py backend/tests/test_concurrency_hardening.py`
   - `./venv/bin/pytest backend/tests/` (98 passed)
 - **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - 00_core_foundation의 모든 Step 및 리팩토링 티켓이 해결되어 `🟢 Sign-Off` 상태로 전환됨. 다음 단계인 `01_indexing_storage` 개발 진행 권장.
+  - `systematic-debugger` 스킬을 연결하여 `00_core_foundation`의 최우선 런타임 결함 `DEFECT-01`부터 순차 해결 권장 (`"00_core_foundation 도메인의 DEFECT-01 티켓 해결해줘"`).

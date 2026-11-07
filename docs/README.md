@@ -1,17 +1,17 @@
 # 🧭 Focal Node: Master Control Tower (Living Wiki Hub)
 
 > 외부 클라우드 전송 없이 Mac Native(Apple MLX & PyTorch MPS)로 구동되는 **프라이버시 보호 로컬 사진 관리 및 AI 시맨틱 검색/비평 데스크탑 플랫폼**입니다.
-> **최종 업데이트**: 2026-11-06 (by `clean-code-auditor`)
+> **최종 업데이트**: 2026-11-06 (by `deep-bug-hunter`)
 
 ---
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
-- **Active 도메인**: [`03_ai_critique`](./features/03_ai_critique/README.md)
-- **현재 단계 (Stage)**: `🩹 Debugging (UniPercept 취소 미해제 DEFECT-02·VQA 불능 DEFECT-03 및 REFACTOR 6건 해결 대기)`
-- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 전 계층 7대 감사 완료 및 UniPercept 중단 시 28GB 메모리 미해제(`DEFECT-02`)·`transformers 5.x` VQA `return_dict` 충돌(`DEFECT-03`) 근본 원인 규명 및 티켓 등록
+- **Active 도메인**: [`00_core_foundation`](./features/00_core_foundation/README.md)
+- **현재 단계 (Stage)**: `🩹 Debugging (모델 다운로더 결함 DEFECT-01~04 해결 대기)`
+- **직전 완료 작업**: [`00_core_foundation`](./features/00_core_foundation/README.md) 도메인 6대 적대적 벡터 딥디버깅 완료 및 손상 인덱스 valid 오판(`DEFECT-01`)·실패 모델 무시 및 거짓 성공 이벤트(`DEFECT-02`)·미초기화 및 15초 폴링 블랙아웃(`DEFECT-03`)·force=True 고아 스레드 및 HF 락 충돌(`DEFECT-04`) 발권 완료
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"03_ai_critique 도메인의 DEFECT-02 티켓 해결해줘"` *(최우선 런타임 메모리 결함 수술적 해결)*
+  > `"00_core_foundation 도메인의 DEFECT-01 티켓 해결해줘"` *(최우선 가중치 캐시 오염 결함 수술적 해결)*
 
 ---
 
@@ -19,7 +19,7 @@
 
 | 도메인 (Bounded Context) | 생명주기 상태 | 구현 진척도 (Active Step 1~4) | QA 인수 통과율 | 미해결 티켓 (`🚨D` / `🧐R`) | 최근 작업 요약 |
 | :--- | :--- :---: | :---: | :---: | :---: | :--- |
-| 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `3/3 (100%)` | `0 / 0` | 동적 포트/IPC/모델 로더 검증 및 REFACTOR-01 해결 완료 |
+| 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `2/5 (40%)` | `4 / 0` | 다운로더 런타임 4대 결함(DEFECT-01~04) 발권 완료 |
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 📐 Planning | `[□□□□] 0/4` | `3/6 (50%)` | `0 / 0` | REFACTOR-01 해결 완료 (타입 일원화, Repo 캡슐화, 예외 로깅) |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 📐 Planning | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 거리 임계값 + RRF 랭킹 + 35mm/점수 필터 + 스마트 앨범 Step 1~4 대기 |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `11/13 (85%)` | `2 / 6` | UniPercept 취소 미해제(`DEFECT-02`)·VQA 불능(`DEFECT-03`) 및 `REFACTOR` 6건 대기 |
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-06]` `[deep-bug-hunter]` [`00_core_foundation`]**: 6대 적대적 벡터 딥디버깅 및 마이크로 프로빙 완료 (`1cd1786` / 손상 인덱스 JSON 파싱 실패 시 `valid=True` 오판 및 결함 모델 영구 캐시 오염 `DEFECT-01`, 실패 모델 무시 및 거짓 성공 이벤트 `model-download-completed` 조기 발행 `DEFECT-02`, `ModelDownloadStatusTracker` 미초기화 및 모델 1종 완료 시 조기 `is_all_done: true` 반환 및 15초 폴링 블랙아웃 `DEFECT-03`, `start_background_model_downloader(force=True)` 고아 스레드 증식 및 HF 파일 락 삭제 충돌 `DEFECT-04` 총 `DEFECT 4건` 등록).
 
 - **`[2026-11-06]` `[clean-code-auditor]` [`03_ai_critique`]**: 3개 계층 전수 정적 분석(`tsc`, `vite build`, `pytest` 106종 PASS), 7대 감사 매트릭스 점검 및 UniPercept 런타임 2대 결함 원인 규명 완료 (`d848988` / 비평 중단 시 `asyncio.to_thread` 워커 스레드 레이스/취소 전 재로드로 인한 28GB 메모리 미해제 `DEFECT-02`, `transformers==5.12.1` `return_dict` 중복 인자 충돌로 인한 VQA 100% `TypeError` 및 예외 문자열 은폐 `DEFECT-03`, `CritiqueDocumentModal` Hooks 크래시/PDF XSS 등 `REFACTOR-03~08` 총 `DEFECT 2건`·`REFACTOR 6건` 등록).
 

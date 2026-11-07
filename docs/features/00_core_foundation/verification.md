@@ -1,8 +1,8 @@
 # 🧪 [00_core_foundation] Verification & Ticket Logs
 
-- **검증 상태**: `🟢 Fully Verified (AC/TC 및 REFACTOR-01 완료)`
-- **인수 조건 통과율**: `2 / 2 (100%)`
-- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건`
+- **검증 상태**: `🩹 Debugging (DEFECT 4건 해결 대기)`
+- **인수 조건 통과율**: `2 / 5 (40%)`
+- **미해결 티켓**: `🚨 DEFECT: 4건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -26,34 +26,65 @@
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Happy** | `TC-CF-01` | 동적 포트 사이드카 연결 | 앱 콜드 스타트 | `[Sidecar] PORT` 감지 및 갤러리 진입 | `PASS` |
 | **Boundary**| `TC-CF-02` | 모델 60초 Keep-alive 언로드 | Gemma 4 추론 후 60초 유휴 | 60초 후 가중치 메모리 해제 확인 | `PASS` |
-| **Negative**| `TC-CF-03` | 모델 미다운로드 상태 기동 | 로컬 HF 캐시 미존재 | `ModelDownloadModal` 노출 및 진행률 표시 | `PASS` |
+| **Negative**| `TC-CF-03` | 모델 미다운로드 상태 기동 | 로컬 HF 캐시 미존재 | `ModelDownloadModal` 노출 및 진행률 표시 | `FAIL (DEFECT-02, DEFECT-03)` |
+| **Boundary**| `TC-CF-04` | 모델 인덱스 손상 시 가중치 무결성 검증 | 손상된 index.json 주입 | 정상 가중치 오판 차단 및 재다운로드 유도 | `FAIL (DEFECT-01)` |
+| **Boundary**| `TC-CF-05` | 다운로드 재시도 시 동시성 및 파일 락 정합성 | 다운로드 중 POST /download | 중복 스레드 및 락 삭제 충돌 방지 | `FAIL (DEFECT-04)` |
 
 ---
 
 ## 🚨 3. 결함 리포트 (Defect Logs)
 
-*(현재 등록된 OPEN 결함 없음)*
+### [DEFECT-01] `is_snapshot_weights_valid`의 손상된 인덱스 JSON 파싱 실패 시 `valid=True` 오판 및 결함 모델 영구 캐시 오염
+- **심각도**: 🔴 P0 Critical (Silent Degradation / False Validation)
+- **위치**: [`backend/app/services/model_downloader.py#L120-L158`](../../../backend/app/services/model_downloader.py#L120-L158)
+- **근본 원인 분석**:
+  - `is_snapshot_weights_valid`는 `model.safetensors.index.json` 또는 `pytorch_model.bin.index.json` 존재 시 `len(get_missing_sharded_files(snapshot_dir)) == 0`으로 유효성을 판단함.
+  - `get_missing_sharded_files`는 `json.load(f)` 실패 시 예외를 로깅만 하고 빈 리스트(`[]`)를 반환함.
+  - 이로 인해 다운로드 중단 등으로 1바이트만 남은 깨진 인덱스 파일만 있고 가중치 파일이 0개인 디렉토리도 `len(missing) == 0`이 되어 `valid=True`로 통과됨.
+  - `_is_model_cached()`가 이를 `status="cached"`로 오판하여 실제 가중치 다운로드를 영구 건너뛰며, 추론 시 크래시를 유발함.
+- **수정 계획**:
+  - `get_missing_sharded_files`에서 인덱스 파일 파싱 실패 시 결함 센티넬 문자열을 반환하거나, `is_snapshot_weights_valid`에서 인덱스 파싱 예외 발생 시 즉시 `False`를 반환하도록 교정.
+- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+
+### [DEFECT-02] 모델 다운로더의 실패 모델 무시 및 거짓 성공 이벤트(`model-download-completed`) 조기 발행
+- **심각도**: 🔴 P0 Critical (False Success / Silent Degradation)
+- **위치**: [`backend/app/services/model_downloader.py#L325-L339`](../../../backend/app/services/model_downloader.py#L325-L339), [`src-tauri/src/lib.rs#L322-L324`](../../../src-tauri/src/lib.rs#L322-L324), [`src/hooks/useTauriEvents.ts#L113-L125`](../../../src/hooks/useTauriEvents.ts#L113-L125)
+- **근본 원인 분석**:
+  - `download_models_background()`가 `download_with_retry()`의 반환값(`bool`)을 확인하지 않고, SigLIP 2나 Gemma 4가 실패(`False`, `status="error"`)해도 무조건 다음 모델로 진행한 뒤 마지막에 `print("[Downloader] Completed all model downloads.")`를 무조건 출력함.
+  - Rust 호스트(`lib.rs`)가 이를 감지하여 `model-download-completed`를 emit하고, 프론트엔드 `useTauriEvents.ts`가 `setDownloadProgress(100)`, `setDownloadError(null)`, `setIsDownloadingModel(false)`를 실행하여 에러를 삼키고 모달을 정상 완료 상태로 닫아버림.
+- **수정 계획**:
+  - `download_models_background()`에서 각 모델 다운로드 결과를 수집하여, 하나라도 실패하면 `[Downloader] Download process finished with errors.`를 출력하고 `[Downloader] Completed all model downloads.`는 모든 모델이 성공(`cached` 또는 `completed`)했을 때만 출력하도록 수정.
+- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+
+### [DEFECT-03] `ModelDownloadStatusTracker` 미초기화 및 `_calculate_overall_progress`의 모델 1종 완료 시 조기 `is_all_done: true` 반환 및 15초 폴링 블랙아웃 레이스
+- **심각도**: 🟠 P1 High (Premature Completion & Polling Blackout Race)
+- **위치**: [`backend/app/services/model_downloader.py#L52-L58`](../../../backend/app/services/model_downloader.py#L52-L58), [`backend/app/main.py#L91-L105`](../../../backend/app/main.py#L91-L105), [`src/hooks/useModelDownloadStatus.ts#L50-L63`](../../../src/hooks/useModelDownloadStatus.ts#L50-L63)
+- **근본 원인 분석**:
+  - `ModelDownloadStatusTracker`가 `self._statuses = {}`로 시작하여 `KNOWN_MODEL_SIZES`의 3개 모델이 등록되지 않은 상태로 기동됨.
+  - `_calculate_overall_progress`는 `len(statuses) > 0 and all(...)`로 전체 완료를 판단하여, 1번째 모델(SigLIP 2)만 캐시 확인된 순간 `is_all_done: true`, `progress: 100`을 반환함.
+  - 프론트엔드 `useModelDownloadStatus.ts`는 이를 받아 모달을 닫고 15초 슬로우 폴링으로 전환함. 그 사이 2번째 모델(Gemma 4, 12GB) 다운로드가 시작되지만 프론트엔드는 15초 동안 인지하지 못해 미완성 모델 크래시 또는 15초 뒤 모달이 재오픈되는 레이스가 발생함.
+  - 또한 콜드 스타트 시 `statuses`가 빈 딕셔너리(`{}`)일 때도 `scheduleNext(15000)`이 호출되어 최초 15초간 다운로드 감지가 지연됨.
+- **수정 계획**:
+  - `ModelDownloadStatusTracker` 초기화 시 `KNOWN_MODEL_SIZES`의 모든 모델을 `status="pending"`, `progress=0`으로 사전 등록.
+  - `_calculate_overall_progress`에서 `len(statuses) >= len(KNOWN_MODEL_SIZES)` 검사를 필수 조건으로 강제.
+  - `useModelDownloadStatus.ts`에서 대기/초기화 상태일 때는 15초가 아닌 2~3초 간격으로 폴링하도록 수정.
+- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+
+### [DEFECT-04] `start_background_model_downloader(force=True)` 재시도 시 고아 스레드 증식 및 HF 파일 락 삭제 레이스
+- **심각도**: 🟠 P1 High (Concurrency Race & Cache Corruption)
+- **위치**: [`backend/app/services/model_downloader.py#L228-L241, #L343-L351`](../../../backend/app/services/model_downloader.py#L228-L241), [`backend/app/main.py#L121-L131`](../../../backend/app/main.py#L121-L131)
+- **근본 원인 분석**:
+  - `POST /api/system/models/download` 호출 시 `start_background_model_downloader(force=True)`가 호출됨.
+  - `force=True` 조건으로 인해 이전 스레드가 여전히 실행 중임에도 불구하고 새 스레드가 생성되어 `_downloader_thread`를 덮어쓰고 고아 스레드가 됨.
+  - 2번째 스레드가 시작되며 `clear_stale_hf_locks()`를 호출해 1번째 스레드가 점유 중인 `.lock` 파일을 강제 삭제하고 동일 캐시 경로에 동시 다운로드를 실행하여 HF 세션 충돌 및 파일 손상이 발생함.
+- **수정 계획**:
+  - `start_background_model_downloader`에서 `_downloader_thread.is_alive()`가 `True`인 경우 `force=True`여도 중복 스레드를 띄우지 않고 기존 스레드를 재사용하도록 가드 적용.
+- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
 
 ---
 
 ## 🧐 4. 코드 품질 감사 리포트 (Audit & Refactoring Logs)
 
 ### [REFACTOR-01] 기동 시 `chromadb`/`rawpy` 상단 연쇄 임포트 분리 및 Silent Fail(`except: pass`) 제거
-- **심각도**: 🟡 Should Fix (권장 조치)
-- **위치**: `backend/app/main.py#L42`, `backend/app/chroma.py#L5`, `backend/app/services/base_model.py#L81-L88`, `backend/app/services/model_downloader.py#L39-L40,L167-L168,L235-L251`
-- **위반 규칙**: Rule 2.5 (Heavy 모듈 지연 임포트) & Rule 4.3 (예외 묵인 `except: pass` 금지)
-- **발견된 문제**:
-  - `main.py` 상단에서 `api.photos` ➔ `services.photo` ➔ `repositories.vector_repository` ➔ `chroma.py`가 연쇄 임포트되면서 `[Sidecar] PORT: {port}` 출력 전에 `chromadb`, `rawpy`, `PIL`, `exifread`가 Eager Import됨.
-  - `base_model.py` 및 `model_downloader.py` 내 다수의 `except Exception: pass` 블록이 예외 원인을 완전히 삼키고 있음.
-- **권장 개선안 (Suggested Diff)**:
-  ```text
-  - chroma.py의 import chromadb를 get_chroma_client() 함수 내부로 지연 이동
-  - base_model.py 및 model_downloader.py의 빈 except 블록에 최소 디버그/경고 로깅 추가
-  ```
-- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
-- **해결 내역**:
-  - **수정 파일**: [`chroma.py`](../../../backend/app/chroma.py#L13-L37), [`base_model.py`](../../../backend/app/services/base_model.py#L81-L93), [`model_downloader.py`](../../../backend/app/services/model_downloader.py#L39-L44)
-  - **원인 및 조치**:
-    - `chroma.py`의 `import chromadb`를 `get_chroma_client()` 함수 내부로 이동하여 지연 로딩 처리, 앱 기동 시 불필요한 eager import 차단.
-    - `base_model.py` 및 `model_downloader.py`에 로거 인스턴스를 선언하고, 빈 `except: pass` 블록에 구체적 디버그/경고 로깅을 추가하여 Silent Fail 제거 (Rule 4.3 준수).
-  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_model_downloader.py backend/tests/test_backend_hardening.py backend/tests/test_concurrency_hardening.py` (`30 passed`), 백엔드 전수 테스트 (`98 passed`) 통과.
+- **현재 상태**: 🟢 RESOLVED — `chroma.py` 지연 로딩 및 `base_model.py`/`model_downloader.py` Silent Fail 로깅 보강 완료
+
