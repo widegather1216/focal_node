@@ -342,3 +342,135 @@ def test_api_delete_critique_endpoint(client, db_session):
     list_resp = client.get("/api/chat/critiques")
     assert list_resp.status_code == 200
     assert len(list_resp.json()) == 0
+
+
+def test_api_post_critique_success_and_not_found(client, db_session, monkeypatch):
+    """
+    Verifies POST /api/chat/critique:
+    - 200 OK on valid photo with complete CritiqueResponse schema.
+    - 404 Not Found when requested photo_id does not exist.
+    """
+    from unittest.mock import MagicMock
+    from services.chat_service import ChatService
+
+    _create_test_photo(db_session, "api_gen_p1", "gen1.jpg")
+    db_session.commit()
+
+    mock_gemma = MagicMock()
+    mock_gemma.generate_deep_critique.return_value = "Gemma deep critique body"
+    mock_gemma.format_and_structure_critique.return_value = (
+        "> **한 줄 총평**: 훌륭한 구도와 빛의 조화.\n\n"
+        "## 1. [시각적 미학 및 EXIF 광학 진단]\n- 안정적인 황금분할.\n\n"
+        "## 2. [구도 및 화질 결함과 왜곡 위치 지적]\n- 결함 없음.\n\n"
+        "## 3. [현장 재촬영 및 보정 실전 기술 조언]\n- 설정 유지."
+    )
+    monkeypatch.setattr("services.chat_service.get_gemma_adapter", lambda: mock_gemma)
+
+    # 1. 404 Not Found on non-existent photo
+    resp_404 = client.post("/api/chat/critique", json={"photo_id": "non_existent_id", "engine": "gemma"})
+    assert resp_404.status_code == 404
+    assert "not found" in resp_404.json()["detail"].lower()
+
+    # 2. 200 OK on valid photo
+    resp_valid = client.post("/api/chat/critique", json={"photo_id": "api_gen_p1", "engine": "gemma"})
+    assert resp_valid.status_code == 200
+    res_data = resp_valid.json()
+    assert res_data["status"] == "completed"
+    assert "한 줄 총평" in res_data["critique"]
+    assert "## 1. [시각적 미학 및 EXIF 광학 진단]" in res_data["critique"]
+    assert res_data["critique_updated_at"] is not None
+
+    # Verify DB persistence
+    ai_record = db_session.query(models.AIAnalysis).filter(models.AIAnalysis.image_id == "api_gen_p1").first()
+    assert ai_record is not None
+    assert "한 줄 총평" in ai_record.critique
+
+
+def test_api_get_critique_status(client):
+    """
+    Verifies GET /api/chat/critique/status/{photo_id}:
+    - Returns idle status for unregistered photo.
+    - Returns active progress status when updated in CritiqueStatusManager.
+    """
+    from services.critique_status import critique_status_manager
+
+    # 1. Idle status for unknown photo
+    resp_idle = client.get("/api/chat/critique/status/unknown_status_photo")
+    assert resp_idle.status_code == 200
+    idle_data = resp_idle.json()
+    assert idle_data["status"] == "idle"
+    assert idle_data["step"] == 0
+    assert idle_data["progress"] == 0
+
+    # 2. Active in-progress status
+    critique_status_manager.update(
+        "active_status_p",
+        2,
+        4,
+        "[Gemma] 지각 앵커 기반 심층 비평 작성 중...",
+        65,
+        status="analyzing"
+    )
+    resp_active = client.get("/api/chat/critique/status/active_status_p")
+    assert resp_active.status_code == 200
+    active_data = resp_active.json()
+    assert active_data["status"] == "analyzing"
+    assert active_data["step"] == 2
+    assert active_data["total_steps"] == 4
+    assert active_data["progress"] == 65
+    assert "지각 앵커" in active_data["message"]
+
+
+def test_api_post_critique_summary_endpoints(client, db_session, monkeypatch):
+    """
+    Verifies POST /api/chat/critique-summary:
+    - 400 Bad Request when no critiques exist.
+    - 200 OK with portfolio summary when valid critiques exist.
+    """
+    from unittest.mock import MagicMock
+
+    # 1. 400 Bad Request when no critiques exist in DB
+    resp_empty = client.post("/api/chat/critique-summary", json={"photo_ids": ["non_existent_a", "non_existent_b"]})
+    assert resp_empty.status_code == 400
+    assert "비평 데이터가 존재하지 않습니다" in resp_empty.json()["detail"]
+
+    # 2. Setup photos with existing critiques
+    now = datetime.now(timezone.utc)
+    _create_test_photo(db_session, "sum_p1", "sum1.jpg")
+    _create_test_photo(db_session, "sum_p2", "sum2.jpg")
+
+    ai1 = models.AIAnalysis(
+        image_id="sum_p1",
+        critique="비평 1: 감성적인 보케와 부드러운 톤.",
+        critique_updated_at=now,
+        overall_score=85.0
+    )
+    ai2 = models.AIAnalysis(
+        image_id="sum_p2",
+        critique="비평 2: 기하학적 선과 높은 콘트라스트.",
+        critique_updated_at=now,
+        overall_score=90.0
+    )
+    db_session.add_all([ai1, ai2])
+    db_session.commit()
+
+    mock_summary_adapter = MagicMock()
+    mock_summary_adapter.generate_critique_summary.return_value = (
+        "> **포트폴리오 총평**: 일관된 조명 제어와 심도 표현이 탁월하며, 흑백 계조 표현에서 작가의 개성이 명확히 드러납니다."
+    )
+    monkeypatch.setattr("services.chat_service.get_gemma_adapter", lambda: mock_summary_adapter)
+
+    # 3. Call with specific photo_ids
+    resp_summary = client.post("/api/chat/critique-summary", json={"photo_ids": ["sum_p1", "sum_p2"]})
+    assert resp_summary.status_code == 200
+    sum_data = resp_summary.json()
+    assert "포트폴리오 총평" in sum_data["summary"]
+    assert mock_summary_adapter.generate_critique_summary.called
+
+    # 4. Call with empty payload (all available critiques)
+    mock_summary_adapter.generate_critique_summary.reset_mock()
+    resp_all_summary = client.post("/api/chat/critique-summary", json={})
+    assert resp_all_summary.status_code == 200
+    assert "포트폴리오 총평" in resp_all_summary.json()["summary"]
+    assert mock_summary_adapter.generate_critique_summary.called
+

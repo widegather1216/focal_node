@@ -65,6 +65,7 @@ def client(db_session):
 def mock_ai_adapters(monkeypatch):
     # Mock SessionLocal & engine for modules that import it
     monkeypatch.setattr("services.indexing_service.SessionLocal", TestingSessionLocal)
+    monkeypatch.setattr("services.chat_service.SessionLocal", TestingSessionLocal)
     monkeypatch.setattr("database.SessionLocal", TestingSessionLocal)
     monkeypatch.setattr("database.engine", engine)
 

@@ -1,5 +1,5 @@
 import pytest
-from app.services.unipercept_adapter import UniPerceptAdapter, get_unipercept_adapter
+from services.unipercept_adapter import UniPerceptAdapter, get_unipercept_adapter
 
 def test_unipercept_adapter_singleton():
     adapter1 = get_unipercept_adapter()
@@ -114,11 +114,13 @@ def test_vr_scores_and_weighted_overall():
     assert vr_scores["iqa"] == 90
     assert vr_scores["ista"] == 80
 
-    # Test mathematical weighted overall: round(0.4*85 + 0.3*90 + 0.3*80) = round(34 + 27 + 24) = 85
-    overall = round((0.4 * 85) + (0.3 * 90) + (0.3 * 80))
-    assert overall == 85
+    # Test production scoring overall: services.scoring.calculate_overall_vr_score
+    from services.scoring import calculate_overall_vr_score
+    overall = calculate_overall_vr_score(vr_scores["iaa"], vr_scores["iqa"], vr_scores["ista"])
+    # Mode D (0.55 * 85 + 0.30 * 90 + 0.15 * 80) = 46.75 + 27.0 + 12.0 = 85.75 -> round = 86
+    assert overall == 86
 
-from app.services.unipercept_adapter import score2aestoken, AESTHETICS_TOKEN_LIST
+from services.unipercept_adapter import score2aestoken, AESTHETICS_TOKEN_LIST
 
 def test_official_score2aestoken_mapping():
     assert score2aestoken(0) == "aa"
@@ -392,12 +394,15 @@ def test_tc_crt_11_single_pass_perceptual_anchor():
     assert "## 1." not in anchor  # no robotic markdown table decay
 
 
-def test_tc_crt_12_gemma_perceptual_critique_generation():
+def test_tc_crt_12_gemma_perceptual_critique_generation(monkeypatch):
     """
     TC-CRT-12: Gemma 4 direct perceptual critique generation grounded in perceptual anchor.
-    Verifies that GemmaAdapter.generate_perceptual_critique constructs system and user prompts
-    with the 3 standard headers, executive summary, and preserves scoreboard header.
+    Verifies that GemmaAdapter.generate_perceptual_critique executes with mocked VLM components,
+    properly formats messages with 3 standard headers, calls tokenizer and generator,
+    and prepends the scoreboard header when missing.
     """
+    import os
+    from unittest.mock import MagicMock
     from services.mlx_adapters import GemmaAdapter
     from services.ai_parser import (
         GEMMA_PERCEPTUAL_CRITIQUE_SYSTEM_PROMPT,
@@ -405,21 +410,16 @@ def test_tc_crt_12_gemma_perceptual_critique_generation():
     )
 
     gemma = GemmaAdapter()
-    scores = {"overall": 88, "iaa": 92, "iqa": 85, "ista": 86}
-    meta = {"camera_model": "Sony A7R V", "f_number": 1.4, "iso": 100}
-    anchor = "Strong leading lines with sharp central clarity and tactile foreground textures."
+    monkeypatch.setattr(gemma, "_load_model_locked", lambda: None)
+    gemma.model = MagicMock()
 
-    # Verify prompt builder
-    messages = gemma._build_perceptual_critique_messages(meta, scores, anchor)
-    assert messages[0]["role"] == "system"
-    assert messages[0]["content"] == GEMMA_PERCEPTUAL_CRITIQUE_SYSTEM_PROMPT
-    user_text = messages[1]["content"][1]["text"]
-    assert "Sony A7R V" in user_text
-    assert "Strong leading lines" in user_text
-    assert "6-Way 앙상블 비평 스코어보드" in user_text
+    mock_tokenizer = MagicMock()
+    mock_tokenizer.apply_chat_template.return_value = "<formatted_chat_prompt>"
+    mock_processor = MagicMock()
+    mock_processor.tokenizer = mock_tokenizer
+    gemma.processor = mock_processor
 
-    # Mock execute generation and preservation
-    sample_critique = (
+    sample_critique_body = (
         "> **한 줄 총평**: 섬세한 시선 유도와 빛 모델링이 돋보이나 주변부 광량 저하가 아쉬우며, 조리개 스톱 다운과 커브 보정 시 완성도가 격상될 작품입니다.\n\n"
         "## 1. [시각적 미학 및 EXIF 광학 진단]\n"
         "- 전경에서 원경으로 이어지는 **황금 분할** 구도가 안정적입니다.\n\n"
@@ -428,26 +428,70 @@ def test_tc_crt_12_gemma_perceptual_critique_generation():
         "## 3. [현장 재촬영 및 보정 실전 기술 조언]\n"
         "- 조리개를 **F2.8**로 조이고 라이트룸에서 하이라이트 롤오프를 보정하십시오."
     )
-    score_header = format_score_info_text(scores)
-    output = f"{score_header}{sample_critique}"
+    mock_gen_result = MagicMock()
+    mock_gen_result.text = sample_critique_body
 
-    # Verify 3 standard headers + executive summary + scoreboard
+    captured_generate_calls = []
+    def mock_generate(model, processor, prompt=None, image=None, max_tokens=3072, verbose=False):
+        captured_generate_calls.append({"prompt": prompt, "image": image})
+        return mock_gen_result
+
+    monkeypatch.setattr("mlx_vlm.generate", mock_generate)
+
+    scores = {"overall": 88, "iaa": 92, "iqa": 85, "ista": 86}
+    meta = {"camera_model": "Sony A7R V", "f_number": 1.4, "iso": 100}
+    anchor = "Strong leading lines with sharp central clarity and tactile foreground textures."
+
+    test_img = os.path.join(os.path.dirname(__file__), "fixtures", "test_scenic.jpg")
+    if not os.path.exists(test_img):
+        test_img = os.path.abspath("backend/tests/fixtures/test_scenic.jpg")
+
+    # Execute actual adapter method
+    output = gemma.generate_perceptual_critique(
+        image_path=test_img,
+        metadata=meta,
+        scores_dict=scores,
+        perceptual_anchor=anchor
+    )
+
+    # 1. Verify tokenizer chat template was called with valid messages structure
+    assert mock_tokenizer.apply_chat_template.called
+    template_call_args = mock_tokenizer.apply_chat_template.call_args
+    passed_messages = template_call_args[0][0]
+    assert passed_messages[0]["role"] == "system"
+    assert passed_messages[0]["content"] == GEMMA_PERCEPTUAL_CRITIQUE_SYSTEM_PROMPT
+    user_text = passed_messages[1]["content"][1]["text"]
+    assert "Sony A7R V" in user_text
+    assert "Strong leading lines" in user_text
+    assert "6-Way 앙상블 비평 스코어보드" in user_text
+
+    # 2. Verify generator execution
+    assert len(captured_generate_calls) == 1
+    assert captured_generate_calls[0]["prompt"] == "<formatted_chat_prompt>"
+
+    # 3. Verify output includes scoreboard header and standard critique structure
+    expected_scoreboard = format_score_info_text(scores)
+    assert expected_scoreboard in output
     assert "## 1. [시각적 미학 및 EXIF 광학 진단]" in output
     assert "## 2. [구도 및 화질 결함과 왜곡 위치 지적]" in output
     assert "## 3. [현장 재촬영 및 보정 실전 기술 조언]" in output
     assert "> **한 줄 총평**" in output
-    assert "6-Way 앙상블 비평 스코어보드" in output
+
+    # 4. Verify request counter was safely decremented
+    assert gemma.active_requests == 0
 
 
 @pytest.mark.asyncio
 async def test_tc_crt_13_unipercept_failure_fallback_to_gemma(monkeypatch, db_session):
     """
     TC-CRT-13: UniPercept VQA error triggers graceful fallback to Gemma 4 direct critique.
-    Verifies that when UniPercept throws an exception during critique pipeline,
-    ChatService falls back to _execute_gemma_critique_pipeline and completes without error.
+    Verifies that when UniPercept VQA inference fails within generate_full_ensemble_critique,
+    the exception is propagated (not silently swallowed) to _execute_unipercept_critique_pipeline,
+    and ChatService seamlessly falls back to _execute_gemma_critique_pipeline.
     """
     from contextlib import contextmanager
     from services.chat_service import ChatService
+    from services.unipercept_adapter import UniPerceptAdapter
     import schemas, models
 
     photo_id = "test_unipercept_fallback_img"
@@ -469,14 +513,29 @@ async def test_tc_crt_13_unipercept_failure_fallback_to_gemma(monkeypatch, db_se
 
     monkeypatch.setattr("services.chat_service.SessionLocal", mock_session_scope)
 
-    # 1. UniPercept throws RuntimeError
-    class FailingUniPercept:
-        def generate_full_ensemble_critique(self, *args, **kwargs):
-            raise RuntimeError("MPS Device Out of Memory during UniPercept inference")
-        def unload_model(self):
-            pass
+    # Use actual UniPerceptAdapter instance
+    real_adapter = UniPerceptAdapter()
+    monkeypatch.setattr(real_adapter, "_safe_load_pil_image", lambda path: None)
+    monkeypatch.setattr(
+        real_adapter,
+        "generate_vr_scores",
+        lambda *args, **kwargs: {
+            "overall": 85,
+            "iaa": 88,
+            "iqa": 82,
+            "ista": 84,
+            "raw_vr_text": "Aesthetic Score: [88]\nQuality Score: [82]\nStructure Score: [84]"
+        }
+    )
 
-    # 2. Gemma direct critique fallback
+    # VQA anchor generation raises runtime exception (simulating VQA stage failure)
+    def mock_failing_vqa(*args, **kwargs):
+        raise RuntimeError("UniPercept VQA forward pass memory corruption")
+
+    monkeypatch.setattr(real_adapter, "generate_perceptual_anchor_vqa", mock_failing_vqa)
+    monkeypatch.setattr("services.unipercept_adapter.get_unipercept_adapter", lambda: real_adapter)
+
+    # Gemma direct critique fallback
     class FallbackGemma:
         def generate_deep_critique(self, *args, **kwargs):
             return "Gemma 4 직접 심층 비평 초안"
@@ -488,7 +547,6 @@ async def test_tc_crt_13_unipercept_failure_fallback_to_gemma(monkeypatch, db_se
                 "## 3. [현장 재촬영 및 보정 실전 기술 조언]\n- 현장 조작 유지."
             )
 
-    monkeypatch.setattr("services.unipercept_adapter.get_unipercept_adapter", lambda: FailingUniPercept())
     monkeypatch.setattr("services.chat_service.get_gemma_adapter", lambda: FallbackGemma())
 
     req = schemas.CritiqueRequest(photo_id=photo_id, engine="unipercept")
