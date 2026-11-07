@@ -499,5 +499,193 @@ async def test_tc_crt_13_unipercept_failure_fallback_to_gemma(monkeypatch, db_se
     assert "## 1. [시각적 미학 및 EXIF 광학 진단]" in result["critique"]
 
 
+def test_defect_03_vqa_bypasses_chat_return_dict_collision(monkeypatch):
+    """
+    DEFECT-03 reproduction (Case 1):
+    When self.model is an InternVLChatModel (has language_model and extract_feature),
+    _run_single_vqa_domain_inference must bypass self.model.chat() (which passes
+    return_dict=None and triggers TypeError in transformers 5.12.1 _prefill) and directly
+    invoke self.model.language_model.generate(inputs_embeds=..., attention_mask=..., ...)
+    without return_dict, stripping <think>...</think> and stop tokens from the output.
+    """
+    import os
+    import torch
+
+    adapter = UniPerceptAdapter()
+    test_img = os.path.join(os.path.dirname(__file__), "fixtures", "test_scenic.jpg")
+    if not os.path.exists(test_img):
+        test_img = os.path.abspath("backend/tests/fixtures/test_scenic.jpg")
+
+    captured_gen_kwargs = {}
+
+    class DummyLanguageModel:
+        def get_input_embeddings(self):
+            return lambda ids: torch.zeros((ids.shape[0], ids.shape[1], 16), dtype=torch.float32)
+
+        def generate(self, **kwargs):
+            if "return_dict" in kwargs:
+                raise TypeError("Qwen2ForCausalLM.forward() got multiple values for keyword argument 'return_dict'")
+            captured_gen_kwargs.update(kwargs)
+            return torch.tensor([[1, 2, 3]])
+
+    class DummyInternVLModel:
+        num_image_token = 4
+
+        def __init__(self):
+            self.language_model = DummyLanguageModel()
+            self.img_context_token_id = None
+
+        def extract_feature(self, pixel_values):
+            return torch.ones((1, 4, 16), dtype=torch.float32)
+
+        def chat(self, *args, **kwargs):
+            raise TypeError("Qwen2ForCausalLM.forward() got multiple values for keyword argument 'return_dict'")
+
+    class DummyTokenizer:
+        def convert_tokens_to_ids(self, token):
+            return 99 if token == "<IMG_CONTEXT>" else 151645
+
+        def __call__(self, query, return_tensors="pt"):
+            # 2 prefix tokens + 4 IMG_CONTEXT (99) + 2 suffix tokens
+            return {
+                "input_ids": torch.tensor([[10, 11, 99, 99, 99, 99, 12, 13]]),
+                "attention_mask": torch.ones((1, 8), dtype=torch.long),
+            }
+
+        def batch_decode(self, output_ids, skip_special_tokens=True):
+            return ["<think>internal reasoning</think>\nBalanced composition with sharp central clarity and rich rock textures.<|im_end|> trailing"]
+
+    adapter.device = "cpu"
+    adapter.torch_dtype = torch.float32
+    adapter.model = DummyInternVLModel()
+    adapter.tokenizer = DummyTokenizer()
+    monkeypatch.setattr(adapter, "_prepare_pixel_values", lambda pil_img, **kw: torch.zeros((1, 3, 448, 448)))
+
+    anchor = adapter.generate_perceptual_anchor_vqa(
+        test_img,
+        metadata={"camera_model": "Sony A7R V", "f_number": 2.8, "iso": 100},
+        scores_context={"overall": 88, "iaa": 90, "iqa": 85, "ista": 86},
+    )
+
+    assert "return_dict" not in captured_gen_kwargs
+    assert "inputs_embeds" in captured_gen_kwargs
+    assert "attention_mask" in captured_gen_kwargs
+    assert captured_gen_kwargs.get("use_cache") is True
+    assert captured_gen_kwargs.get("repetition_penalty") == 1.0
+    assert captured_gen_kwargs.get("do_sample") is True
+    assert "<think>" not in anchor
+    assert "<|im_end|>" not in anchor
+    assert anchor == "Balanced composition with sharp central clarity and rich rock textures."
+
+
+@pytest.mark.asyncio
+async def test_defect_03_vqa_exception_propagates_for_gemma_fallback(monkeypatch, db_session):
+    """
+    DEFECT-03 reproduction (Case 2):
+    When VQA inference fails inside generate_perceptual_anchor_vqa, the exception must
+    NOT be swallowed into 'Perceptual analysis error: ...'; it must propagate so that
+    ChatService falls back to Gemma 4 direct critique and never saves an error string to critique_en.
+    """
+    import os
+    from contextlib import contextmanager
+    from services.chat_service import ChatService
+    import schemas, models
+
+    photo_id = "test_defect_03_vqa_fallback_img"
+    test_img_path = os.path.join(os.path.dirname(__file__), "fixtures", "test_scenic.jpg")
+    if not os.path.exists(test_img_path):
+        test_img_path = os.path.abspath("backend/tests/fixtures/test_scenic.jpg")
+
+    test_img = models.Image(
+        id=photo_id,
+        parent_dir=os.path.dirname(test_img_path),
+        file_path=test_img_path,
+        file_name="test_scenic.jpg",
+        file_size=1000,
+        file_mtime=1.0,
+        mime_type="image/jpeg",
+    )
+    db_session.add(test_img)
+    db_session.commit()
+
+    @contextmanager
+    def mock_session_scope():
+        yield db_session
+
+    monkeypatch.setattr("services.chat_service.SessionLocal", mock_session_scope)
+
+    adapter = UniPerceptAdapter()
+    adapter.model = type(
+        "FailingVqaModel",
+        (),
+        {"chat": lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("Simulated VQA TypeError"))},
+    )()
+    adapter.tokenizer = type("DummyTokenizer", (), {"convert_tokens_to_ids": lambda self, x: 100})()
+    monkeypatch.setattr(adapter, "compute_official_vr_score", lambda pv, desc, **kw: 85.0)
+    monkeypatch.setattr(adapter, "_prepare_pixel_values", lambda pil_img, **kw: None)
+
+    # 1. Direct call to generate_perceptual_anchor_vqa must raise RuntimeError
+    with pytest.raises(RuntimeError, match="Simulated VQA TypeError"):
+        adapter.generate_perceptual_anchor_vqa(test_img_path)
+
+    # Restore model after unload for full ChatService fallback verification
+    adapter.model = type(
+        "FailingVqaModel",
+        (),
+        {"chat": lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("Simulated VQA TypeError"))},
+    )()
+
+    class FallbackGemma:
+        def generate_deep_critique(self, *args, **kwargs):
+            return "Gemma 4 자율 폴백 비평"
+
+        def format_and_structure_critique(self, text, *args, **kwargs):
+            return (
+                "> **한 줄 총평**: VQA 예외 전파에 따른 자율 비평 폴백입니다.\n\n"
+                "## 1. [시각적 미학 및 EXIF 광학 진단]\n- 구도 양호.\n\n"
+                "## 2. [구도 및 화질 결함과 왜곡 위치 지적]\n- 결함 없음.\n\n"
+                "## 3. [현장 재촬영 및 보정 실전 기술 조언]\n- 현행 유지."
+            )
+
+    monkeypatch.setattr("services.unipercept_adapter.get_unipercept_adapter", lambda: adapter)
+    monkeypatch.setattr("services.chat_service.get_gemma_adapter", lambda: FallbackGemma())
+
+    req = schemas.CritiqueRequest(photo_id=photo_id, engine="unipercept")
+    result = await ChatService.generate_photo_critique(req)
+
+    assert result["status"] == "completed"
+    assert "VQA 예외 전파에 따른 자율 비평 폴백입니다" in result["critique"]
+    assert result["critique_en"] is None
+
+
+def test_defect_03_load_model_locked_calls_eval(monkeypatch):
+    """
+    DEFECT-03 reproduction (Case 3):
+    Verifies that _load_model_locked() explicitly calls .eval() on the loaded model.
+    """
+    import transformers
+
+    adapter = UniPerceptAdapter()
+    eval_called = False
+
+    class FakePretrainedModel:
+        def to(self, device):
+            return self
+
+        def eval(self):
+            nonlocal eval_called
+            eval_called = True
+            return self
+
+    monkeypatch.setattr(transformers.AutoModel, "from_pretrained", lambda *a, **kw: FakePretrainedModel())
+    monkeypatch.setattr(transformers.AutoTokenizer, "from_pretrained", lambda *a, **kw: object())
+    monkeypatch.setattr(transformers.AutoProcessor, "from_pretrained", lambda *a, **kw: object())
+
+    adapter.load_model()
+    assert eval_called is True, "_load_model_locked() did not call self.model.eval()!"
+    adapter.unload_model()
+
+
+
 
 

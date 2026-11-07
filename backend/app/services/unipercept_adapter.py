@@ -78,6 +78,8 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                 low_cpu_mem_usage=True,
                 **extra_kwargs
             ).to(self.device)
+            if hasattr(self.model, "eval"):
+                self.model.eval()
             
             try:
                 self.tokenizer = AutoTokenizer.from_pretrained(self.model_id, trust_remote_code=True, **extra_kwargs)
@@ -102,6 +104,8 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                     trust_remote_code=True,
                     **extra_kwargs
                 ).to(self.device)
+                if hasattr(self.model, "eval"):
+                    self.model.eval()
                 self.tokenizer = AutoTokenizer.from_pretrained(self.model_id, trust_remote_code=True, **extra_kwargs)
                 print("[UniPerceptAdapter] UniPercept Fallback Model loaded successfully.", flush=True)
             except Exception as fallback_err:
@@ -489,6 +493,78 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             f"Instruction: Analyze this photo reflecting these exact scores. If any score is under 70, strictly focus on identifying the specific visual defects, noise, blur, lighting imbalance, or compositional flaws. Do NOT use inflated praise words like 'masterpiece', 'flawless', or 'impeccable' unless scores exceed 90.\n\n"
         )
 
+    @classmethod
+    def _build_vqa_query(cls, prompt_text: str, template: Any, model: Any, num_patches: int) -> Tuple[str, str]:
+        """Formats VQA question with conversation template and image context tokens."""
+        question = prompt_text if "<image>" in prompt_text else f"<image>\n{prompt_text}"
+        sep_token = "<|im_end|>"
+        if template is not None:
+            sys_msg = getattr(model, "system_message", None)
+            if sys_msg is None and hasattr(model, "config"):
+                sys_msg = getattr(model.config, "system_message", None)
+            if sys_msg is not None:
+                template.system_message = sys_msg
+            if getattr(template, "sep", None):
+                sep_token = template.sep.strip()
+            template.append_message(template.roles[0], question)
+            template.append_message(template.roles[1], None)
+            query = template.get_prompt()
+        else:
+            query = f"<|im_start|>user\n{question}<|im_end|>\n<|im_start|>assistant\n"
+
+        num_image_token = getattr(model, "num_image_token", 256)
+        image_tokens = "<img>" + ("<IMG_CONTEXT>" * num_image_token * num_patches) + "</img>"
+        return query.replace("<image>", image_tokens, 1), sep_token
+
+    @staticmethod
+    def _clean_vqa_response(raw_text: str, sep_token: str) -> str:
+        """Strips reasoning <think> blocks and conversation separator tokens from VQA output."""
+        cleaned = raw_text.split(sep_token)[0] if sep_token else raw_text
+        cleaned = cleaned.split("<|im_end|>")[0].split("<|endoftext|>")[0]
+        cleaned = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.DOTALL | re.IGNORECASE)
+        cleaned = re.sub(r"</?think>", "", cleaned, flags=re.IGNORECASE)
+        return cleaned.strip()
+
+    def _generate_with_language_model(
+        self,
+        prompt_text: str,
+        pixel_values: torch.Tensor,
+        generation_config: dict
+    ) -> str:
+        """Bypasses InternVLChatModel.chat() to prevent transformers 5.x return_dict collision."""
+        num_patches = pixel_values.shape[0] if pixel_values is not None else 1
+        template = self._resolve_conversation_template(self.model)
+        query, sep_token = self._build_vqa_query(prompt_text, template, self.model, num_patches)
+
+        img_context_token_id = self.tokenizer.convert_tokens_to_ids("<IMG_CONTEXT>")
+        self.model.img_context_token_id = img_context_token_id
+        eos_token_id = self.tokenizer.convert_tokens_to_ids(sep_token)
+        model_inputs = self.tokenizer(query, return_tensors="pt")
+        input_ids = model_inputs["input_ids"].to(self.device)
+        attention_mask = model_inputs["attention_mask"].to(self.device)
+
+        vit_embeds = self.model.extract_feature(pixel_values)
+        input_embeds = self.model.language_model.get_input_embeddings()(input_ids)
+        batch_size, seq_len, hidden_dim = input_embeds.shape
+        input_embeds = input_embeds.reshape(batch_size * seq_len, hidden_dim)
+        selected = (input_ids.reshape(batch_size * seq_len) == img_context_token_id)
+        input_embeds[selected] = vit_embeds.reshape(-1, hidden_dim).to(
+            device=input_embeds.device, dtype=input_embeds.dtype
+        )
+        input_embeds = input_embeds.reshape(batch_size, seq_len, hidden_dim)
+
+        gen_kwargs = {k: v for k, v in (generation_config or {}).items() if k != "return_dict"}
+        gen_kwargs.setdefault("eos_token_id", eos_token_id)
+        gen_kwargs.setdefault("pad_token_id", eos_token_id)
+        gen_kwargs.setdefault("use_cache", True)
+
+        output_ids = self.model.language_model.generate(
+            inputs_embeds=input_embeds, attention_mask=attention_mask, **gen_kwargs
+        )
+        decoded = self.tokenizer.batch_decode(output_ids, skip_special_tokens=True)[0]
+        del model_inputs, input_ids, attention_mask, vit_embeds, input_embeds, output_ids
+        return self._clean_vqa_response(decoded, sep_token)
+
     def _run_single_vqa_domain_inference(
         self,
         prompt_text: str,
@@ -499,7 +575,15 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         with GPU_LOCK:
             try:
                 with torch.inference_mode():
-                    if hasattr(self.model, "chat"):
+                    if (
+                        hasattr(self.model, "language_model")
+                        and hasattr(self.model, "extract_feature")
+                        and self.tokenizer is not None
+                    ):
+                        txt = self._generate_with_language_model(
+                            prompt_text, pixel_values, generation_config
+                        )
+                    elif hasattr(self.model, "chat"):
                         txt = self.model.chat(
                             self.tokenizer,
                             pixel_values,
@@ -620,7 +704,7 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                 raise
             except Exception as eval_err:
                 print(f"[UniPercept] ❌ Single-pass perceptual VQA error: {eval_err}", flush=True)
-                anchor_text = f"Perceptual analysis error: {eval_err}"
+                raise
 
             elapsed = time.time() - t_start
             print(f"[UniPercept] ✅ Single-pass perceptual anchor generated ({len(anchor_text)} chars, {elapsed:.2f}초)", flush=True)
