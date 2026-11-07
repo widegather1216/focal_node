@@ -247,4 +247,97 @@ def test_base_model_unload_locked_synchronizes_mps():
         mock_torch.mps.empty_cache.assert_called_once()
 
 
+def test_defect_02_cancelled_during_model_load_immediately_unloads():
+    """
+    DEFECT-02 reproduction (Case 1):
+    If user cancels while Worker Thread A is inside _load_model_locked() (10-15s disk load),
+    cancel_critique's unload_model() sees self.model is None and does nothing.
+    Once _load_model_locked() finishes loading the 28GB model, Thread A must detect
+    cancellation, immediately unload self.model (and _cached_weight_tensor), and raise
+    CritiqueCancelledException so 28GB is never stranded in RAM.
+    """
+    from services.unipercept_adapter import UniPerceptAdapter
+
+    photo_id = "test_defect02_load_race"
+    critique_status_manager.reset(photo_id)
+    adapter = UniPerceptAdapter()
+    adapter._cached_weight_tensor = "mock_mps_weight_tensor"
+
+    def fake_slow_disk_load():
+        # Simulate user pressing cancel while 28GB weights are loading from disk
+        critique_status_manager.request_cancel(photo_id)
+        adapter.model = MagicMock(name="UniPercept28GBModel")
+
+    adapter._load_model_locked = fake_slow_disk_load
+
+    with pytest.raises(CritiqueCancelledException):
+        adapter.generate_vr_scores("/fake/img.jpg", photo_id=photo_id)
+
+    assert adapter.model is None, "28GB model remained stranded in RAM after cancellation during load!"
+    assert adapter._cached_weight_tensor is None, "_cached_weight_tensor was not cleared on unload!"
+    assert adapter.active_requests == 0
+
+
+def test_defect_02_cancelled_before_vqa_prevents_28gb_reload():
+    """
+    DEFECT-02 reproduction (Case 2):
+    If photo_id is already cancelled when entering generate_perceptual_anchor_vqa
+    (or generate_vr_scores), _load_model_locked() must NOT be called to reload 28GB from disk.
+    """
+    from services.unipercept_adapter import UniPerceptAdapter
+
+    photo_id = "test_defect02_no_reload"
+    critique_status_manager.reset(photo_id)
+    critique_status_manager.request_cancel(photo_id)
+
+    adapter = UniPerceptAdapter()
+    load_calls = []
+
+    def forbidden_reload():
+        load_calls.append(1)
+        adapter.model = MagicMock(name="Reloaded28GBModel")
+
+    adapter._load_model_locked = forbidden_reload
+
+    with pytest.raises(CritiqueCancelledException):
+        adapter.generate_perceptual_anchor_vqa("/fake/img.jpg", photo_id=photo_id)
+
+    assert len(load_calls) == 0, "_load_model_locked() was called for an already-cancelled photo_id!"
+    assert adapter.model is None
+    assert adapter.active_requests == 0
+
+
+def test_defect_02_full_ensemble_worker_thread_unloads_in_finally(monkeypatch):
+    """
+    DEFECT-02 reproduction (Case 3):
+    Verifies that generate_full_ensemble_critique guarantees self.unload_model() in its own
+    outermost finally block and cleans up _cached_weight_tensor and submodule references.
+    """
+    from services.unipercept_adapter import UniPerceptAdapter
+
+    photo_id = "test_defect02_ensemble_finally"
+    critique_status_manager.reset(photo_id)
+    adapter = UniPerceptAdapter()
+
+    dummy_model = MagicMock(name="UniPercept28GB")
+    dummy_model.language_model = MagicMock()
+    dummy_model.vision_model = MagicMock()
+    dummy_model.mlp1 = MagicMock()
+    adapter.model = dummy_model
+    adapter._cached_weight_tensor = "cached_mps_tensor"
+    adapter._cached_preferential_ids = [1, 2, 3]
+
+    monkeypatch.setattr(adapter, "compute_official_vr_score", lambda pv, desc, **kw: 85.0)
+    monkeypatch.setattr(adapter, "_load_pil_image", lambda path: None)
+    monkeypatch.setattr(adapter, "_prepare_pixel_values", lambda pil_img, **kw: None)
+    monkeypatch.setattr(adapter, "_run_single_vqa_domain_inference", lambda *a, **kw: "Valid English anchor.")
+
+    res = adapter.generate_full_ensemble_critique("/fake/img.jpg", photo_id=photo_id)
+    assert res["critique"] == "Valid English anchor."
+    assert adapter.model is None, "generate_full_ensemble_critique did not unload model in finally!"
+    assert adapter._cached_weight_tensor is None
+    assert adapter._cached_preferential_ids is None
+
+
+
 

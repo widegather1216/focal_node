@@ -16,7 +16,7 @@ from services.scoring import (
 
 class UniPerceptAdapter(BaseKeepAliveModel):
     def __init__(self):
-        super().__init__("UniPerceptAdapter", keep_alive_timeout=60.0)
+        super().__init__("UniPerceptAdapter", keep_alive_timeout=0.0)
         # Default public mirror repo on Hugging Face (100% tokenless automatic download)
         self.model_id = "widegather/unipercept-mirror"
         self._cached_preferential_ids = None
@@ -116,6 +116,63 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             with self.lock:
                 self._load_model_locked()
 
+    def _on_unload(self):
+        """Clears cached MPS tensors and submodule references before model release."""
+        self._cached_weight_tensor = None
+        self._cached_preferential_ids = None
+        if self.model is not None:
+            for attr in ("language_model", "vision_model", "mlp1"):
+                if hasattr(self.model, attr):
+                    try:
+                        setattr(self.model, attr, None)
+                    except Exception:
+                        pass
+
+    def _acquire_model_for_request(self, photo_id: Optional[str] = None) -> None:
+        """
+        Acquires GPU_LOCK and self.lock, checks cancellation before and immediately after
+        _load_model_locked() so a cancelled request never reloads or strands 28GB weights.
+        """
+        from services.critique_status import critique_status_manager
+        if photo_id:
+            critique_status_manager.check_cancelled(photo_id)
+        with GPU_LOCK:
+            with self.lock:
+                if photo_id:
+                    critique_status_manager.check_cancelled(photo_id)
+                self._load_model_locked()
+                if photo_id and critique_status_manager.is_cancelled(photo_id):
+                    self._unload_model_locked()
+                    critique_status_manager.check_cancelled(photo_id)
+                self.active_requests += 1
+
+    def _release_model_for_request(self, photo_id: Optional[str] = None) -> None:
+        """
+        Decrements active_requests and unloads model if the request was cancelled,
+        strictly respecting GPU_LOCK -> self.lock hierarchy.
+        """
+        should_unload = False
+        with self.lock:
+            self.last_used_time = time.time()
+            self.active_requests = max(0, self.active_requests - 1)
+            if photo_id:
+                from services.critique_status import critique_status_manager
+                if critique_status_manager.is_cancelled(photo_id):
+                    should_unload = True
+        if should_unload:
+            self.unload_model()
+
+    @staticmethod
+    def _release_pixel_values(pixel_values: Any) -> None:
+        if pixel_values is None:
+            return
+        del pixel_values
+        if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+            try:
+                torch.mps.empty_cache()
+            except Exception as clear_err:
+                print(f"[UniPerceptAdapter] Pixel values cache clear warning: {clear_err}", flush=True)
+
 
 
     @staticmethod
@@ -166,24 +223,32 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         image_tokens = IMG_START_TOKEN + IMG_CONTEXT_TOKEN * num_image_token * num_patches + IMG_END_TOKEN
         return query.replace('<image>', image_tokens, 1)
 
-    def compute_official_vr_score(self, pixel_values: torch.Tensor, desc: str) -> float:
+    def compute_official_vr_score(
+        self,
+        pixel_values: torch.Tensor,
+        desc: str,
+        photo_id: Optional[str] = None
+    ) -> float:
         """
         Computes exact continuous score (0-100) using 100% official UniPercept logic:
         1. Query template formatting with <image> token and 101-token mapping instruction.
         2. Single forward pass to extract last-token logits on AESTHETICS_TOKEN_LIST.
         3. Expected value calculation: torch.softmax(logits, -1) @ weight_tensor.
         """
-        if self.model is None or self.tokenizer is None:
-            return 70.0
-
-        num_patches = pixel_values.shape[0] if pixel_values is not None else 1
-        template = self._resolve_conversation_template(self.model)
-        query = self._build_vr_score_query(desc, template, self.model, num_patches)
-
-        img_context_token_id = self.tokenizer.convert_tokens_to_ids('<IMG_CONTEXT>')
-        model_inputs = self.tokenizer(query, return_tensors='pt')
-
         with GPU_LOCK:
+            if photo_id:
+                from services.critique_status import critique_status_manager
+                critique_status_manager.check_cancelled(photo_id)
+            if self.model is None or self.tokenizer is None:
+                return 70.0
+
+            num_patches = pixel_values.shape[0] if pixel_values is not None else 1
+            template = self._resolve_conversation_template(self.model)
+            query = self._build_vr_score_query(desc, template, self.model, num_patches)
+
+            img_context_token_id = self.tokenizer.convert_tokens_to_ids('<IMG_CONTEXT>')
+            model_inputs = self.tokenizer(query, return_tensors='pt')
+
             input_ids = model_inputs['input_ids'].to(self.device)
             attention_mask = model_inputs['attention_mask'].to(self.device)
 
@@ -244,7 +309,7 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             parts.append(f"ISO {metadata['iso']}")
         return f"[EXIF: {', '.join(parts)}]\n" if parts else ""
 
-    def _prepare_pixel_values(self, pil_img) -> torch.Tensor:
+    def _prepare_pixel_values(self, pil_img, photo_id: Optional[str] = None) -> torch.Tensor:
         target_dtype = self.torch_dtype
         if self.model is not None and hasattr(self.model, "parameters"):
             try:
@@ -254,6 +319,9 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         transform = build_transform(input_size=448)
         transformed = transform(pil_img).unsqueeze(0).to(dtype=target_dtype)
         with GPU_LOCK:
+            if photo_id:
+                from services.critique_status import critique_status_manager
+                critique_status_manager.check_cancelled(photo_id)
             return transformed.to(self.device)
 
     @staticmethod
@@ -302,9 +370,12 @@ class UniPerceptAdapter(BaseKeepAliveModel):
 
         print(f"[UniPercept] ⏱️ [VR Step {step_idx}/3] {label} 계산 시작...", flush=True)
         step_t0 = time.time()
+        from services.critique_status import CritiqueCancelledException
         try:
             sc = self.compute_official_vr_score(pixel_values, desc)
             score_val = round(sc, 2)
+        except CritiqueCancelledException:
+            raise
         except Exception as vr_err:
             print(f"[UniPercept] ⚠️ [VR Step {step_idx}/3] {label} 오류 ({vr_err}), 70.0 폴백", flush=True)
             score_val = 70.0
@@ -330,10 +401,8 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         Step 3: ISTA Score (Structure & Texture)
         Overall = EXIF-adaptive fusion (Mode A/B/C/D weights + aesthetic bonus)
         """
-        with GPU_LOCK:
-            with self.lock:
-                self._load_model_locked()
-                self.active_requests += 1
+        self._acquire_model_for_request(photo_id)
+        pixel_values = None
 
         try:
             if (not os.path.exists(image_path) and not hasattr(self.model, "chat")) or self.model is None:
@@ -389,13 +458,6 @@ class UniPerceptAdapter(BaseKeepAliveModel):
 
             raw_vr_summary = f"IAA: {iaa_val}, IQA: {iqa_val}, ISTA: {ista_val} -> Overall: {overall_val}"
 
-            del pixel_values
-            if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
-                try:
-                    torch.mps.empty_cache()
-                except Exception as clear_err:
-                    print(f"[UniPerceptAdapter] VR scores cache clear warning: {clear_err}", flush=True)
-
             return {
                 "overall": overall_val,
                 "iaa": iaa_val,
@@ -407,9 +469,8 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             }
 
         finally:
-            with self.lock:
-                self.last_used_time = time.time()
-                self.active_requests -= 1
+            self._release_pixel_values(pixel_values)
+            self._release_model_for_request(photo_id)
 
     @staticmethod
     def _format_score_guidance_desc(scores_context: Optional[Dict[str, Any]]) -> str:
@@ -481,11 +542,14 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         step_t0 = time.time()
         prompt_text = f"{exif_desc}{score_desc}{base_prompt}"
 
+        from services.critique_status import CritiqueCancelledException
         try:
             txt = self._run_single_vqa_domain_inference(prompt_text, pixel_values, pil_img, generation_config)
             elapsed = time.time() - step_t0
             print(f"[UniPercept] ✅ [VQA Step {step_idx-3}/3] {label} 완료 ➔ {len(txt)}자 생성 (소요시간: {elapsed:.2f}초)", flush=True)
             return txt, elapsed
+        except CritiqueCancelledException:
+            raise
         except Exception as eval_err:
             elapsed = time.time() - step_t0
             print(f"[UniPercept] ❌ [VQA Step {step_idx-3}/3] {label} 오류 ({eval_err}) (소요시간: {elapsed:.2f}초)", flush=True)
@@ -518,10 +582,8 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         Uses normalized decoding parameters (repetition_penalty=1.0, do_sample=True,
         temperature=0.7, top_p=0.9) to eliminate vocabulary collapse.
         """
-        with GPU_LOCK:
-            with self.lock:
-                self._load_model_locked()
-                self.active_requests += 1
+        self._acquire_model_for_request(photo_id)
+        pixel_values = None
 
         try:
             if (not os.path.exists(image_path) and not hasattr(self.model, "chat")) or self.model is None:
@@ -534,6 +596,7 @@ class UniPerceptAdapter(BaseKeepAliveModel):
 
             t_start = time.time()
             from services.ai_parser import UNIPERCEPT_VQA_SINGLE_PASS_PROMPT
+            from services.critique_status import CritiqueCancelledException
 
             pil_img = self._load_pil_image(image_path)
             exif_desc = self._format_exif_desc(metadata)
@@ -553,24 +616,18 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                 anchor_text = self._run_single_vqa_domain_inference(
                     prompt_text, pixel_values, pil_img, generation_config
                 )
+            except CritiqueCancelledException:
+                raise
             except Exception as eval_err:
                 print(f"[UniPercept] ❌ Single-pass perceptual VQA error: {eval_err}", flush=True)
                 anchor_text = f"Perceptual analysis error: {eval_err}"
-            finally:
-                del pixel_values
-                if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
-                    try:
-                        torch.mps.empty_cache()
-                    except Exception as clear_err:
-                        print(f"[UniPerceptAdapter] Anchor cache clear note: {clear_err}", flush=True)
 
             elapsed = time.time() - t_start
             print(f"[UniPercept] ✅ Single-pass perceptual anchor generated ({len(anchor_text)} chars, {elapsed:.2f}초)", flush=True)
             return anchor_text
         finally:
-            with self.lock:
-                self.last_used_time = time.time()
-                self.active_requests -= 1
+            self._release_pixel_values(pixel_values)
+            self._release_model_for_request(photo_id)
 
     def _execute_all_vqa_steps(
         self,
@@ -605,10 +662,8 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         Step 5: IQA (Technical Quality, Sharpness, Noise, Depth of Field)
         Step 6: ISTA (Surface Texture, Edge Definition, Micro-contrast)
         """
-        with GPU_LOCK:
-            with self.lock:
-                self._load_model_locked()
-                self.active_requests += 1
+        self._acquire_model_for_request(photo_id)
+        pixel_values = None
 
         try:
             if (not os.path.exists(image_path) and not hasattr(self.model, "chat")) or self.model is None:
@@ -632,13 +687,6 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                 exif_desc, score_desc, pixel_values, pil_img, photo_id
             )
 
-            del pixel_values
-            if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
-                try:
-                    torch.mps.empty_cache()
-                except Exception as clear_err:
-                    print(f"[UniPerceptAdapter] VQA scores cache clear warning: {clear_err}", flush=True)
-
             vqa_total_elapsed = time.time() - vqa_start_time
             print(f"[UniPercept] 📝 [VQA 모드 종료] 3개 비평문 생성 완료 (총 소요시간: {vqa_total_elapsed:.2f}초)", flush=True)
             print(f"            - IAA 비평: {timings.get('iaa', 0):.2f}s | IQA 비평: {timings.get('iqa', 0):.2f}s | ISTA 비평: {timings.get('ista', 0):.2f}s", flush=True)
@@ -647,9 +695,8 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             return critiques
 
         finally:
-            with self.lock:
-                self.last_used_time = time.time()
-                self.active_requests -= 1
+            self._release_pixel_values(pixel_values)
+            self._release_model_for_request(photo_id)
 
     def generate_vqa_critique(
         self,
@@ -680,10 +727,8 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             return self.generate_full_ensemble_critique(image_path, metadata)
 
         # Custom single-prompt path
-        with GPU_LOCK:
-            with self.lock:
-                self._load_model_locked()
-                self.active_requests += 1
+        self._acquire_model_for_request(None)
+        pixel_values = None
 
         try:
 
@@ -745,9 +790,8 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             }
 
         finally:
-            with self.lock:
-                self.last_used_time = time.time()
-                self.active_requests -= 1
+            self._release_pixel_values(pixel_values)
+            self._release_model_for_request(None)
 
     @classmethod
     def _resolve_score_value(cls, raw_val: int, text: str) -> Optional[int]:
@@ -907,56 +951,62 @@ class UniPerceptAdapter(BaseKeepAliveModel):
         - Stage 2: VQA Mode -> Pure deep photographic critique without score constraints
         - Merges scores scoreboard and VQA critique for translation by Gemma.
         """
-        if photo_id:
-            from services.critique_status import critique_status_manager
-            critique_status_manager.check_cancelled(photo_id)
+        try:
+            if photo_id:
+                from services.critique_status import critique_status_manager
+                critique_status_manager.check_cancelled(photo_id)
 
-        eff_f_number = f_number if f_number is not None else (metadata.get("f_number") if metadata else None)
-        eff_iso = iso if iso is not None else (metadata.get("iso") if metadata else None)
+            eff_f_number = f_number if f_number is not None else (metadata.get("f_number") if metadata else None)
+            eff_iso = iso if iso is not None else (metadata.get("iso") if metadata else None)
 
-        print("[UniPerceptAdapter] [Stage 1/2] Computing 3-Way VR scores (IAA / IQA / ISTA)...", flush=True)
-        # 1. Stage 1: VR Mode (Fast 3-Metric Score Extraction)
-        vr_result = self.generate_vr_scores(
-            image_path,
-            metadata=metadata,
-            photo_id=photo_id,
-            max_retries=3,
-            f_number=eff_f_number,
-            iso=eff_iso
-        )
-        if photo_id:
-            critique_status_manager.check_cancelled(photo_id)
-        final_overall = vr_result["overall"]
-        final_iaa = vr_result["iaa"]
-        final_iqa = vr_result["iqa"]
-        final_ista = vr_result["ista"]
+            print("[UniPerceptAdapter] [Stage 1/2] Computing 3-Way VR scores (IAA / IQA / ISTA)...", flush=True)
+            # 1. Stage 1: VR Mode (Fast 3-Metric Score Extraction)
+            vr_result = self.generate_vr_scores(
+                image_path,
+                metadata=metadata,
+                photo_id=photo_id,
+                max_retries=3,
+                f_number=eff_f_number,
+                iso=eff_iso
+            )
+            if photo_id:
+                critique_status_manager.check_cancelled(photo_id)
+            final_overall = vr_result["overall"]
+            final_iaa = vr_result["iaa"]
+            final_iqa = vr_result["iqa"]
+            final_ista = vr_result["ista"]
 
-        scores_summary = {
-            "overall": final_overall,
-            "iaa": final_iaa,
-            "iqa": final_iqa,
-            "ista": final_ista,
-            "comp_direct": final_overall,
-            "weighted_analysis": final_overall
-        }
-        print(f"[UniPerceptAdapter] [Stage 1/2] VR Scores computed: Overall={final_overall}, IAA={final_iaa}, IQA={final_iqa}, ISTA={final_ista}", flush=True)
+            scores_summary = {
+                "overall": final_overall,
+                "iaa": final_iaa,
+                "iqa": final_iqa,
+                "ista": final_ista,
+                "comp_direct": final_overall,
+                "weighted_analysis": final_overall
+            }
+            print(f"[UniPerceptAdapter] [Stage 1/2] VR Scores computed: Overall={final_overall}, IAA={final_iaa}, IQA={final_iqa}, ISTA={final_ista}", flush=True)
 
-        print("[UniPerceptAdapter] [Stage 2/2] Generating single-pass perceptual anchor...", flush=True)
-        # 2. Stage 2: Single-pass VQA (Score-Conditioned Perceptual Anchor)
-        anchor_text = self.generate_perceptual_anchor_vqa(
-            image_path, metadata=metadata, scores_context=scores_summary, photo_id=photo_id
-        )
-        if photo_id:
-            critique_status_manager.check_cancelled(photo_id)
-        print("[UniPerceptAdapter] UniPercept full ensemble critique generation finished.", flush=True)
+            print("[UniPerceptAdapter] [Stage 2/2] Generating single-pass perceptual anchor...", flush=True)
+            # 2. Stage 2: Single-pass VQA (Score-Conditioned Perceptual Anchor)
+            anchor_text = self.generate_perceptual_anchor_vqa(
+                image_path, metadata=metadata, scores_context=scores_summary, photo_id=photo_id
+            )
+            if photo_id:
+                critique_status_manager.check_cancelled(photo_id)
+            print("[UniPerceptAdapter] UniPercept full ensemble critique generation finished.", flush=True)
 
-        return {
-            "critique": anchor_text,
-            "quality_score": final_overall,
-            "scores": scores_summary,
-            "text_comp": anchor_text,
-            "raw_vr_text": vr_result.get("raw_vr_text", "")
-        }
+            return {
+                "critique": anchor_text,
+                "quality_score": final_overall,
+                "scores": scores_summary,
+                "text_comp": anchor_text,
+                "raw_vr_text": vr_result.get("raw_vr_text", "")
+            }
+        finally:
+            with GPU_LOCK:
+                with self.lock:
+                    if self.active_requests <= 0:
+                        self.unload_model()
 
 _unipercept_adapter_instance = None
 _unipercept_lock = threading.RLock()

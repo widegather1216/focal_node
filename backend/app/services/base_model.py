@@ -37,6 +37,8 @@ class BaseKeepAliveModel:
             self._start_keep_alive_timer_locked()
 
     def _start_keep_alive_timer_locked(self):
+        if self.keep_alive_timeout <= 0:
+            return
         if not self.timer_active:
             self.timer_active = True
             self.timer_thread = threading.Thread(target=self._keep_alive_loop, daemon=True)
@@ -69,12 +71,12 @@ class BaseKeepAliveModel:
 
     def _unload_model_locked(self):
         """Internal locked method to clear references and trigger memory garbage collection."""
+        self._on_unload()
+
         self.model = None
         self.processor = None
         self.tokenizer = None
         self.timer_active = False
-
-        self._on_unload()
 
         gc.collect()
         try:
