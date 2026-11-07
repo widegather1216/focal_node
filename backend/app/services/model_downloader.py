@@ -125,19 +125,36 @@ def get_missing_sharded_files(snapshot_dir: str) -> list[str]:
     missing = []
     for root, _, files in os.walk(snapshot_dir):
         for idx_file in index_filenames:
-            if idx_file in files:
-                idx_path = os.path.join(root, idx_file)
-                try:
-                    with open(idx_path, "r", encoding="utf-8") as f:
-                        idx_data = json.load(f)
-                    weight_map = idx_data.get("weight_map", {})
-                    sharded_files = set(weight_map.values())
-                    for s_file in sharded_files:
-                        s_path = os.path.join(root, s_file)
-                        if not (os.path.exists(s_path) and os.path.getsize(s_path) > 1024 * 1024):
+            if idx_file not in files:
+                continue
+            idx_path = os.path.join(root, idx_file)
+            try:
+                with open(idx_path, "r", encoding="utf-8") as f:
+                    idx_data = json.load(f)
+                if not isinstance(idx_data, dict):
+                    logger.warning(f"[Downloader] Corrupted index format in {idx_path}: expected dict, got {type(idx_data)}")
+                    if idx_file not in missing:
+                        missing.append(idx_file)
+                    continue
+
+                weight_map = idx_data.get("weight_map")
+                if not isinstance(weight_map, dict) or not weight_map:
+                    logger.warning(f"[Downloader] Corrupted or missing weight_map in {idx_path}")
+                    if idx_file not in missing:
+                        missing.append(idx_file)
+                    continue
+
+                sharded_files = set(weight_map.values())
+                for s_file in sorted(sharded_files):
+                    s_path = os.path.join(root, s_file)
+                    if not (os.path.exists(s_path) and os.path.getsize(s_path) > 1024 * 1024):
+                        if s_file not in missing:
                             missing.append(s_file)
-                except Exception as err:
-                    print(f"[Downloader] Error parsing index file {idx_path}: {err}", flush=True)
+            except Exception as err:
+                logger.warning(f"[Downloader] Error parsing index file {idx_path}: {err}")
+                print(f"[Downloader] Error parsing index file {idx_path}: {err}", flush=True)
+                if idx_file not in missing:
+                    missing.append(idx_file)
     return missing
 
 def is_snapshot_weights_valid(snapshot_dir: str) -> bool:
@@ -154,7 +171,12 @@ def is_snapshot_weights_valid(snapshot_dir: str) -> bool:
     for root, _, files in os.walk(snapshot_dir):
         for idx_file in index_filenames:
             if idx_file in files:
-                return len(get_missing_sharded_files(snapshot_dir)) == 0
+                try:
+                    missing_shards = get_missing_sharded_files(snapshot_dir)
+                    return len(missing_shards) == 0
+                except Exception as err:
+                    logger.warning(f"[Downloader] Error validating sharded weights for {snapshot_dir}: {err}")
+                    return False
 
     # Fallback check for single-file models (like SigLIP 2)
     for root, _, files in os.walk(snapshot_dir):
