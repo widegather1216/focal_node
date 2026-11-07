@@ -8,10 +8,10 @@
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
 - **Active 도메인**: [`03_ai_critique`](./features/03_ai_critique/README.md)
-- **현재 단계 (Stage)**: `🩹 Debugging (DEFECT 전수 해결 완료, Must Fix 리팩토링 REFACTOR-04 해결 대기)`
-- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 `DEFECT-03` 해결 완료 (`UniPerceptAdapter._load_model_locked`에서 `self.model.eval()` 명시 호출, `_generate_with_language_model` 헬퍼로 `InternVLChatModel.chat()`을 우회하여 `extract_feature(pixel_values)` 기반 `inputs_embeds`를 `self.model.language_model.generate(...)`(`return_dict` 제외, `use_cache=True`)에 직접 전달 및 `<think>`/종료 토큰 정제, `generate_perceptual_anchor_vqa` 추론 실패 시 예외 전파(`raise`)로 `ChatService` Gemma 4 자율 폴백 정상화, 회귀 단위 테스트 3종 추가 및 백엔드 118종 전수 통과)
+- **현재 단계 (Stage)**: `🩹 Debugging (DEFECT 전수 해결 및 REFACTOR-04 완료, Must Fix 리팩토링 REFACTOR-05 해결 대기)`
+- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 `REFACTOR-04` 해결 완료 (`CritiqueDocumentModal.tsx`에서 `mastheadData = useMemo(...)` 및 사진 변경 상태 초기화 `useEffect`를 조건부 `if (!critiqueDocumentPhotoId) return null;` 위로 이동하여 Rules of Hooks 런타임 크래시 해소, 전역 `keydown` 리스너를 모달 오픈/`isPopout` 상태에서만 동작하도록 가드, `critiqueExporter.ts`에 `escapeHtml()` 헬퍼를 도입하여 PDF 인쇄 템플릿 메타데이터/본문 DOM XSS 차단 및 `.focal-pdf-report-container .critique-body` 하위 다크 잉크 컬러(`!important`)·`button { display: none !important; }` 적용, `npx tsc --noEmit && npm run build` 및 백엔드 118종 전수 통과)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"03_ai_critique 도메인의 REFACTOR-04 티켓 해결해줘"` *(CritiqueDocumentModal Hooks 순서 위반 런타임 크래시·전역 키 가로채기 및 PDF XSS/인라인 색상 역전 교정)*
+  > `"03_ai_critique 도메인의 REFACTOR-05 티켓 해결해줘"` *(메타데이터 수정 시 비평 필드 유실·삭제 후 좀비 상태 부활·취소 스레드 경계 수정 및 PhotoRepository 캡슐화)*
 
 ---
 
@@ -22,7 +22,7 @@
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `5/5 (100%)` | `0 / 0` | DEFECT-01~04 전수 해결 완료 (손상 인덱스 valid=False, 실패 시 거짓 완료 차단, 1종 조기완료 차단, 중복 스레드/락 삭제 가드), Sign-Off 완료 |
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 📐 Planning | `[□□□□] 0/4` | `3/6 (50%)` | `0 / 0` | REFACTOR-01 해결 완료 (타입 일원화, Repo 캡슐화, 예외 로깅) |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 📐 Planning | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 거리 임계값 + RRF 랭킹 + 35mm/점수 필터 + 스마트 앨범 Step 1~4 대기 |
-| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `13/13 (100%)` | `0 / 6` | `DEFECT-02~03` 전수 해결 완료 (`TC-CRT-10~11 PASS`), `REFACTOR` 6건 대기 |
+| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `13/13 (100%)` | `0 / 5` | `DEFECT-02~03` 및 `REFACTOR-04` 해결 완료, `REFACTOR` 5건 대기 |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 📐 Planning | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 2` | 통계 차트 클릭 갤러리 드릴다운(`Click-to-Filter`) Step 3~4 대기 |
 
 *(※ 상태 범례: `📐 Planning` | `🛠️ Implementing` | `🧐 Auditing` | `🧪 QA Testing` | `🩹 Debugging` | `🟢 Sign-Off`)*
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-07]` `[systematic-debugger]` [`03_ai_critique`]**: REFACTOR-04 리팩토링 티켓 해결 완료 (`46bbb48` / `CritiqueDocumentModal.tsx`에서 `mastheadData = useMemo(...)` 및 사진 변경 상태 초기화 `useEffect`를 조건부 `if (!critiqueDocumentPhotoId) return null;` 위로 이동하여 모달 오픈 시 Rules of Hooks 크래시 해소, 전역 `keydown` 리스너를 모달 오픈/`isPopout` 상태에서만 동작하도록 가드, `critiqueExporter.ts`에 `escapeHtml()` 도입으로 PDF 인쇄 템플릿 메타데이터/본문 DOM XSS 차단 및 `.focal-pdf-report-container .critique-body` 하위 다크 잉크 컬러(`#111827`, `#374151` `!important`)·`button { display: none !important; }` 적용, `npx tsc --noEmit && npm run build` 및 백엔드 118종 전수 통과).
 
 - **`[2026-11-07]` `[systematic-debugger]` [`03_ai_critique`]**: DEFECT-03 결함 해결 완료 (`4fa3497` / `UniPerceptAdapter._load_model_locked()`에서 `self.model.eval()` 명시 호출, `_build_vqa_query`·`_clean_vqa_response`·`_generate_with_language_model` 헬퍼로 `InternVLChatModel.chat()`의 `return_dict` 시그니처 충돌을 우회하고 `self.model.language_model.generate(...)` 직접 호출 및 `<think>`/종료 토큰 정제, `generate_perceptual_anchor_vqa` 예외 삼킴 제거 및 `raise` 전파로 `ChatService` Gemma 4 자율 폴백 복구, 회귀 단위 테스트 3종 추가, `TC-CRT-11 PASS`, 백엔드 118종 및 프론트엔드 빌드 전수 통과).
 

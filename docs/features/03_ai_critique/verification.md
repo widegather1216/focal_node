@@ -1,8 +1,8 @@
 # 🧪 [03_ai_critique] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT 전수 해결 완료, REFACTOR 6건 해결 대기)`
+- **검증 상태**: `🩹 Debugging (DEFECT 전수 해결 완료, REFACTOR 5건 해결 대기)`
 - **인수 조건 통과율**: `13 / 13 (100%)`
-- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 6건`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 5건`
 
 ---
 
@@ -112,18 +112,11 @@
 - **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
 
 ### [REFACTOR-04] `CritiqueDocumentModal` Hooks 순서 위반 런타임 크래시·전역 키 가로채기 및 PDF XSS/인라인 색상 역전 교정
-- **심각도**: 🔴 Must Fix (즉시 조치·QA 진입 차단)
-- **위치**: `src/components/critique/CritiqueDocumentModal.tsx#L74-L159, #L311-L318`, `src/utils/critiqueExporter.ts#L189-L304, #L447-L470`, `src/utils/critiqueParser.tsx#L317`, `src/components/critique/CritiqueBlockItem.tsx#L90-L140`
-- **위반 규칙**: React Rules of Hooks (런타임 크래시), Audit Matrix #3 & #4 (DOM XSS 방어, 전역 리스너 수명주기), AC 2 PDF 가독성 무결성
-- **발견된 문제**:
-  - `App.tsx#L106`에 상시 마운트된 `CritiqueDocumentModal`이 `#L104`에서 조건부 `return null`을 수행한 뒤 `#L130`에서 `useMemo`를 호출하여, 문서 모달 오픈 즉시 `Rendered more hooks than during the previous render` 크래시가 100% 발생함. 또한 모달이 닫혀 있을 때도 전역 `Escape`/`Cmd+W`를 가로채며 사진 전환 시 줌/에러 상태가 초기화되지 않음.
-  - `critiqueExporter.ts`가 `file_name`·EXIF·본문을 미이스케이프 상태로 `innerHTML`에 삽입(Tauri WebView 내 DOM XSS 위험)하며, 다크 테마 인라인 색상(`#fff`, `#f4f4f5`, `#d4d4d8`)이 `#ffffff` 흰색 PDF 시트에 복제되어 볼드체가 100% 투명화되고 영문 토글 `<button>`이 인쇄물에 노출됨.
-- **권장 개선안 (Suggested Diff)**:
-  ```text
-  - `mastheadData = useMemo(...)` 및 사진 변경 상태 초기화 `useEffect`를 `if (!critiqueDocumentPhotoId) return null;` 위로 이동하고, `keydown` 리스너는 모달 오픈/`isPopout` 상태에서만 등록
-  - `escapeHtml()` 헬퍼로 모든 메타데이터/본문 보간값을 이스케이프하고, `.focal-pdf-report-container .critique-body` 하위 텍스트에 다크 인라인 컬러 오버라이드(`!important`) 및 `button { display: none !important; }` 적용
-  ```
-- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`CritiqueDocumentModal.tsx`](../../../src/components/critique/CritiqueDocumentModal.tsx#L82-L165), [`CritiqueDocumentModal.tsx`](../../../src/components/critique/CritiqueDocumentModal.tsx#L371-L395), [`critiqueExporter.ts`](../../../src/utils/critiqueExporter.ts#L22-L34), [`critiqueExporter.ts`](../../../src/utils/critiqueExporter.ts#L202-L345), [`critiqueExporter.ts`](../../../src/utils/critiqueExporter.ts#L497-L500)
+  - **원인 및 조치**: ① `CritiqueDocumentModal.tsx`에서 `critiqueText` 및 `mastheadData = useMemo(...)`를 조건부 `if (!critiqueDocumentPhotoId) return null;` 위로 이동하여 모달 오픈 시 Rules of Hooks 위반 런타임 크래시를 100% 해소하고, `critiqueDocumentPhotoId` 변경 시 `imgError`·복사·내보내기·줌/패닝(`handleResetZoom`) 상태를 초기화하는 `useEffect`를 추가하며, 전역 `keydown`(`Escape`/`Cmd+W`) 리스너는 `if (!critiqueDocumentPhotoId && !isPopout) return;` 가드로 활성 상태에서만 등록되도록 교정, ② `critiqueExporter.ts`에 `escapeHtml()` 헬퍼를 도입하여 `generatePrintHtml`의 파일명·날짜·이미지 URL·EXIF 메타데이터·점수 및 `exportCritiqueToPdf` 폴백 본문을 전수 이스케이프해 DOM XSS를 차단하고, `.focal-pdf-report-container .critique-body`(및 모달 `@media print`) 하위에 다크 테마 인라인 텍스트 색상(`#fff`, `#f4f4f5`, `#e4e4e7`, `#d4d4d8`)을 덮어쓰는 고대비 다크 잉크 컬러(`#111827`, `#374151` `!important`)와 `button { display: none !important; }`를 적용하여 PDF 가독성 및 인쇄 무결성 확보.
+  - **회귀 테스트 결과**: `npx tsc --noEmit && npm run build` (`PASS`), `./venv/bin/pytest backend/tests/ -v` (`118 passed`) (`PASS`)
 
 ### [REFACTOR-05] 메타데이터 수정 시 비평 필드 유실·삭제 후 좀비 상태 부활·취소 스레드 경계 수정 및 `PhotoRepository` 캡슐화
 - **심각도**: 🔴 Must Fix (즉시 조치·QA 진입 차단)
