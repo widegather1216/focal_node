@@ -8,10 +8,10 @@
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
 - **Active 도메인**: [`03_ai_critique`](./features/03_ai_critique/README.md)
-- **현재 단계 (Stage)**: `🩹 Debugging (DEFECT 전수 해결 및 REFACTOR-04 완료, Must Fix 리팩토링 REFACTOR-05 해결 대기)`
-- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 `REFACTOR-04` 해결 완료 (`CritiqueDocumentModal.tsx`에서 `mastheadData = useMemo(...)` 및 사진 변경 상태 초기화 `useEffect`를 조건부 `if (!critiqueDocumentPhotoId) return null;` 위로 이동하여 Rules of Hooks 런타임 크래시 해소, 전역 `keydown` 리스너를 모달 오픈/`isPopout` 상태에서만 동작하도록 가드, `critiqueExporter.ts`에 `escapeHtml()` 헬퍼를 도입하여 PDF 인쇄 템플릿 메타데이터/본문 DOM XSS 차단 및 `.focal-pdf-report-container .critique-body` 하위 다크 잉크 컬러(`!important`)·`button { display: none !important; }` 적용, `npx tsc --noEmit && npm run build` 및 백엔드 118종 전수 통과)
+- **현재 단계 (Stage)**: `🩹 Debugging (DEFECT 전수 해결 및 REFACTOR-04~05 완료, Must Fix 리팩토링 REFACTOR-06 해결 대기)`
+- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 `REFACTOR-05` 해결 완료 (`AIAnalysis.to_dict()` 헬퍼 도입으로 `PATCH /api/photos/{id}/metadata` 응답 시 `critique`/`critique_en` 및 4종 평점 등 전체 11개 필드 보존 반환, `DELETE /api/chat/critique/{photo_id}`에서 `critique_status_manager.clear(photo_id)` 호출로 인메모리 좀비 상태 부활 차단, `ChatService._cancel_task_threadsafe`를 통해 워커 스레드 취소 시 `loop.call_soon_threadsafe(task.cancel)` 적용, `PhotoRepository`에 `get_ai_analysis`·`upsert_critique`·`list_critiques(photo_ids=...)`·`update_caption_and_tags` 캡슐화, 회귀 단위 테스트 보강 및 백엔드 119종·프론트엔드 빌드 전수 통과)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"03_ai_critique 도메인의 REFACTOR-05 티켓 해결해줘"` *(메타데이터 수정 시 비평 필드 유실·삭제 후 좀비 상태 부활·취소 스레드 경계 수정 및 PhotoRepository 캡슐화)*
+  > `"03_ai_critique 도메인의 REFACTOR-06 티켓 해결해줘"` *(UniPercept Eager Import·추론 예외 삼킴·RAW 저해상도 디코딩 및 GPU_LOCK/메모리 누수 교정)*
 
 ---
 
@@ -22,7 +22,7 @@
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `5/5 (100%)` | `0 / 0` | DEFECT-01~04 전수 해결 완료 (손상 인덱스 valid=False, 실패 시 거짓 완료 차단, 1종 조기완료 차단, 중복 스레드/락 삭제 가드), Sign-Off 완료 |
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 📐 Planning | `[□□□□] 0/4` | `3/6 (50%)` | `0 / 0` | REFACTOR-01 해결 완료 (타입 일원화, Repo 캡슐화, 예외 로깅) |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 📐 Planning | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 거리 임계값 + RRF 랭킹 + 35mm/점수 필터 + 스마트 앨범 Step 1~4 대기 |
-| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `13/13 (100%)` | `0 / 5` | `DEFECT-02~03` 및 `REFACTOR-04` 해결 완료, `REFACTOR` 5건 대기 |
+| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `13/13 (100%)` | `0 / 4` | `DEFECT-02~03` 및 `REFACTOR-04~05` 해결 완료, `REFACTOR` 4건 대기 |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 📐 Planning | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 2` | 통계 차트 클릭 갤러리 드릴다운(`Click-to-Filter`) Step 3~4 대기 |
 
 *(※ 상태 범례: `📐 Planning` | `🛠️ Implementing` | `🧐 Auditing` | `🧪 QA Testing` | `🩹 Debugging` | `🟢 Sign-Off`)*
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-07]` `[systematic-debugger]` [`03_ai_critique`]**: REFACTOR-05 리팩토링 티켓 해결 완료 (`5d55cea` / `models.py`에 `AIAnalysis.to_dict()`/`empty_dict()` 도입 및 `PATCH /api/photos/{id}/metadata`가 비평·영문 앵커·4종 평점 등 11개 필드를 전수 보존 반환하도록 수정, `DELETE /api/chat/critique/{photo_id}`에서 `critique_status_manager.clear(photo_id)` 호출로 좀비 상태 부활 차단, `ChatService._cancel_task_threadsafe`에서 `loop.call_soon_threadsafe(task.cancel)` 스레드 경계 안전 취소 적용, `PhotoRepository`에 `get_ai_analysis`·`upsert_critique`·`list_critiques(photo_ids=...)`·`update_caption_and_tags` 캡슐화, 회귀 테스트 추가 및 백엔드 119종·프론트엔드 빌드 전수 통과).
 
 - **`[2026-11-07]` `[systematic-debugger]` [`03_ai_critique`]**: REFACTOR-04 리팩토링 티켓 해결 완료 (`46bbb48` / `CritiqueDocumentModal.tsx`에서 `mastheadData = useMemo(...)` 및 사진 변경 상태 초기화 `useEffect`를 조건부 `if (!critiqueDocumentPhotoId) return null;` 위로 이동하여 모달 오픈 시 Rules of Hooks 크래시 해소, 전역 `keydown` 리스너를 모달 오픈/`isPopout` 상태에서만 동작하도록 가드, `critiqueExporter.ts`에 `escapeHtml()` 도입으로 PDF 인쇄 템플릿 메타데이터/본문 DOM XSS 차단 및 `.focal-pdf-report-container .critique-body` 하위 다크 잉크 컬러(`#111827`, `#374151` `!important`)·`button { display: none !important; }` 적용, `npx tsc --noEmit && npm run build` 및 백엔드 118종 전수 통과).
 

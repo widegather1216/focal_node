@@ -1,8 +1,8 @@
 # 🧪 [03_ai_critique] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT 전수 해결 완료, REFACTOR 5건 해결 대기)`
+- **검증 상태**: `🩹 Debugging (DEFECT 전수 해결 완료, REFACTOR 4건 해결 대기)`
 - **인수 조건 통과율**: `13 / 13 (100%)`
-- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 5건`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 4건`
 
 ---
 
@@ -119,20 +119,11 @@
   - **회귀 테스트 결과**: `npx tsc --noEmit && npm run build` (`PASS`), `./venv/bin/pytest backend/tests/ -v` (`118 passed`) (`PASS`)
 
 ### [REFACTOR-05] 메타데이터 수정 시 비평 필드 유실·삭제 후 좀비 상태 부활·취소 스레드 경계 수정 및 `PhotoRepository` 캡슐화
-- **심각도**: 🔴 Must Fix (즉시 조치·QA 진입 차단)
-- **위치**: `backend/app/api/photos.py#L125-L154`, `backend/app/api/chat.py#L25-L44, #L89-L96`, `backend/app/services/chat_service.py#L9-L27, #L83-L105, #L149-L183, #L421-L432`, `backend/app/services/critique_status.py#L57-L80`, `backend/app/repositories/photo_repository.py#L160-L203`
-- **위반 규칙**: Rule 2.4 (이벤트 루프/스레드 경계 안전성), `00_core_foundation` §3.1 (`Services -> Repositories` 캡슐화), API 스키마 계약 무결성
-- **발견된 문제**:
-  - `PATCH /api/photos/{id}/metadata`가 `ai_analysis` 중 4개 필드만 반환해 Pydantic이 `critique` 및 4종 점수를 `null`로 직렬화하며, 프론트엔드 React Query 캐시가 덮어써져 캡션/태그 편집 즉시 비평이 화면에서 유실됨.
-  - `DELETE /api/chat/critique/{photo_id}`가 `critique_status_manager.clear(photo_id)`를 누락해 창 포커스 시 삭제된 비평이 인메모리 상태에서 부활하며, 동기 라우트 `cancel_photo_critique`가 워커 스레드에서 `asyncio.Task.cancel()`을 비스레드안전하게 직접 호출함.
-  - `ChatService` 및 `CritiqueStatusManager`가 `PhotoRepository`를 우회해 직접 `db.query(models.AIAnalysis)` 및 중복 3-테이블 조인/청킹 쿼리를 실행함.
-- **권장 개선안 (Suggested Diff)**:
-  ```text
-  - `AIAnalysis.to_dict()`를 도입해 `patch_photo_metadata`가 전체 11개 필드를 보존 반환하도록 수정
-  - `delete_photo_critique`에 `critique_status_manager.clear(photo_id)` 추가, 취소 호출 시 `task.get_loop().call_soon_threadsafe(task.cancel)` 적용
-  - `PhotoRepository`에 `get_ai_analysis`, `upsert_critique`, `list_critiques(photo_ids=...)`, `update_caption_and_tags`를 캡슐화하여 서비스 계층 직접 ORM 쿼리 제거
-  ```
-- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`models.py`](../../../backend/app/models.py#L80-L169), [`photos.py`](../../../backend/app/api/photos.py#L125-L148), [`chat.py`](../../../backend/app/api/chat.py#L89-L98), [`chat_service.py`](../../../backend/app/services/chat_service.py#L4-L30), [`chat_service.py`](../../../backend/app/services/chat_service.py#L84-L154), [`chat_service.py`](../../../backend/app/services/chat_service.py#L390-L410), [`critique_status.py`](../../../backend/app/services/critique_status.py#L55-L80), [`photo_repository.py`](../../../backend/app/repositories/photo_repository.py#L160-L270), [`photo.py`](../../../backend/app/services/photo.py#L202-L207), [`test_api_photos.py`](../../../backend/tests/test_api_photos.py#L33-L84), [`test_critique_repository_and_api.py`](../../../backend/tests/test_critique_repository_and_api.py#L304-L344), [`test_critique_cancellation.py`](../../../backend/tests/test_critique_cancellation.py#L187-L241)
+  - **원인 및 조치**: ① `models.AIAnalysis`에 `to_dict()` 및 `empty_dict()` 직렬화 헬퍼를 도입하고 `patch_photo_metadata`(`PATCH /api/photos/{id}/metadata`)에서 이를 사용해 캡션/태그 수정 시 `critique`, `critique_en` 및 4종 평점(`overall_score`, `iaa_score`, `iqa_score`, `ista_score`), `critique_updated_at` 전체 11개 필드가 유실 없이 보존 반환되도록 수정, ② `delete_photo_critique`(`DELETE /api/chat/critique/{photo_id}`)에서 DB 비평 초기화 직후 `critique_status_manager.clear(photo_id)`를 호출하여 인메모리 캐시에서 삭제된 비평이 좀비 상태로 부활하는 결함 차단, ③ `ChatService._cancel_task_threadsafe`를 도입하여 워커 스레드에서 `cancel_critique` 호출 시 실행 중인 이벤트 루프가 있으면 `loop.call_soon_threadsafe(task.cancel)`로 스레드 경계 안전하게 취소를 스케줄링하고 `MagicMock`이나 비실행 루프에서는 `task.cancel()`로 안전 폴백 처리, ④ `PhotoRepository`에 `get_ai_analysis`, `update_caption_and_tags`, `upsert_critique`, `list_critiques(sort_by=..., photo_ids=...)`를 캡슐화하여 `ChatService`, `CritiqueStatusManager`, `services/photo.py`의 직접 ORM 쿼리 우회를 제거.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/ -v` (`119 passed`), `npx tsc --noEmit && npm run build` (`PASS`)
 
 ### [REFACTOR-06] UniPercept Eager Import(Rule 2.5)·추론 예외 삼킴(폴백 무력화/DB 오염)·RAW 저해상도 디코딩 및 `GPU_LOCK`/메모리 누수 교정
 - **심각도**: 🔴 Must Fix (즉시 조치·QA 진입 차단)
