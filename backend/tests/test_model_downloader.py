@@ -198,4 +198,69 @@ def test_calculate_overall_progress_requires_all_known_models():
     assert result_done["is_all_done"] is True
 
 
+def test_start_background_model_downloader_prevents_duplicate_threads_when_alive(monkeypatch):
+    """TC-CF-05 / DEFECT-04: start_background_model_downloader(force=True) must not spawn a new thread when already alive."""
+    import threading
+    import services.model_downloader as md
+
+    # Reset downloader thread state
+    with md._downloader_lock:
+        md._downloader_thread = None
+
+    stop_event = threading.Event()
+    started_event = threading.Event()
+
+    def mock_download():
+        started_event.set()
+        stop_event.wait(timeout=5)
+        return True
+
+    monkeypatch.setattr(md, "download_models_background", mock_download)
+
+    try:
+        # 1. First start should succeed
+        first_started = md.start_background_model_downloader(force=False)
+        assert first_started is True
+        assert started_event.wait(timeout=2) is True
+        initial_thread = md._downloader_thread
+        assert initial_thread is not None
+        assert initial_thread.is_alive() is True
+
+        # 2. While initial thread is alive, calling with force=True MUST NOT start a new thread
+        second_started = md.start_background_model_downloader(force=True)
+        assert second_started is False
+        assert md._downloader_thread is initial_thread
+
+        # 3. API endpoint POST /api/system/models/download should also return started=False
+        response = client.post("/api/system/models/download")
+        assert response.status_code == 200
+        assert response.json()["started"] is False
+        assert md._downloader_thread is initial_thread
+
+        # 4. Wait for initial thread to terminate
+        stop_event.set()
+        initial_thread.join(timeout=3)
+        assert initial_thread.is_alive() is False
+
+        # 5. When thread is stopped, force=False returns False
+        retry_passive = md.start_background_model_downloader(force=False)
+        assert retry_passive is False
+
+        # 6. When thread is stopped, force=True successfully restarts a new thread
+        stop_event.clear()
+        started_event.clear()
+        retry_forced = md.start_background_model_downloader(force=True)
+        assert retry_forced is True
+        assert started_event.wait(timeout=2) is True
+        new_thread = md._downloader_thread
+        assert new_thread is not initial_thread
+        assert new_thread.is_alive() is True
+    finally:
+        stop_event.set()
+        if md._downloader_thread is not None:
+            md._downloader_thread.join(timeout=3)
+        with md._downloader_lock:
+            md._downloader_thread = None
+
+
 

@@ -410,7 +410,11 @@ _downloader_lock = threading.RLock()
 def start_background_model_downloader(force: bool = False) -> bool:
     global _downloader_thread
     with _downloader_lock:
-        if force or _downloader_thread is None or not _downloader_thread.is_alive():
+        if _downloader_thread is not None and _downloader_thread.is_alive():
+            logger.info("[Downloader] Background model downloader thread is already running.")
+            return False
+
+        if force or _downloader_thread is None:
             print("[Downloader] Starting background model downloader thread...", flush=True)
             _downloader_thread = threading.Thread(target=download_models_background, daemon=True)
             _downloader_thread.start()
