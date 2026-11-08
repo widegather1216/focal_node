@@ -1,8 +1,8 @@
 # 🧪 [01_indexing_storage] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-01~02 해결 완료 / DEFECT 9건 잔여 디버깅 진행 중)`
+- **검증 상태**: `🩹 Debugging (DEFECT-01~03 해결 완료 / DEFECT 8건 잔여 디버깅 진행 중)`
 - **인수 조건 통과율**: `1 / 4 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 9건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 8건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -51,7 +51,7 @@
 | **Happy** | `TC-IDX-06` | 2-Pass 점진적 인덱싱 (`[To-Be]`) | 신규 폴더 등록 직후 갤러리 조회 | Pass 1 직후 썸네일/EXIF 즉시 노출 | `⏳ Pending` |
 | **Boundary**| `TC-IDX-07` | ChromaDB 임베딩 조회 ndarray 불리언 예외 방지 | `get_embedding_by_id` 호출 | ndarray 불리언 평가 에러 없이 list 반환 | `PASS (Fixed in DEFECT-01)` |
 | **Boundary**| `TC-IDX-08` | ChromaDB 삭제 실패 시 보상 트랜잭션 롤백 | `delete_and_commit` 시 Chroma 에러 | SQLite 삭제 취소 및 예외 재전파 | `PASS (Fixed in DEFECT-02)` |
-| **Boundary**| `TC-IDX-09` | 인덱싱/동기화 동시 호출 시 TOCTOU 방지 | `start` + `sync` 동시 호출 | 단일 태스크만 시작되고 벡터 소실 차단 | `FAIL (DEFECT-03)` |
+| **Boundary**| `TC-IDX-09` | 인덱싱/동기화 동시 호출 시 TOCTOU 방지 | `start` + `sync` 동시 호출 | 단일 태스크만 시작되고 벡터 소실 차단 | `PASS (Fixed in DEFECT-03)` |
 | **Negative**| `TC-IDX-10` | 배치 커밋 실패 시 에러 전파 및 거짓 완료 차단 | `_commit_batch_with_retry` 3회 실패 | 예외 raise 및 status="error" 전이 | `FAIL (DEFECT-04)` |
 | **Boundary**| `TC-IDX-11` | 수정 파일 재인덱싱 중단 시 기존 레코드 보존 | 재인덱싱 중 취소/실패 주입 | 신규 커밋 전 구 레코드 조기 삭제 차단 | `FAIL (DEFECT-05)` |
 | **Boundary**| `TC-IDX-12` | macOS NFD/NFC 한글 폴더 사진 오삭제 방지 | 한글 폴더 NFD/NFC 동기화 | 좀비 오판 차단 및 사진 보존 | `FAIL (DEFECT-06)` |
@@ -82,12 +82,12 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_08` (`PASS`), `./venv/bin/pytest backend/tests/` (134 passed)
 
 ### [DEFECT-03] `start_indexing` / `sync_database` TOCTOU 동시성 레이스로 인한 중복 인덱서 실행 및 ChromaDB 벡터 영구 소실
-- **현재 상태**: `🟡 OPEN`
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
 - **심각도**: 🔴 P0 Critical (Concurrency Race & Data Desync)
-- **위치**: [`backend/app/api/indexing.py#L20-L45`](../../../backend/app/api/indexing.py#L20-L45), [`L50-L71`](../../../backend/app/api/indexing.py#L50-L71), [`backend/app/repositories/atomic_transaction.py#L49-L60`](../../../backend/app/repositories/atomic_transaction.py#L49-L60)
-- **실증 여부**: `✅ Deterministic Trace Verified`
-- **근본 원인 분석**: 상태 검사(`status in [...]`) 후 락 없이 `add_folder`, `db.commit()`을 거친 뒤 `status="processing"`을 설정함. 동시 호출 시 두 개의 `run_indexing_background`가 병렬 구동되어 동일 배치를 커밋 시도함. Run 1이 정상 저장한 후 Run 2가 커밋 시도 시 SQLite UNIQUE constraint 에러가 발생하며, Run 2의 `CompensatingTransactionManager`가 `vector_repo.delete(image_ids)`를 실행하여 Run 1이 저장한 정상 ChromaDB 벡터를 소실시킴.
-- **수정 설계 방향**: 상태 확인 및 "processing" 전이를 원자적 락(`threading.Lock`) 하에서 수행하고, 인덱싱 시작 즉시 `status = "processing"`을 선점.
+- **해결 내역**:
+  - **수정 파일**: [`backend/app/services/indexing_state.py`](../../../backend/app/services/indexing_state.py#L102-L135), [`backend/app/api/indexing.py`](../../../backend/app/api/indexing.py#L20-L75), [`backend/app/services/indexing_service.py`](../../../backend/app/services/indexing_service.py#L505-L515), [`backend/tests/test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py#L366-L470)
+  - **원인 및 조치**: `start_indexing` 및 `sync_database`에서 상태 검사 후 경로/DB 처리 도중 락 없이 경과하다가 뒤늦게 `status="processing"`을 설정하던 TOCTOU 레이스를 해소하기 위해, `IndexingStateManager`에 원자적 상태 선점 메서드 `try_start_indexing()`을 도입하여 락 내부에서 즉시 `"processing"`을 선점하고 경합 요청을 400 거부하도록 조치. 또한 경로/DB 작업 예외 발생 시 `reset_status()`로 안전 롤백하고, `run_indexing_background` startup 시 `initialize_background_run()`으로 상태가 순간적으로 `idle`로 풀리는 레이스를 원천 차단함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_09` (`PASS`), `./venv/bin/pytest backend/tests/` (135 passed)
 
 ### [DEFECT-04] `_commit_batch_with_retry` 3회 실패 시 예외 삼킴으로 인한 대규모 사진 유실 및 거짓 정상 완료 위장
 - **현재 상태**: `🟡 OPEN`
