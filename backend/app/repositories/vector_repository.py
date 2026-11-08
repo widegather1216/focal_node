@@ -57,6 +57,17 @@ class VectorRepository:
                 ids=[photo_id],
                 include=["embeddings"]
             )
-            if target_data and target_data.get('embeddings') and len(target_data['embeddings']) > 0:
-                return target_data['embeddings'][0]
-            return None
+            if not target_data:
+                return None
+
+            embeddings = target_data.get("embeddings")
+            if embeddings is None or len(embeddings) == 0:
+                return None
+
+            first_embedding = embeddings[0]
+            if len(first_embedding) == 0:
+                return None
+
+            if hasattr(first_embedding, "tolist"):
+                return first_embedding.tolist()
+            return list(first_embedding)

@@ -252,6 +252,65 @@ def test_vector_repository_zero_n_results():
     assert repo.query_similar_by_embedding([0.1] * 128, n_results=-5) == []
 
 
+def test_tc_idx_07_get_embedding_by_id_ndarray_and_boundary():
+    """
+    [TC-IDX-07 / DEFECT-01]
+    Verifies VectorRepository.get_embedding_by_id safely handles:
+    1. NumPy ndarray (prevents ValueError: The truth value of an array with more than one element is ambiguous)
+    2. Conversion from ndarray to standard Python list
+    3. Boundary conditions: empty ndarray, empty list, None embeddings, count == 0
+    4. Missing photo ID
+    """
+    from unittest.mock import MagicMock, patch
+    import numpy as np
+    from repositories.vector_repository import VectorRepository
+
+    repo = VectorRepository()
+    mock_coll = MagicMock()
+
+    # 1. Normal NumPy ndarray (shape 1, 3)
+    mock_coll.count.return_value = 5
+    mock_coll.get.return_value = {"embeddings": np.array([[0.1, 0.2, 0.3]])}
+    with patch.object(VectorRepository, "collection", new_callable=lambda: mock_coll):
+        res = repo.get_embedding_by_id("photo_valid_ndarray")
+        assert isinstance(res, list)
+        assert res == [0.1, 0.2, 0.3]
+
+    # 2. Python list of floats
+    mock_coll.get.return_value = {"embeddings": [[0.4, 0.5, 0.6]]}
+    with patch.object(VectorRepository, "collection", new_callable=lambda: mock_coll):
+        res = repo.get_embedding_by_id("photo_valid_list")
+        assert isinstance(res, list)
+        assert res == [0.4, 0.5, 0.6]
+
+    # 3. Empty ndarray 1D and 2D
+    mock_coll.get.return_value = {"embeddings": np.array([])}
+    with patch.object(VectorRepository, "collection", new_callable=lambda: mock_coll):
+        assert repo.get_embedding_by_id("photo_empty_ndarray_1d") is None
+
+    mock_coll.get.return_value = {"embeddings": np.empty((0, 768))}
+    with patch.object(VectorRepository, "collection", new_callable=lambda: mock_coll):
+        assert repo.get_embedding_by_id("photo_empty_ndarray_2d") is None
+
+    # 4. Empty list / None embeddings / Missing ID
+    mock_coll.get.return_value = {"embeddings": []}
+    with patch.object(VectorRepository, "collection", new_callable=lambda: mock_coll):
+        assert repo.get_embedding_by_id("photo_empty_list") is None
+
+    mock_coll.get.return_value = {"embeddings": None}
+    with patch.object(VectorRepository, "collection", new_callable=lambda: mock_coll):
+        assert repo.get_embedding_by_id("photo_none_embeddings") is None
+
+    mock_coll.get.return_value = {}
+    with patch.object(VectorRepository, "collection", new_callable=lambda: mock_coll):
+        assert repo.get_embedding_by_id("photo_missing_id") is None
+
+    # 5. count == 0
+    mock_coll.count.return_value = 0
+    with patch.object(VectorRepository, "collection", new_callable=lambda: mock_coll):
+        assert repo.get_embedding_by_id("photo_zero_count") is None
+
+
 def test_start_indexing_empty_payload(client):
     """
     Verifies /api/index/start returns 400 Bad Request if folder_paths is empty.
