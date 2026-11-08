@@ -8,10 +8,10 @@
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
 - **Active 도메인**: [`01_indexing_storage`](./features/01_indexing_storage/README.md)
-- **현재 단계 (Stage)**: `🩹 Debugging (DEFECT-01 해결 완료, P0 결함 DEFECT-02 등 10건 잔여 디버깅 진행 중)`
-- **직전 완료 작업**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) 도메인 DEFECT-01 해결 완료 (`VectorRepository.get_embedding_by_id`의 NumPy array 불리언 평가로 인한 100% `ValueError` 크래시 해소, Guard Clause 및 `.tolist()` 변환 적용, TC-IDX-07 통과 및 백엔드 133종 전수 통과)
+- **현재 단계 (Stage)**: `🩹 Debugging (DEFECT-01~02 해결 완료, P0 결함 DEFECT-03 등 9건 잔여 디버깅 진행 중)`
+- **직전 완료 작업**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) 도메인 DEFECT-02 해결 완료 (`VectorRepository.delete` 예외 삼킴 제거 및 raise 전파, `CompensatingTransactionManager.delete_and_commit` SQLite 롤백 연계 보장으로 좀비 벡터 영구 잔류 방지, TC-IDX-08 통과 및 백엔드 134종 전수 통과)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"01_indexing_storage 도메인의 DEFECT-02 티켓 해결해줘"` *(VectorRepository.delete 예외 삼킴 제거 및 보상 트랜잭션 SQLite 롤백 복구)*
+  > `"01_indexing_storage 도메인의 DEFECT-03 티켓 해결해줘"` *(start_indexing / sync_database TOCTOU 동시성 레이스 차단 및 인덱서 원자적 선점)*
 
 ---
 
@@ -20,7 +20,7 @@
 | 도메인 (Bounded Context) | 생명주기 상태 | 구현 진척도 (Active Step 1~4) | QA 인수 통과율 | 미해결 티켓 (`🚨D` / `🧐R`) | 최근 작업 요약 |
 | :--- | :--- :---: | :---: | :---: | :---: | :--- |
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `5/5 (100%)` | `0 / 0` | DEFECT-01~04 전수 해결 완료 (손상 인덱스 valid=False, 실패 시 거짓 완료 차단, 1종 조기완료 차단, 중복 스레드/락 삭제 가드), Sign-Off 완료 |
-| 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `4/17 (24%)` | `10 / 0` | DEFECT-01 해결 완료(VectorRepo ndarray 크래시 해소, TC-IDX-07 PASS), DEFECT-02~11 10건 잔여 |
+| 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `5/17 (29%)` | `9 / 0` | DEFECT-02 해결 완료(VectorRepo delete 예외 전파 및 SQLite 롤백 복구, TC-IDX-08 PASS), DEFECT-03~11 9건 잔여 |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 📐 Planning | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 거리 임계값 + RRF 랭킹 + 35mm/점수 필터 + 스마트 앨범 Step 1~4 대기 |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `13/13 (100%)` | `0 / 2` | `DEFECT-02~03` 및 `REFACTOR-04~07` 해결 완료, `REFACTOR` 2건 대기 |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 📐 Planning | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 2` | 통계 차트 클릭 갤러리 드릴다운(`Click-to-Filter`) Step 3~4 대기 |
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-08]` `[systematic-debugger]` [`01_indexing_storage`]**: DEFECT-02 결함 해결 완료 (`backend/app/repositories/vector_repository.py`의 `delete`에서 ChromaDB `collection.delete` 실패 시 예외를 삼키던 결함을 제거하고 `logger.error` 후 `raise`로 재전파하여, `CompensatingTransactionManager.delete_and_commit`이 SQLite 커밋을 강행하지 않고 `rollback`을 수행하도록 보장함으로써 SQLite만 삭제되고 ChromaDB에 좀비 벡터가 영구 잔류하는 정합성 붕괴 완전 해소, 신규 연계 회귀 단위 테스트 `TC-IDX-08`(`test_tc_idx_08_vector_repository_delete_raises_and_compensating_tx_rollbacks`) 작성 및 통과, 백엔드 테스트 134종(`134 passed`) 및 `tsc` 100% 통과, `verification.md`/`README.md` 동기화).
 
 - **`[2026-11-08]` `[systematic-debugger]` [`01_indexing_storage`]**: DEFECT-01 결함 해결 완료 (`backend/app/repositories/vector_repository.py`의 `get_embedding_by_id`에서 ChromaDB 반환 `numpy.ndarray`에 대한 직접 불리언 평가를 제거하고 Guard Clause 및 `.tolist()` 적용으로 `ValueError: The truth value of an array with more than one element is ambiguous` 런타임 크래시 완전 해소, 신규 경계값 회귀 단위 테스트 `TC-IDX-07` 작성 및 통과, 백엔드 테스트 133종(`133 passed`) 및 `tsc` 100% 통과, `verification.md`/`README.md` 동기화).
 

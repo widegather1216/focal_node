@@ -1,8 +1,8 @@
 # 🧪 [01_indexing_storage] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-01 해결 완료 / DEFECT 10건 잔여 디버깅 진행 중)`
+- **검증 상태**: `🩹 Debugging (DEFECT-01~02 해결 완료 / DEFECT 9건 잔여 디버깅 진행 중)`
 - **인수 조건 통과율**: `1 / 4 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 10건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 9건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -50,7 +50,7 @@
 | **Happy** | `TC-IDX-05` | 파일 이름 변경/이동 재연결 (`[To-Be]`) | 파일 이동 후 `/api/index/sync` | AI 재추론 없이 경로 갱신 및 비평 보존 | `⏳ Pending` |
 | **Happy** | `TC-IDX-06` | 2-Pass 점진적 인덱싱 (`[To-Be]`) | 신규 폴더 등록 직후 갤러리 조회 | Pass 1 직후 썸네일/EXIF 즉시 노출 | `⏳ Pending` |
 | **Boundary**| `TC-IDX-07` | ChromaDB 임베딩 조회 ndarray 불리언 예외 방지 | `get_embedding_by_id` 호출 | ndarray 불리언 평가 에러 없이 list 반환 | `PASS (Fixed in DEFECT-01)` |
-| **Boundary**| `TC-IDX-08` | ChromaDB 삭제 실패 시 보상 트랜잭션 롤백 | `delete_and_commit` 시 Chroma 에러 | SQLite 삭제 취소 및 예외 재전파 | `FAIL (DEFECT-02)` |
+| **Boundary**| `TC-IDX-08` | ChromaDB 삭제 실패 시 보상 트랜잭션 롤백 | `delete_and_commit` 시 Chroma 에러 | SQLite 삭제 취소 및 예외 재전파 | `PASS (Fixed in DEFECT-02)` |
 | **Boundary**| `TC-IDX-09` | 인덱싱/동기화 동시 호출 시 TOCTOU 방지 | `start` + `sync` 동시 호출 | 단일 태스크만 시작되고 벡터 소실 차단 | `FAIL (DEFECT-03)` |
 | **Negative**| `TC-IDX-10` | 배치 커밋 실패 시 에러 전파 및 거짓 완료 차단 | `_commit_batch_with_retry` 3회 실패 | 예외 raise 및 status="error" 전이 | `FAIL (DEFECT-04)` |
 | **Boundary**| `TC-IDX-11` | 수정 파일 재인덱싱 중단 시 기존 레코드 보존 | 재인덱싱 중 취소/실패 주입 | 신규 커밋 전 구 레코드 조기 삭제 차단 | `FAIL (DEFECT-05)` |
@@ -74,12 +74,12 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_07_get_embedding_by_id_ndarray_and_boundary` (`PASS`), `./venv/bin/pytest backend/tests/` (133 passed)
 
 ### [DEFECT-02] `VectorRepository.delete`의 예외 삼킴으로 인한 보상 트랜잭션 무력화 및 좀비 벡터 영구 잔류
-- **현재 상태**: `🟡 OPEN`
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
 - **심각도**: 🔴 P0 Critical (Multi-Store Consistency & Zombie Vectors)
-- **위치**: [`backend/app/repositories/vector_repository.py#L33-L37`](../../../backend/app/repositories/vector_repository.py#L33-L37), [`backend/app/repositories/atomic_transaction.py#L62-L82`](../../../backend/app/repositories/atomic_transaction.py#L62-L82)
-- **실증 여부**: `✅ Empirical Probe Reproduced`
-- **근본 원인 분석**: `VectorRepository.delete`가 ChromaDB 삭제 실패 시 `except Exception as chroma_err:`에서 로그만 출력하고 예외를 삼킴. `CompensatingTransactionManager.delete_and_commit`은 삭제 성공으로 오판하여 SQLite 커밋을 강행함. SQLite 레코드만 삭제되고 ChromaDB에 좀비 벡터가 영구 잔류하여 유사도 검색 및 페이징이 붕괴됨.
-- **수정 설계 방향**: `VectorRepository.delete`에서 예외 발생 시 로깅 후 `raise`로 재전파하여 `delete_and_commit`이 SQLite 롤백을 수행하도록 보장.
+- **해결 내역**:
+  - **수정 파일**: [`backend/app/repositories/vector_repository.py`](../../../backend/app/repositories/vector_repository.py#L30-L40), [`backend/tests/test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py#L315-L365)
+  - **원인 및 조치**: `VectorRepository.delete`에서 ChromaDB `collection.delete` 청크 삭제 실패 시 예외를 삼키던(`except Exception: print`) 결함을 `logger.error` 로깅 후 `raise`로 재전파하도록 수정. 이로써 `CompensatingTransactionManager.delete_and_commit`이 예외를 감지하여 SQLite `commit`을 중단하고 `rollback`을 수행하도록 보장하여 다중 저장소 정합성 및 좀비 벡터 영구 잔류를 원천 차단.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_08` (`PASS`), `./venv/bin/pytest backend/tests/` (134 passed)
 
 ### [DEFECT-03] `start_indexing` / `sync_database` TOCTOU 동시성 레이스로 인한 중복 인덱서 실행 및 ChromaDB 벡터 영구 소실
 - **현재 상태**: `🟡 OPEN`
