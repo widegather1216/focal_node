@@ -1,7 +1,9 @@
+import logging
 import threading
 from typing import List, Dict, Any, Optional
 from chroma import get_chroma_collection
 
+logger = logging.getLogger("focal_node.vector_repository")
 _vector_lock = threading.RLock()
 
 class VectorRepository:
@@ -33,7 +35,9 @@ class VectorRepository:
                     try:
                         self.collection.delete(ids=chunk)
                     except Exception as chroma_err:
+                        logger.error(f"[VectorRepository] Failed to delete chunk from ChromaDB: {chroma_err}")
                         print(f"[VectorRepository] Failed to delete chunk from ChromaDB: {chroma_err}", flush=True)
+                        raise
 
     def query_similar_by_embedding(self, query_embedding: List[float], n_results: int) -> List[str]:
         with _vector_lock:

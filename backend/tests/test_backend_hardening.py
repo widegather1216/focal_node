@@ -311,6 +311,58 @@ def test_tc_idx_07_get_embedding_by_id_ndarray_and_boundary():
         assert repo.get_embedding_by_id("photo_zero_count") is None
 
 
+def test_tc_idx_08_vector_repository_delete_raises_and_compensating_tx_rollbacks():
+    """
+    [TC-IDX-08 / DEFECT-02]
+    Verifies that:
+    1. VectorRepository.delete re-raises exceptions when ChromaDB collection.delete fails,
+       rather than silently catching/swallowing them.
+    2. CompensatingTransactionManager.delete_and_commit catches this re-raised exception,
+       prevents SQLite commit, and invokes SQLite rollback cleanly to prevent zombie vectors.
+    3. Normal successful deletion invokes ChromaDB delete and commits SQLite transaction.
+    """
+    from unittest.mock import MagicMock, patch
+    from repositories.vector_repository import VectorRepository
+    from repositories.atomic_transaction import CompensatingTransactionManager
+
+    repo = VectorRepository()
+    mock_coll = MagicMock()
+    mock_db = MagicMock()
+
+    # 1. Direct VectorRepository.delete re-raises on ChromaDB error
+    mock_coll.delete.side_effect = RuntimeError("ChromaDB connection lost")
+    with patch.object(VectorRepository, "collection", new_callable=lambda: mock_coll):
+        with pytest.raises(RuntimeError, match="ChromaDB connection lost"):
+            repo.delete(["photo_err_1", "photo_err_2"])
+
+    # 2. End-to-end integration with CompensatingTransactionManager.delete_and_commit
+    # When ChromaDB fails, SQLite commit must NOT be called and rollback MUST be called.
+    mock_coll.delete.side_effect = RuntimeError("ChromaDB I/O disk failure")
+    mock_db.reset_mock()
+
+    with patch.object(VectorRepository, "collection", new_callable=lambda: mock_coll):
+        mgr = CompensatingTransactionManager(db_session=mock_db, vector_repo=repo)
+        with pytest.raises(RuntimeError, match="ChromaDB I/O disk failure"):
+            mgr.delete_and_commit(["orphan_photo_hash"])
+
+        assert not mock_db.commit.called, "SQLite commit must NOT be called when ChromaDB delete fails!"
+        assert mock_db.rollback.called, "SQLite rollback MUST be invoked to prevent zombie vectors!"
+
+    # 3. Successful deletion path
+    mock_coll.reset_mock()
+    mock_coll.delete.side_effect = None
+    mock_db.reset_mock()
+
+    with patch.object(VectorRepository, "collection", new_callable=lambda: mock_coll):
+        mgr = CompensatingTransactionManager(db_session=mock_db, vector_repo=repo)
+        success = mgr.delete_and_commit(["clean_photo_1", "clean_photo_2"])
+
+        assert success is True
+        mock_coll.delete.assert_called_once_with(ids=["clean_photo_1", "clean_photo_2"])
+        assert mock_db.commit.called
+        assert not mock_db.rollback.called
+
+
 def test_start_indexing_empty_payload(client):
     """
     Verifies /api/index/start returns 400 Bad Request if folder_paths is empty.
