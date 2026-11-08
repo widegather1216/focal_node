@@ -1,8 +1,8 @@
 # 💾 [01_indexing_storage] Indexing Pipeline, Storage & RAW Media
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (딥버그 헌팅 DEFECT-01~11 발권 / 우선순위 결함 디버깅 대기)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-01 해결 완료 / DEFECT 10건 잔여 디버깅 진행 중)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 11건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 10건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -35,9 +35,10 @@
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-11-07 / deep-bug-hunter / 3-Lens 적대적 딥버그 헌팅 완료 (DEFECT-01~11 총 11건 발권 및 실증 검증 완료)`
-- **발굴된 핵심 결함 (DEFECT Logs)**:
-  - `DEFECT-01`: `VectorRepository.get_embedding_by_id`의 NumPy array 불리언 평가로 인한 100% `ValueError` 크래시 (재인덱싱/검색 불가)
+- **직전 완료 작업**: `2026-11-08 / systematic-debugger / DEFECT-01 해결 완료 (VectorRepository.get_embedding_by_id ndarray 크래시 해소 및 TC-IDX-07 PASS)`
+- **해결된 결함 (Resolved Defect)**:
+  - `DEFECT-01`: ChromaDB `get(include=["embeddings"])` 반환 `numpy.ndarray`에 대한 직접 불리언 평가 제거, Guard Clause 및 `.tolist()` 변환으로 100% `ValueError` 크래시 방지 및 단일 사진 재인덱싱/유사도 검색 안정화.
+- **잔여 우선순위 결함 (Open DEFECT Logs)**:
   - `DEFECT-02`: `VectorRepository.delete` 예외 삼킴으로 인한 `delete_and_commit` 보상 트랜잭션 무력화 및 ChromaDB 좀비 벡터 영구 잔류
   - `DEFECT-03`: `start_indexing` / `sync_database` TOCTOU 동시성 레이스로 인한 중복 인덱서 실행 및 ChromaDB 벡터 영구 소실
   - `DEFECT-04`: `_commit_batch_with_retry` 3회 실패 시 예외 삼킴으로 인한 대규모 사진 유실 및 거짓 정상 완료(`status="idle"`) 위장
@@ -45,7 +46,8 @@
   - `DEFECT-06`: macOS NFD/NFC 정규화 불일치로 인한 `_identify_zombie_photo_ids`의 한글 폴더 사진 전량 오삭제
   - `DEFECT-07~11`: ExifRead `values=[]` IndexError, 비동기 라우트 동기 DB 쿼리 이벤트 루프 동결, `_pause_loop` 고착, 내보내기 허위 성공 표시, `DELETE /api/folders` 무검증 재귀 삭제
 - **검증 완료된 테스트 실행 명령어**:
-  - `python3 -B ~/.gemini/config/skills/interactive-feature-planner/scripts/check_wiki_health.py docs`
-  - `./venv/bin/pytest backend/tests/` (132 passed)
-- **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - `systematic-debugger`를 통해 최우선 크래시 및 데이터 소실 버그인 `DEFECT-01`(`VectorRepository.get_embedding_by_id` ndarray 크래시) 및 `DEFECT-02`(`VectorRepository.delete` 예외 삼킴)부터 순차적 해결 필요.
+  - `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_07_get_embedding_by_id_ndarray_and_boundary` (PASS)
+  - `./venv/bin/pytest backend/tests/` (133 passed)
+  - `python3 -B ~/.gemini/config/skills/interactive-feature-planner/scripts/check_wiki_health.py docs` (exit 0)
+- **다음 세션 포커스 및 추천 프롬프트**:
+  - `DEFECT-02` 해결: `"01_indexing_storage 도메인의 DEFECT-02 티켓 해결해줘"` (VectorRepository.delete 예외 삼킴 제거 및 보상 트랜잭션 SQLite 롤백 복구)

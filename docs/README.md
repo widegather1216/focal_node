@@ -1,17 +1,17 @@
 # 🧭 Focal Node: Master Control Tower (Living Wiki Hub)
 
 > 외부 클라우드 전송 없이 Mac Native(Apple MLX & PyTorch MPS)로 구동되는 **프라이버시 보호 로컬 사진 관리 및 AI 시맨틱 검색/비평 데스크탑 플랫폼**입니다.
-> **최종 업데이트**: 2026-11-07 (by `deep-bug-hunter`)
+> **최종 업데이트**: 2026-11-08 (by `systematic-debugger`)
 
 ---
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
 - **Active 도메인**: [`01_indexing_storage`](./features/01_indexing_storage/README.md)
-- **현재 단계 (Stage)**: `🩹 Debugging (딥버그 헌팅 DEFECT-01~11 총 11건 발권, P0 Critical 6건 즉시 디버깅 착수 대기)`
-- **직전 완료 작업**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) 도메인 3-Lens 적대적 딥버그 헌팅 완료 (`VectorRepository.get_embedding_by_id`의 NumPy array 불리언 평가로 인한 100% 런타임 크래시 `DEFECT-01`, `VectorRepository.delete` 예외 삼킴으로 인한 보상 트랜잭션 무력화 및 좀비 벡터 영구 잔류 `DEFECT-02`, `start_indexing`/`sync_database` TOCTOU 레이스로 인한 중복 인덱서 실행 및 ChromaDB 벡터 영구 소실 `DEFECT-03`, `_commit_batch_with_retry` 3회 실패 시 예외 삼킴으로 인한 대규모 사진 유실 및 거짓 정상 완료 위장 `DEFECT-04`, `index_single_file_sync` 선행 삭제(Delete-Before-Commit)로 인한 수정 파일 재인덱싱 중단 시 데이터 증발 `DEFECT-05`, macOS NFD/NFC 정규화 불일치로 인한 `_identify_zombie_photo_ids` 한글 폴더 사진 전량 오삭제 `DEFECT-06` 등 P0 6건, P1 5건 총 11건 발권 및 실증 완료)
+- **현재 단계 (Stage)**: `🩹 Debugging (DEFECT-01 해결 완료, P0 결함 DEFECT-02 등 10건 잔여 디버깅 진행 중)`
+- **직전 완료 작업**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) 도메인 DEFECT-01 해결 완료 (`VectorRepository.get_embedding_by_id`의 NumPy array 불리언 평가로 인한 100% `ValueError` 크래시 해소, Guard Clause 및 `.tolist()` 변환 적용, TC-IDX-07 통과 및 백엔드 133종 전수 통과)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"01_indexing_storage 도메인의 DEFECT-01 티켓 해결해줘"` *(VectorRepository.get_embedding_by_id ndarray 크래시 해소 및 단일 사진 재인덱싱 복구)*
+  > `"01_indexing_storage 도메인의 DEFECT-02 티켓 해결해줘"` *(VectorRepository.delete 예외 삼킴 제거 및 보상 트랜잭션 SQLite 롤백 복구)*
 
 ---
 
@@ -20,7 +20,7 @@
 | 도메인 (Bounded Context) | 생명주기 상태 | 구현 진척도 (Active Step 1~4) | QA 인수 통과율 | 미해결 티켓 (`🚨D` / `🧐R`) | 최근 작업 요약 |
 | :--- | :--- :---: | :---: | :---: | :---: | :--- |
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `5/5 (100%)` | `0 / 0` | DEFECT-01~04 전수 해결 완료 (손상 인덱스 valid=False, 실패 시 거짓 완료 차단, 1종 조기완료 차단, 중복 스레드/락 삭제 가드), Sign-Off 완료 |
-| 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `3/17 (18%)` | `11 / 0` | 3-Lens 딥버그 헌팅 완료 (DEFECT-01~11 총 11건 발권: VectorRepo ndarray 크래시, 보상Tx 예외삼킴 좀비벡터, TOCTOU 벡터소실, 3회실패 은폐 등) |
+| 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `4/17 (24%)` | `10 / 0` | DEFECT-01 해결 완료(VectorRepo ndarray 크래시 해소, TC-IDX-07 PASS), DEFECT-02~11 10건 잔여 |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 📐 Planning | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 거리 임계값 + RRF 랭킹 + 35mm/점수 필터 + 스마트 앨범 Step 1~4 대기 |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `13/13 (100%)` | `0 / 2` | `DEFECT-02~03` 및 `REFACTOR-04~07` 해결 완료, `REFACTOR` 2건 대기 |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 📐 Planning | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 2` | 통계 차트 클릭 갤러리 드릴다운(`Click-to-Filter`) Step 3~4 대기 |
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-08]` `[systematic-debugger]` [`01_indexing_storage`]**: DEFECT-01 결함 해결 완료 (`backend/app/repositories/vector_repository.py`의 `get_embedding_by_id`에서 ChromaDB 반환 `numpy.ndarray`에 대한 직접 불리언 평가를 제거하고 Guard Clause 및 `.tolist()` 적용으로 `ValueError: The truth value of an array with more than one element is ambiguous` 런타임 크래시 완전 해소, 신규 경계값 회귀 단위 테스트 `TC-IDX-07` 작성 및 통과, 백엔드 테스트 133종(`133 passed`) 및 `tsc` 100% 통과, `verification.md`/`README.md` 동기화).
 
 - **`[2026-11-07]` `[deep-bug-hunter]` [`01_indexing_storage`]**: 3-Lens 다중 관점 적대적 딥버그 헌팅 및 실증 마이크로 프로빙 완료 (`VectorRepository.get_embedding_by_id`의 NumPy array 불리언 평가로 인한 100% 런타임 크래시 `DEFECT-01`, `VectorRepository.delete` 예외 삼킴으로 인한 보상 트랜잭션 무력화 및 ChromaDB 좀비 벡터 영구 잔류 `DEFECT-02`, `start_indexing`/`sync_database` TOCTOU 레이스로 인한 중복 인덱서 실행 및 ChromaDB 벡터 영구 소실 `DEFECT-03`, `_commit_batch_with_retry` 3회 실패 시 예외 삼킴으로 인한 대규모 사진 유실 및 거짓 정상 완료 위장 `DEFECT-04`, `index_single_file_sync` 선행 삭제(Delete-Before-Commit)로 인한 수정 파일 재인덱싱 중단 시 데이터 증발 `DEFECT-05`, macOS NFD/NFC 정규화 불일치로 인한 `_identify_zombie_photo_ids` 한글 폴더 사진 전량 오삭제 `DEFECT-06`, `_get_tag_val` ExifRead 빈 리스트 `IndexError` `DEFECT-07`, 비동기 미디어 라우트 내 동기 DB I/O 호출 이벤트 루프 동결 `DEFECT-08`, `IndexingStateManager._pause_loop` 고착 `DEFECT-09`, `ActionBar.tsx` 내보내기 허위 성공 표시 `DEFECT-10`, `DELETE /api/folders` 무검증 상위 경로 재귀 일괄 삭제 `DEFECT-11` 총 `DEFECT 11건` 등록, 백엔드 테스트 132종 정상 유지).
 

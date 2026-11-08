@@ -1,8 +1,8 @@
 # 🧪 [01_indexing_storage] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (딥버그 헌팅 DEFECT 11건 발권 / Baseline AC 재검증 대기)`
+- **검증 상태**: `🩹 Debugging (DEFECT-01 해결 완료 / DEFECT 10건 잔여 디버깅 진행 중)`
 - **인수 조건 통과율**: `1 / 4 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 11건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 10건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -49,7 +49,7 @@
 | **Negative**| `TC-IDX-04` | 외장 드라이브 언마운트 (`[To-Be]`) | 인덱싱된 볼륨 분리 후 동기화 | 레코드 유지 + `is_offline=True` 배지 | `⏳ Pending` |
 | **Happy** | `TC-IDX-05` | 파일 이름 변경/이동 재연결 (`[To-Be]`) | 파일 이동 후 `/api/index/sync` | AI 재추론 없이 경로 갱신 및 비평 보존 | `⏳ Pending` |
 | **Happy** | `TC-IDX-06` | 2-Pass 점진적 인덱싱 (`[To-Be]`) | 신규 폴더 등록 직후 갤러리 조회 | Pass 1 직후 썸네일/EXIF 즉시 노출 | `⏳ Pending` |
-| **Boundary**| `TC-IDX-07` | ChromaDB 임베딩 조회 ndarray 불리언 예외 방지 | `get_embedding_by_id` 호출 | ndarray 불리언 평가 에러 없이 list 반환 | `FAIL (DEFECT-01)` |
+| **Boundary**| `TC-IDX-07` | ChromaDB 임베딩 조회 ndarray 불리언 예외 방지 | `get_embedding_by_id` 호출 | ndarray 불리언 평가 에러 없이 list 반환 | `PASS (Fixed in DEFECT-01)` |
 | **Boundary**| `TC-IDX-08` | ChromaDB 삭제 실패 시 보상 트랜잭션 롤백 | `delete_and_commit` 시 Chroma 에러 | SQLite 삭제 취소 및 예외 재전파 | `FAIL (DEFECT-02)` |
 | **Boundary**| `TC-IDX-09` | 인덱싱/동기화 동시 호출 시 TOCTOU 방지 | `start` + `sync` 동시 호출 | 단일 태스크만 시작되고 벡터 소실 차단 | `FAIL (DEFECT-03)` |
 | **Negative**| `TC-IDX-10` | 배치 커밋 실패 시 에러 전파 및 거짓 완료 차단 | `_commit_batch_with_retry` 3회 실패 | 예외 raise 및 status="error" 전이 | `FAIL (DEFECT-04)` |
@@ -66,12 +66,12 @@
 ## 🚨 3. 결함 리포트 (Defect Logs)
 
 ### [DEFECT-01] `VectorRepository.get_embedding_by_id`의 NumPy array 불리언 평가로 인한 100% `ValueError` 크래시
-- **현재 상태**: `🟡 OPEN`
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
 - **심각도**: 🔴 P0 Critical (Runtime Crash / 100% Reproducible)
-- **위치**: [`backend/app/repositories/vector_repository.py#L56-L62`](../../../backend/app/repositories/vector_repository.py#L56-L62)
-- **실증 여부**: `✅ Empirical Probe Reproduced`
-- **근본 원인 분석**: `VectorRepository.get_embedding_by_id`에서 `collection.get(..., include=["embeddings"])`가 반환하는 `embeddings` 필드는 Python 리스트가 아닌 `numpy.ndarray`임. `if target_data.get('embeddings'):` 불리언 평가 시 `ValueError: The truth value of an array with more than one element is ambiguous.`가 발생하여 단일 사진 재인덱싱(`POST /api/photos/{id}/reindex`) 및 유사도 검색이 100% 크래시함. Mock 테스트로 인해 은폐되어 있었음.
-- **수정 설계 방향**: `emb = target_data.get('embeddings')` 추출 후 불리언 평가 대신 `emb is not None and len(emb) > 0` 검사 및 `.tolist()` 변환 반환.
+- **해결 내역**:
+  - **수정 파일**: [`backend/app/repositories/vector_repository.py`](../../../backend/app/repositories/vector_repository.py#L52-L73), [`backend/tests/test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py#L255-L313)
+  - **원인 및 조치**: ChromaDB `collection.get(..., include=["embeddings"])` 반환 `embeddings` 필드가 `numpy.ndarray`일 때 `if target_data.get('embeddings'):` 직접 불리언 평가로 인한 다차원 배열 `ValueError` 크래시를 `embeddings is None or len(embeddings) == 0` 및 Guard Clause 적용 후 `.tolist()` 변환으로 완전 해소.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_07_get_embedding_by_id_ndarray_and_boundary` (`PASS`), `./venv/bin/pytest backend/tests/` (133 passed)
 
 ### [DEFECT-02] `VectorRepository.delete`의 예외 삼킴으로 인한 보상 트랜잭션 무력화 및 좀비 벡터 영구 잔류
 - **현재 상태**: `🟡 OPEN`
