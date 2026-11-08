@@ -363,6 +363,114 @@ def test_tc_idx_08_vector_repository_delete_raises_and_compensating_tx_rollbacks
         assert not mock_db.rollback.called
 
 
+def test_tc_idx_09_start_sync_concurrency_toctou_prevention(client, tmp_path, monkeypatch):
+    """
+    [TC-IDX-09 / DEFECT-03]
+    Verifies that:
+    1. IndexingStateManager.try_start_indexing() provides atomic check-and-set preemption,
+       so concurrent callers across threads cannot both succeed.
+    2. Concurrent /api/index/start and /api/index/sync requests cannot execute simultaneously:
+       When one request preempts indexing, concurrent or overlapping requests during folder
+       preparation and DB commit are immediately rejected with 400 Bad Request.
+    3. If folder normalization or DB commit fails during start_indexing,
+       the state is safely rolled back to idle via reset_status().
+    """
+    import concurrent.futures
+    from services.indexing_state import indexing_state_manager
+    from repositories.photo_repository import PhotoRepository
+
+    indexing_state_manager.reset_status()
+    assert indexing_state_manager.status == "idle"
+
+    # --- Part 1: Atomic preemption multi-thread race test ---
+    # Attempting to start from 10 parallel threads simultaneously
+    def attempt_preemption():
+        return indexing_state_manager.try_start_indexing()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        results = list(executor.map(lambda _: attempt_preemption(), range(10)))
+
+    # Exactly 1 thread must succeed, and 9 must be rejected
+    assert results.count(True) == 1, f"Expected exactly 1 success, got {results.count(True)}"
+    assert results.count(False) == 9
+    assert indexing_state_manager.status == "processing"
+
+    indexing_state_manager.reset_status()
+
+    # --- Part 2: TOCTOU race window prevention in /api/index/start vs /api/index/sync ---
+    # Simulate a slow folder preparation or DB commit during start_indexing.
+    # While start_indexing is in progress, sync_database is called.
+    # With atomic preemption, sync_database MUST receive 400 immediately.
+    folder_dir = tmp_path / "race_folder"
+    folder_dir.mkdir()
+
+    orig_add_folder = PhotoRepository.add_folder
+    sync_called = []
+    sync_status_code = []
+
+    def slow_add_folder(self, path):
+        # Trigger concurrent sync request while inside start_indexing's folder loop
+        if not sync_called:
+            sync_called.append(True)
+            res = client.post("/api/index/sync")
+            sync_status_code.append(res.status_code)
+        return orig_add_folder(self, path)
+
+    monkeypatch.setattr(PhotoRepository, "add_folder", slow_add_folder)
+
+    # Prevent actual background task from running heavy jobs
+    monkeypatch.setattr("app.api.indexing.run_indexing_background", lambda paths: None)
+
+    start_res = client.post("/api/index/start", json={"folder_paths": [str(folder_dir)]})
+    assert start_res.status_code == 202
+    assert sync_called == [True]
+    # The concurrent sync MUST be rejected with 400 Bad Request!
+    assert sync_status_code == [400], f"Expected sync to be rejected with 400, got {sync_status_code}"
+
+    # --- Part 3: Exception during folder prep safely rolls back state to idle ---
+    indexing_state_manager.reset_status()
+
+    err_folder = tmp_path / "err_folder"
+    err_folder.mkdir()
+
+    def failing_add_folder(self, path):
+        raise RuntimeError("Simulated SQLite disk write failure")
+
+    monkeypatch.setattr(PhotoRepository, "add_folder", failing_add_folder)
+
+    with pytest.raises(RuntimeError, match="Simulated SQLite disk write failure"):
+        client.post("/api/index/start", json={"folder_paths": [str(err_folder)]})
+
+    # Status must NOT remain stuck in 'processing'
+    assert indexing_state_manager.status == "idle"
+
+    # --- Part 4: Exception during sync_database safely rolls back state to idle ---
+    indexing_state_manager.reset_status()
+
+    def failing_list_folders(self):
+        raise RuntimeError("Simulated DB list_folders failure")
+
+    monkeypatch.setattr(PhotoRepository, "list_folders", failing_list_folders)
+
+    with pytest.raises(RuntimeError, match="Simulated DB list_folders failure"):
+        client.post("/api/index/sync")
+
+    assert indexing_state_manager.status == "idle"
+
+    # --- Part 5: initialize_background_run maintains processing state without idle gap ---
+    indexing_state_manager.reset_status()
+    assert indexing_state_manager.try_start_indexing() is True
+    assert indexing_state_manager.status == "processing"
+    # Background initialization must NOT flip status to idle
+    indexing_state_manager.initialize_background_run()
+    assert indexing_state_manager.status == "processing"
+    assert indexing_state_manager.cancel_requested is False
+    assert indexing_state_manager.pause_event.is_set() is True
+
+    # Clean up state
+    indexing_state_manager.reset_status()
+
+
 def test_start_indexing_empty_payload(client):
     """
     Verifies /api/index/start returns 400 Bad Request if folder_paths is empty.

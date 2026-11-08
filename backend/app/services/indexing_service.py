@@ -507,8 +507,7 @@ async def run_indexing_background(folder_paths: list[str]):
     Main background scheduler executing the indexing lifecycle without blocking the main event loop.
     Guarantees status reset to idle and completion log emission in all execution branches via finally.
     """
-    indexing_state_manager.reset_status()
-    indexing_state_manager.status = "processing"
+    indexing_state_manager.initialize_background_run()
 
     try:
         files = await asyncio.to_thread(scan_directory, folder_paths)

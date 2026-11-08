@@ -99,6 +99,33 @@ class IndexingStateManager:
             self._status_dict["total_files"] = total_files
             self._status_dict["current_file"] = current_file
 
+    def try_start_indexing(self) -> bool:
+        """
+        Atomically checks if indexing can start and preempts the status to 'processing'.
+        Returns True if status successfully transitioned to 'processing'.
+        Returns False if indexing is already in progress or paused.
+        """
+        with self._lock:
+            if self._status_dict["status"] in ["processing", "paused"]:
+                return False
+            self._status_dict["status"] = "processing"
+            self._status_dict["total_files"] = 0
+            self._status_dict["processed_files"] = 0
+            self._status_dict["current_file"] = ""
+            self.cancel_requested = False
+            self._set_event_safe(True)
+            return True
+
+    def initialize_background_run(self) -> None:
+        """
+        Ensures processing state and active event for background task startup
+        without momentarily resetting status to 'idle'.
+        """
+        with self._lock:
+            self._status_dict["status"] = "processing"
+            self.cancel_requested = False
+            self._set_event_safe(True)
+
     def reset_status(self):
         with self._lock:
             self._status_dict = {

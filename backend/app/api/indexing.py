@@ -17,59 +17,62 @@ def start_indexing(payload: schemas.IndexStartRequest, background_tasks: Backgro
     if not payload.folder_paths:
         raise HTTPException(status_code=400, detail="No folder paths provided.")
 
-    if indexing_state_manager.status in ["processing", "paused"]:
+    if not indexing_state_manager.try_start_indexing():
         raise HTTPException(status_code=400, detail="Indexing is already in progress or paused.")
-        
-    normalized_paths = []
-    seen = set()
-    for folder_path in payload.folder_paths:
-        try:
-            real_p = os.path.realpath(folder_path)
-        except Exception as norm_err:
-            print(f"[IndexingAPI] realpath note: {norm_err}", flush=True)
-            real_p = os.path.normpath(folder_path)
-            
-        if real_p not in seen:
-            seen.add(real_p)
-            normalized_paths.append(real_p)
 
-    photo_repo = PhotoRepository(db)
-    for folder_path in normalized_paths:
-        existing = photo_repo.get_folder_by_path(folder_path)
-        if not existing:
-            photo_repo.add_folder(folder_path)
-    db.commit()
+    try:
+        normalized_paths = []
+        seen = set()
+        for folder_path in payload.folder_paths:
+            try:
+                real_p = os.path.realpath(folder_path)
+            except Exception as norm_err:
+                print(f"[IndexingAPI] realpath note: {norm_err}", flush=True)
+                real_p = os.path.normpath(folder_path)
+                
+            if real_p not in seen:
+                seen.add(real_p)
+                normalized_paths.append(real_p)
 
-    # Set status synchronously to prevent race conditions
-    indexing_state_manager.status = "processing"
-    background_tasks.add_task(run_indexing_background, normalized_paths)
-    return {"message": "Indexing started"}
+        photo_repo = PhotoRepository(db)
+        for folder_path in normalized_paths:
+            existing = photo_repo.get_folder_by_path(folder_path)
+            if not existing:
+                photo_repo.add_folder(folder_path)
+        db.commit()
+
+        background_tasks.add_task(run_indexing_background, normalized_paths)
+        return {"message": "Indexing started"}
+    except Exception:
+        indexing_state_manager.reset_status()
+        raise
 
 @router.post("/sync", status_code=202)
 def sync_database(background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    if indexing_state_manager.status in ["processing", "paused"]:
+    if not indexing_state_manager.try_start_indexing():
         raise HTTPException(status_code=400, detail="Indexing is already in progress or paused.")
-        
-    # Get all currently indexed folders
-    photo_repo = PhotoRepository(db)
-    folders = photo_repo.list_folders()
-    folder_paths = []
-    seen = set()
-    for folder in folders:
-        try:
-            real_p = os.path.realpath(folder.path)
-        except Exception as norm_err:
-            print(f"[IndexingAPI] realpath note: {norm_err}", flush=True)
-            real_p = os.path.normpath(folder.path)
-        if real_p not in seen:
-            seen.add(real_p)
-            folder_paths.append(real_p)
 
-    # Set status synchronously to prevent race conditions
-    indexing_state_manager.status = "processing"
-    
-    background_tasks.add_task(run_indexing_background, folder_paths)
-    return {"message": "Sync started"}
+    try:
+        # Get all currently indexed folders
+        photo_repo = PhotoRepository(db)
+        folders = photo_repo.list_folders()
+        folder_paths = []
+        seen = set()
+        for folder in folders:
+            try:
+                real_p = os.path.realpath(folder.path)
+            except Exception as norm_err:
+                print(f"[IndexingAPI] realpath note: {norm_err}", flush=True)
+                real_p = os.path.normpath(folder.path)
+            if real_p not in seen:
+                seen.add(real_p)
+                folder_paths.append(real_p)
+
+        background_tasks.add_task(run_indexing_background, folder_paths)
+        return {"message": "Sync started"}
+    except Exception:
+        indexing_state_manager.reset_status()
+        raise
 
 @router.post("/pause")
 async def pause_indexing_endpoint():
