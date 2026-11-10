@@ -21,6 +21,7 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
     isIndexing, 
     indexingState, 
     indexingProgress, 
+    indexingError,
     searchQuery, 
     setSearchQuery, 
     searchFilters, 
@@ -30,7 +31,9 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
     removeFolder, 
     setIsIndexing, 
     setIndexingState, 
-    setIndexingProgress 
+    setIndexingProgress,
+    setIndexingError,
+    dismissIndexingError
   } = useAppStore();
 
   useEffect(() => {
@@ -54,6 +57,7 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
         }
 
         try {
+          setIndexingError(null);
           setIsIndexing(true);
           setIndexingState('processing');
           setIndexingProgress({ processed: 0, total: 0, filePath: "Scanning directories..." });
@@ -293,6 +297,7 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
           onClick={async () => {
             if (!apiPort) return;
             try {
+              setIndexingError(null);
               setIsIndexing(true);
               setIndexingState('processing');
               setIndexingProgress({ processed: 0, total: 0, filePath: "Scanning database folders..." });
@@ -345,6 +350,8 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
         isIndexing={isIndexing}
         indexingState={indexingState}
         indexingProgress={indexingProgress}
+        indexingError={indexingError}
+        onDismissError={dismissIndexingError}
       />
     </aside>
   );

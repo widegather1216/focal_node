@@ -10,6 +10,9 @@ export function useIndexingStatus() {
     setIsIndexing,
     setIndexingState,
     setIndexingProgress,
+    setIndexingError,
+    reportIndexingError,
+    markIndexingTerminal,
   } = useAppStore();
   const queryClient = useQueryClient();
   const wasIndexingRef = useRef(isIndexing);
@@ -23,6 +26,20 @@ export function useIndexingStatus() {
 
     let isMounted = true;
     let timerId: ReturnType<typeof setTimeout> | null = null;
+    let idleClearTimerId: ReturnType<typeof setTimeout> | null = null;
+
+    const clearIdleTimer = () => {
+      if (idleClearTimerId) {
+        clearTimeout(idleClearTimerId);
+        idleClearTimerId = null;
+      }
+    };
+
+    const scheduleNext = (delay: number) => {
+      if (!isMounted) return;
+      if (timerId) clearTimeout(timerId);
+      timerId = setTimeout(checkStatus, delay);
+    };
 
     const checkStatus = async () => {
       try {
@@ -30,8 +47,16 @@ export function useIndexingStatus() {
         if (!isMounted || !data) return;
 
         const currentStatus = data.status; // 'idle' | 'processing' | 'paused' | 'cancelled' | 'error'
+        const runId: number | null = typeof data.run_id === 'number' ? data.run_id : null;
+        const storeState = useAppStore.getState();
 
         if (currentStatus === 'processing') {
+          if (runId !== null && runId > 0 && runId <= storeState.lastTerminalRunId) {
+            scheduleNext(storeState.isIndexing ? 1500 : 10000);
+            return;
+          }
+          clearIdleTimer();
+          setIndexingError(null);
           setIsIndexing(true);
           setIndexingState('processing');
           if (data.total_files > 0 || data.processed_files > 0) {
@@ -43,14 +68,44 @@ export function useIndexingStatus() {
           }
           scheduleNext(1500);
         } else if (currentStatus === 'paused') {
+          if (runId !== null && runId > 0 && runId <= storeState.lastTerminalRunId) {
+            scheduleNext(storeState.isIndexing ? 2000 : 10000);
+            return;
+          }
+          clearIdleTimer();
           setIndexingState('paused');
           scheduleNext(2000);
+        } else if (currentStatus === 'error') {
+          clearIdleTimer();
+          const isNewErrorRun =
+            runId === null ||
+            (runId > storeState.lastTerminalRunId && runId !== storeState.dismissedErrorRunId);
+          if (isNewErrorRun && (data.total_files > 0 || data.processed_files > 0)) {
+            setIndexingProgress({
+              processed: data.processed_files || 0,
+              total: data.total_files || 0,
+              filePath: data.current_file || 'Indexing failed',
+            });
+          }
+          reportIndexingError(
+            data.error_message || '데이터베이스 저장 중 오류가 발생했습니다.',
+            runId
+          );
+          if (wasIndexingRef.current) {
+            queryClient.invalidateQueries({ queryKey: ['photos'] });
+            queryClient.invalidateQueries({ queryKey: ['analyticsStats'] });
+          }
+          scheduleNext(10000);
         } else {
-          // Status is 'idle', 'cancelled', or 'error'
+          // Status is 'idle' or 'cancelled'
+          if (runId !== null && runId > 0) {
+            markIndexingTerminal(runId);
+          }
           if (wasIndexingRef.current) {
             setIndexingState('idle');
-            setTimeout(() => {
-              if (isMounted) {
+            clearIdleTimer();
+            idleClearTimerId = setTimeout(() => {
+              if (isMounted && useAppStore.getState().indexingState === 'idle') {
                 setIsIndexing(false);
                 setIndexingProgress(null);
               }
@@ -58,18 +113,12 @@ export function useIndexingStatus() {
             queryClient.invalidateQueries({ queryKey: ['photos'] });
             queryClient.invalidateQueries({ queryKey: ['analyticsStats'] });
           }
-          // Slow poll when idle
           scheduleNext(10000);
         }
       } catch (err) {
+        console.warn('Failed to poll indexing status:', err);
         scheduleNext(10000);
       }
-    };
-
-    const scheduleNext = (delay: number) => {
-      if (!isMounted) return;
-      if (timerId) clearTimeout(timerId);
-      timerId = setTimeout(checkStatus, delay);
     };
 
     // Trigger initial check
@@ -77,7 +126,17 @@ export function useIndexingStatus() {
 
     return () => {
       isMounted = false;
+      clearIdleTimer();
       if (timerId) clearTimeout(timerId);
     };
-  }, [apiPort, setIsIndexing, setIndexingState, setIndexingProgress, queryClient]);
+  }, [
+    apiPort,
+    setIsIndexing,
+    setIndexingState,
+    setIndexingProgress,
+    setIndexingError,
+    reportIndexingError,
+    markIndexingTerminal,
+    queryClient,
+  ]);
 }

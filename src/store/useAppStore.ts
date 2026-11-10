@@ -35,11 +35,19 @@ interface AppState {
   clearSearchFilters: () => void;
 
   isIndexing: boolean;
-  indexingState: 'idle' | 'processing' | 'paused' | 'cancelled';
+  indexingState: 'idle' | 'processing' | 'paused' | 'cancelled' | 'error';
   indexingProgress: IndexingProgress | null;
+  indexingError: string | null;
+  indexingErrorRunId: number | null;
+  dismissedErrorRunId: number | null;
+  lastTerminalRunId: number;
   setIndexingProgress: (progress: IndexingProgress | null) => void;
   setIsIndexing: (isIndexing: boolean) => void;
-  setIndexingState: (state: 'idle' | 'processing' | 'paused' | 'cancelled') => void;
+  setIndexingState: (state: 'idle' | 'processing' | 'paused' | 'cancelled' | 'error') => void;
+  setIndexingError: (error: string | null) => void;
+  reportIndexingError: (message: string, runId?: number | null) => void;
+  dismissIndexingError: () => void;
+  markIndexingTerminal: (runId?: number | null) => void;
 
   isDownloadingModel: boolean;
   setIsDownloadingModel: (isDownloading: boolean) => void;
@@ -109,9 +117,48 @@ export const useAppStore = create<AppState>((set, get) => ({
   isIndexing: false,
   indexingState: 'idle',
   indexingProgress: null,
+  indexingError: null,
+  indexingErrorRunId: null,
+  dismissedErrorRunId: null,
+  lastTerminalRunId: 0,
   setIndexingProgress: (progress) => set({ indexingProgress: progress }),
-  setIsIndexing: (isIndexing) => set({ isIndexing, indexingState: isIndexing ? 'processing' : 'idle' }),
-  setIndexingState: (indexingState) => set({ indexingState, isIndexing: indexingState === 'processing' || indexingState === 'paused' }),
+  setIsIndexing: (isIndexing) => set({
+    isIndexing,
+    indexingState: isIndexing ? 'processing' : 'idle',
+    ...(isIndexing ? { indexingError: null, indexingErrorRunId: null } : {}),
+  }),
+  setIndexingState: (indexingState) => set({
+    indexingState,
+    isIndexing: indexingState === 'processing' || indexingState === 'paused',
+  }),
+  setIndexingError: (indexingError) => set({ indexingError }),
+  reportIndexingError: (message, runId = null) => set((state) => {
+    if (runId !== null && runId > 0) {
+      if (state.dismissedErrorRunId === runId || runId <= state.lastTerminalRunId) {
+        return state;
+      }
+    }
+    const nextTerminalRunId =
+      runId !== null && runId > state.lastTerminalRunId ? runId : state.lastTerminalRunId;
+    return {
+      indexingState: 'error',
+      isIndexing: false,
+      indexingError: message,
+      indexingErrorRunId: runId ?? state.indexingErrorRunId,
+      lastTerminalRunId: nextTerminalRunId,
+    };
+  }),
+  dismissIndexingError: () => set((state) => ({
+    indexingState: 'idle',
+    isIndexing: false,
+    indexingError: null,
+    indexingProgress: null,
+    dismissedErrorRunId: state.indexingErrorRunId ?? state.dismissedErrorRunId,
+  })),
+  markIndexingTerminal: (runId = null) => set((state) => ({
+    lastTerminalRunId:
+      runId !== null && runId > state.lastTerminalRunId ? runId : state.lastTerminalRunId,
+  })),
 
   isDownloadingModel: false,
   setIsDownloadingModel: (isDownloadingModel) => set({ isDownloadingModel }),

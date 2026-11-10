@@ -8,16 +8,26 @@ export function useTauriEvents() {
     setIsIndexing,
     setIndexingState,
     setIndexingProgress,
+    setIndexingError,
+    reportIndexingError,
     setIsDownloadingModel,
     setDownloadProgress,
     setDownloadModelName
   } = useAppStore();
   const queryClient = useQueryClient();
   const invalidateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const completionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let isSubscribed = true;
     const unlisteners: UnlistenFn[] = [];
+
+    const clearCompletionTimer = () => {
+      if (completionTimerRef.current) {
+        clearTimeout(completionTimerRef.current);
+        completionTimerRef.current = null;
+      }
+    };
 
     const registerListener = async <T>(
       eventName: string,
@@ -39,6 +49,8 @@ export function useTauriEvents() {
     registerListener<{ processed: number; total: number; file_path: string }>(
       "indexing-progress",
       (event) => {
+        clearCompletionTimer();
+        setIndexingError(null);
         setIndexingState('processing');
         setIndexingProgress({
           processed: event.payload.processed,
@@ -59,26 +71,43 @@ export function useTauriEvents() {
     // 2. Indexing Lifecycle
     registerListener("indexing-completed", () => {
       if (invalidateTimerRef.current) clearTimeout(invalidateTimerRef.current);
+      clearCompletionTimer();
       setIndexingState('idle');
-      setTimeout(() => {
-        setIsIndexing(false);
-        setIndexingProgress(null);
+      completionTimerRef.current = setTimeout(() => {
+        if (isSubscribed && useAppStore.getState().indexingState === 'idle') {
+          setIsIndexing(false);
+          setIndexingProgress(null);
+        }
       }, 1200);
       queryClient.invalidateQueries({ queryKey: ['photos'] });
       queryClient.invalidateQueries({ queryKey: ['analyticsStats'] });
     });
 
+    registerListener<{ run_id?: number; message?: string }>("indexing-error", (event) => {
+      if (invalidateTimerRef.current) clearTimeout(invalidateTimerRef.current);
+      clearCompletionTimer();
+      const message = event.payload?.message || '데이터베이스 저장 중 오류가 발생했습니다.';
+      const runId = typeof event.payload?.run_id === 'number' ? event.payload.run_id : null;
+      reportIndexingError(message, runId);
+      queryClient.invalidateQueries({ queryKey: ['photos'] });
+      queryClient.invalidateQueries({ queryKey: ['analyticsStats'] });
+    });
+
     registerListener("indexing-paused", () => {
+      clearCompletionTimer();
       setIndexingState('paused');
     });
 
     registerListener("indexing-resumed", () => {
+      clearCompletionTimer();
+      setIndexingError(null);
       setIndexingState('processing');
       setIsIndexing(true);
     });
 
     registerListener("indexing-cancelled", () => {
       if (invalidateTimerRef.current) clearTimeout(invalidateTimerRef.current);
+      clearCompletionTimer();
       setIndexingState('idle');
       setIsIndexing(false);
       setIndexingProgress(null);
@@ -111,6 +140,7 @@ export function useTauriEvents() {
 
     return () => {
       isSubscribed = false;
+      clearCompletionTimer();
       if (invalidateTimerRef.current) {
         clearTimeout(invalidateTimerRef.current);
       }
@@ -120,6 +150,8 @@ export function useTauriEvents() {
     setIsIndexing,
     setIndexingState,
     setIndexingProgress,
+    setIndexingError,
+    reportIndexingError,
     queryClient,
     setIsDownloadingModel,
     setDownloadProgress,

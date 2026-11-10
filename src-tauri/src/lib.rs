@@ -272,11 +272,17 @@ pub fn run() {
                         total: u32,
                         file_path: String,
                     }
+                    #[derive(Clone, serde::Serialize)]
+                    struct IndexingErrorPayload {
+                        run_id: u64,
+                        message: String,
+                    }
 
                     let reader = BufReader::new(stdout);
                     let re_port = Regex::new(r"\[Sidecar\] PORT:\s*(\d+)").unwrap();
                     let re_indexing = Regex::new(r"\[Indexing\] Progress:\s*(\d+)/(\d+)\s*-\s*(.*)").unwrap();
                     let re_indexing_start = Regex::new(r"\[Indexer\] Starting background indexing\. Found\s*(\d+)\s*files\.").unwrap();
+                    let re_indexing_error = Regex::new(r"\[Indexer\] Background indexing failed \[run=(\d+)\]:\s*(.*)").unwrap();
                     
                     for line in reader.lines() {
                         if let Ok(line_str) = line {
@@ -321,6 +327,17 @@ pub fn run() {
                                 }
                             } else if line_str.contains("[Downloader] Completed all model downloads.") {
                                 let _ = app_handle.emit("model-download-completed", ());
+                            } else if let Some(caps) = re_indexing_error.captures(&line_str) {
+                                let run_id = caps
+                                    .get(1)
+                                    .and_then(|m| m.as_str().parse::<u64>().ok())
+                                    .unwrap_or(0);
+                                let message = caps
+                                    .get(2)
+                                    .map(|m| m.as_str().trim().to_string())
+                                    .filter(|s| !s.is_empty())
+                                    .unwrap_or_else(|| "인덱싱 처리 중 오류가 발생했습니다.".to_string());
+                                let _ = app_handle.emit("indexing-error", IndexingErrorPayload { run_id, message });
                             } else if line_str.contains("[Indexer] Background indexing completed.") {
                                 let _ = app_handle.emit("indexing-completed", ());
                             } else if line_str.contains("[Indexer] Background indexing paused.") {
