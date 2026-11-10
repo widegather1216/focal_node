@@ -1,17 +1,17 @@
 # 🧭 Focal Node: Master Control Tower (Living Wiki Hub)
 
 > 외부 클라우드 전송 없이 Mac Native(Apple MLX & PyTorch MPS)로 구동되는 **프라이버시 보호 로컬 사진 관리 및 AI 시맨틱 검색/비평 데스크탑 플랫폼**입니다.
-> **최종 업데이트**: 2026-11-08 (by `systematic-debugger`)
+> **최종 업데이트**: 2026-11-10 (by `systematic-debugger`)
 
 ---
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
 - **Active 도메인**: [`01_indexing_storage`](./features/01_indexing_storage/README.md)
-- **현재 단계 (Stage)**: `🩹 Debugging (DEFECT-01~03 해결 완료, P0 결함 DEFECT-04 등 8건 잔여 디버깅 진행 중)`
-- **직전 완료 작업**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) 도메인 DEFECT-03 해결 완료 (`IndexingStateManager` 원자적 선점 `try_start_indexing` 도입 및 TOCTOU 레이스 차단, 엔드포인트 예외 롤백 및 `initialize_background_run` 적용으로 중복 인덱서 실행 및 ChromaDB 벡터 영구 소실 원천 차단, TC-IDX-09 통과 및 백엔드 135종 전수 통과)
+- **현재 단계 (Stage)**: `🩹 Debugging (DEFECT-01~04 해결 완료, P0 결함 DEFECT-05 등 7건 잔여 디버깅 진행 중)`
+- **직전 완료 작업**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) 도메인 DEFECT-04 해결 완료 (`_commit_batch_with_retry` 3회 실패 시 예외 재전파, `IndexingStateManager` `run_id` 세대 격리·`finalize_run` 원자적 `status="error"` 전이 및 거짓 완료 로그 차단, Tauri `indexing-error`·Zustand/폴링 에러 분기·`IndexingProgressCard` 에러 UI 정합화, TC-IDX-10 통과 및 백엔드 136종·프론트 빌드·Rust check 전수 통과)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"01_indexing_storage 도메인의 DEFECT-04 티켓 해결해줘"` *(_commit_batch_with_retry 3회 실패 시 예외 삼킴 제거 및 에러 전파)*
+  > `"01_indexing_storage 도메인의 DEFECT-05 티켓 해결해줘"` *(index_single_file_sync 재인덱싱 중단/실패 시 구 레코드 영구 증발 차단)*
 
 ---
 
@@ -20,7 +20,7 @@
 | 도메인 (Bounded Context) | 생명주기 상태 | 구현 진척도 (Active Step 1~4) | QA 인수 통과율 | 미해결 티켓 (`🚨D` / `🧐R`) | 최근 작업 요약 |
 | :--- | :--- :---: | :---: | :---: | :---: | :--- |
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `5/5 (100%)` | `0 / 0` | DEFECT-01~04 전수 해결 완료 (손상 인덱스 valid=False, 실패 시 거짓 완료 차단, 1종 조기완료 차단, 중복 스레드/락 삭제 가드), Sign-Off 완료 |
-| 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `6/17 (35%)` | `8 / 0` | DEFECT-03 해결 완료(try_start_indexing 원자적 선점 및 TOCTOU 방지, TC-IDX-09 PASS), DEFECT-04~11 8건 잔여 |
+| 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `7/17 (41%)` | `7 / 0` | DEFECT-04 해결 완료(_commit_batch_with_retry 예외 전파·run_id 기반 status="error" 전이 및 UI 에러 마스킹 제거, TC-IDX-10 PASS), DEFECT-05~11 7건 잔여 |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 📐 Planning | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 거리 임계값 + RRF 랭킹 + 35mm/점수 필터 + 스마트 앨범 Step 1~4 대기 |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `13/13 (100%)` | `0 / 2` | `DEFECT-02~03` 및 `REFACTOR-04~07` 해결 완료, `REFACTOR` 2건 대기 |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 📐 Planning | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 2` | 통계 차트 클릭 갤러리 드릴다운(`Click-to-Filter`) Step 3~4 대기 |
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-10]` `[systematic-debugger]` [`01_indexing_storage`]**: DEFECT-04 결함 해결 및 원자적 커밋 완료 (`6ffe113`, `6cba0eb` / `backend/app/services/indexing_service.py`의 `_commit_batch_with_retry`가 세션 롤백 후 3회 실패 시 예외를 `raise`하도록 수정하고, `backend/app/services/indexing_state.py`에 `run_id` 세대 격리·원자적 `finalize_run`·`error_message` 저장 및 `backend/app/api/indexing.py` `run_id` 전달을 도입해 `run_indexing_background` 실패/`BaseException` 시 후속 청크 중단·`status="error"` 전이 및 거짓 완료 로그(`Background indexing completed.`/`Sync completed.`) 차단, `src-tauri/src/lib.rs` `indexing-error` 이벤트 파싱, `useAppStore.ts`/`useTauriEvents.ts`/`useIndexingStatus.ts` `'error'` 상태·`dismissIndexingError`·타이머 레이스 차단 및 `IndexingProgressCard.tsx` 에러 전용 UI 연동으로 다계층 실패 마스킹 완전 해소, 신규 회귀 테스트 `TC-IDX-10` 작성 및 백엔드 136종(`136 passed`)·`tsc && vite build`·`cargo check` 전수 통과, `verification.md`/`README.md` 동기화).
 
 - **`[2026-11-08]` `[systematic-debugger]` [`01_indexing_storage`]**: DEFECT-03 결함 해결 완료 (`backend/app/services/indexing_state.py`의 `IndexingStateManager`에 원자적 상태 선점 메서드 `try_start_indexing()`을 도입하여 락 내부에서 `status in ["processing", "paused"]` 확인 후 즉시 `"processing"`을 선점하고 `backend/app/api/indexing.py`의 `start_indexing` 및 `sync_database`에서 경합 요청을 400 거부하도록 조치, 경로/DB 작업 예외 발생 시 `reset_status()` 안전 롤백 및 `backend/app/services/indexing_service.py`의 `run_indexing_background` startup 시 `initialize_background_run()`으로 상태가 순간적으로 `idle`로 풀리는 레이스를 원천 차단하여 중복 인덱서 실행 및 ChromaDB 벡터 영구 소실 해소, 신규 동시성 회귀 단위 테스트 `TC-IDX-09`(`test_tc_idx_09_start_sync_concurrency_toctou_prevention`) 작성 및 통과, 백엔드 테스트 135종(`135 passed`) 및 프론트엔드 빌드 100% 통과, `verification.md`/`README.md` 동기화).
 

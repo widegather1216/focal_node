@@ -1,8 +1,8 @@
 # 🧪 [01_indexing_storage] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-01~03 해결 완료 / DEFECT 8건 잔여 디버깅 진행 중)`
+- **검증 상태**: `🩹 Debugging (DEFECT-01~04 해결 완료 / DEFECT 7건 잔여 디버깅 진행 중)`
 - **인수 조건 통과율**: `1 / 4 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 8건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 7건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -52,7 +52,7 @@
 | **Boundary**| `TC-IDX-07` | ChromaDB 임베딩 조회 ndarray 불리언 예외 방지 | `get_embedding_by_id` 호출 | ndarray 불리언 평가 에러 없이 list 반환 | `PASS (Fixed in DEFECT-01)` |
 | **Boundary**| `TC-IDX-08` | ChromaDB 삭제 실패 시 보상 트랜잭션 롤백 | `delete_and_commit` 시 Chroma 에러 | SQLite 삭제 취소 및 예외 재전파 | `PASS (Fixed in DEFECT-02)` |
 | **Boundary**| `TC-IDX-09` | 인덱싱/동기화 동시 호출 시 TOCTOU 방지 | `start` + `sync` 동시 호출 | 단일 태스크만 시작되고 벡터 소실 차단 | `PASS (Fixed in DEFECT-03)` |
-| **Negative**| `TC-IDX-10` | 배치 커밋 실패 시 에러 전파 및 거짓 완료 차단 | `_commit_batch_with_retry` 3회 실패 | 예외 raise 및 status="error" 전이 | `FAIL (DEFECT-04)` |
+| **Negative**| `TC-IDX-10` | 배치 커밋 실패 시 에러 전파 및 거짓 완료 차단 | `_commit_batch_with_retry` 3회 실패 | 예외 raise 및 status="error" 전이 | `PASS (Fixed in DEFECT-04)` |
 | **Boundary**| `TC-IDX-11` | 수정 파일 재인덱싱 중단 시 기존 레코드 보존 | 재인덱싱 중 취소/실패 주입 | 신규 커밋 전 구 레코드 조기 삭제 차단 | `FAIL (DEFECT-05)` |
 | **Boundary**| `TC-IDX-12` | macOS NFD/NFC 한글 폴더 사진 오삭제 방지 | 한글 폴더 NFD/NFC 동기화 | 좀비 오판 차단 및 사진 보존 | `FAIL (DEFECT-06)` |
 | **Negative**| `TC-IDX-13` | ExifRead 빈 리스트(`values=[]`) 파싱 안정성 | 손상/초과 IFD 태그 파싱 | IndexError 방지 및 나머지 EXIF 보존 | `FAIL (DEFECT-07)` |
@@ -90,12 +90,12 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_09` (`PASS`), `./venv/bin/pytest backend/tests/` (135 passed)
 
 ### [DEFECT-04] `_commit_batch_with_retry` 3회 실패 시 예외 삼킴으로 인한 대규모 사진 유실 및 거짓 정상 완료 위장
-- **현재 상태**: `🟡 OPEN`
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
 - **심각도**: 🔴 P0 Critical (Silent Degradation & Cross-Layer Data Loss)
-- **위치**: [`backend/app/services/indexing_service.py#L435-L453`](../../../backend/app/services/indexing_service.py#L435-L453), [`L542-L553`](../../../backend/app/services/indexing_service.py#L542-L553)
-- **실증 여부**: `✅ Empirical Probe Reproduced`
-- **근본 원인 분석**: 배치 커밋 3회 실패 시 `traceback.print_exc()`만 찍고 아무런 예외도 raise하지 않고 `None` 반환. 상위 비동기 루프는 실패를 인지하지 못해 에러 카운터 증가나 에러 상태 전이 없이 다음 청크로 넘어가고, 최종적으로 `status="idle"`로 완료를 선언함. UI는 100% 완료로 표시하나 수백 장의 사진 데이터가 영구 유실됨.
-- **수정 설계 방향**: 3회 실패 시 최종 예외를 `raise`하여 상위 루프가 실패를 인지하고 `indexing_state_manager.status = "error"`로 전이하도록 처리.
+- **해결 내역**:
+  - **수정 파일**: [`backend/app/services/indexing_service.py`](../../../backend/app/services/indexing_service.py#L435-L643), [`backend/app/services/indexing_state.py`](../../../backend/app/services/indexing_state.py#L86-L257), [`backend/app/api/indexing.py`](../../../backend/app/api/indexing.py#L24-L74), [`src-tauri/src/lib.rs`](../../../src-tauri/src/lib.rs#L275-L341), [`src/store/useAppStore.ts`](../../../src/store/useAppStore.ts#L37-L161), [`src/hooks/useTauriEvents.ts`](../../../src/hooks/useTauriEvents.ts#L6-L159), [`src/hooks/useIndexingStatus.ts`](../../../src/hooks/useIndexingStatus.ts#L6-L141), [`src/components/sidebar/IndexingProgressCard.tsx`](../../../src/components/sidebar/IndexingProgressCard.tsx#L1-L203), [`src/components/Sidebar.tsx`](../../../src/components/Sidebar.tsx#L21-L355), [`backend/tests/test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py#L475-L593)
+  - **원인 및 조치**: 2-Way 추적 및 Devil's Advocate 검증을 통해 `_commit_batch_with_retry` 예외 삼킴과 더불어 `run_indexing_background`/`_finalize_indexing_status`의 `status="idle"` 및 완료 로그 무조건 발행, `run_id` 미격리로 인한 취소/재시작 세대 충돌, 프론트엔드 `'error'` 상태 `'idle'` 치환 마스킹까지 일괄 해소함. `_commit_batch_with_retry`가 세션 롤백 후 3회 실패 시 예외를 재전파하도록 수정하고, `IndexingStateManager`에 단조 증가 `run_id` 세대 격리·원자적 `finalize_run`·`error_message` 저장을 도입하여 실패 시 후속 청크 중단 및 `status="error"` 전이와 함께 `Background indexing completed.`/`Sync completed.` 출력을 차단함. 또한 Tauri `indexing-error` 이벤트 채널, Zustand `reportIndexingError`/`dismissIndexingError`, `useIndexingStatus` `'error'` 분기 및 타이머 정합성 가드, `IndexingProgressCard` 에러 전용 UI를 연동하여 거짓 완료 UI 마스킹을 완전 제거함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_10` (`PASS`), `./venv/bin/pytest backend/tests/` (136 passed), `npx tsc --noEmit && npm run build` (`PASS`), `cargo check --manifest-path src-tauri/Cargo.toml` (`PASS`)
 
 ### [DEFECT-05] `index_single_file_sync`의 선행 삭제(Delete-Before-Commit)로 인한 수정 파일 재인덱싱 취소/실패 시 데이터 영구 증발
 - **현재 상태**: `🟡 OPEN`
