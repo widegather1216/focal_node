@@ -21,6 +21,7 @@ def start_indexing(payload: schemas.IndexStartRequest, background_tasks: Backgro
         raise HTTPException(status_code=400, detail="Indexing is already in progress or paused.")
 
     try:
+        run_id = indexing_state_manager.current_run_id
         normalized_paths = []
         seen = set()
         for folder_path in payload.folder_paths:
@@ -41,7 +42,7 @@ def start_indexing(payload: schemas.IndexStartRequest, background_tasks: Backgro
                 photo_repo.add_folder(folder_path)
         db.commit()
 
-        background_tasks.add_task(run_indexing_background, normalized_paths)
+        background_tasks.add_task(run_indexing_background, normalized_paths, run_id=run_id)
         return {"message": "Indexing started"}
     except Exception:
         indexing_state_manager.reset_status()
@@ -53,6 +54,7 @@ def sync_database(background_tasks: BackgroundTasks, db: Session = Depends(get_d
         raise HTTPException(status_code=400, detail="Indexing is already in progress or paused.")
 
     try:
+        run_id = indexing_state_manager.current_run_id
         # Get all currently indexed folders
         photo_repo = PhotoRepository(db)
         folders = photo_repo.list_folders()
@@ -68,7 +70,7 @@ def sync_database(background_tasks: BackgroundTasks, db: Session = Depends(get_d
                 seen.add(real_p)
                 folder_paths.append(real_p)
 
-        background_tasks.add_task(run_indexing_background, folder_paths)
+        background_tasks.add_task(run_indexing_background, folder_paths, run_id=run_id)
         return {"message": "Sync started"}
     except Exception:
         indexing_state_manager.reset_status()

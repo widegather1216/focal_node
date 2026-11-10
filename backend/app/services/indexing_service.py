@@ -432,24 +432,50 @@ def _deduplicate_batch_items(raw_items: list[dict]) -> list[dict]:
     return batch_data
 
 
+def _safe_rollback_session(db_session: Session) -> None:
+    """Rolls back a failed SQLAlchemy session without masking the original commit error."""
+    try:
+        db_session.rollback()
+    except Exception as rollback_err:
+        logger.warning("Failed to rollback batch session cleanly: %s", rollback_err)
+
+
 def _commit_batch_with_retry(batch_data: list[dict], max_attempts: int = 3) -> None:
     """Saves indexed photos batch to SQLite and ChromaDB with exponential backoff retry."""
+    if max_attempts < 1:
+        raise ValueError(f"max_attempts must be at least 1, got {max_attempts}")
+    if not batch_data:
+        return
+
     import time
     from services.photo import register_photos_batch_atomic
+
     for attempt in range(max_attempts):
-        db_batch = SessionLocal()
+        db_batch = None
         try:
+            db_batch = SessionLocal()
             register_photos_batch_atomic(db_batch, batch_data)
             return
-        except Exception as e:
-            print(f"[Indexer] Batch DB Upsert attempt {attempt+1}/{max_attempts} failed for {len(batch_data)} items: {e}", flush=True)
+        except Exception as commit_err:
+            if db_batch is not None:
+                _safe_rollback_session(db_batch)
+            logger.error(
+                "[Indexer] Batch DB Upsert attempt %d/%d failed for %d items: %s",
+                attempt + 1, max_attempts, len(batch_data), commit_err
+            )
+            print(
+                f"[Indexer] Batch DB Upsert attempt {attempt+1}/{max_attempts} failed for {len(batch_data)} items: {commit_err}",
+                flush=True
+            )
             if attempt < max_attempts - 1:
                 time.sleep(0.3 * (attempt + 1))
             else:
                 import traceback
                 traceback.print_exc()
+                raise
         finally:
-            db_batch.close()
+            if db_batch is not None:
+                db_batch.close()
 
 
 def _log_indexing_progress(f_path: str, res: Any, count: int, total: int) -> None:
@@ -465,54 +491,126 @@ def _log_indexing_progress(f_path: str, res: Any, count: int, total: int) -> Non
     print(f"[Indexing] Progress: {count}/{total} - {f_path} ({status_str})", flush=True)
 
 
+def _normalize_indexing_error(exc: BaseException) -> str:
+    """Formats an indexing exception into a non-empty single-line error message."""
+    single_line = " ".join(str(exc).split())
+    if not single_line:
+        return type(exc).__name__
+    return single_line[:500]
+
+
 async def _process_single_indexing_file(
     f_path: str,
     semaphore: asyncio.Semaphore,
     total_files: int,
-    counter: list[int]
+    counter: list[int],
+    run_id: Optional[int] = None,
 ) -> Any:
     """Handles concurrency, pause/cancel checking, and progress updates for a single file."""
-    if indexing_state_manager.cancel_requested:
+    if indexing_state_manager.is_run_cancelled(run_id):
         return "cancelled"
 
     async with semaphore:
-        if indexing_state_manager.cancel_requested:
+        if indexing_state_manager.is_run_cancelled(run_id):
             return "cancelled"
         if not indexing_state_manager.pause_event.is_set():
             await indexing_state_manager.pause_event.wait()
-        if indexing_state_manager.cancel_requested:
+        if indexing_state_manager.is_run_cancelled(run_id):
             return "cancelled"
 
-        res = await asyncio.to_thread(index_single_file_sync, f_path)
+        result = await asyncio.to_thread(index_single_file_sync, f_path)
+        if indexing_state_manager.is_run_cancelled(run_id):
+            return "cancelled"
         counter[0] += 1
-        indexing_state_manager.update_progress(counter[0], total_files, f_path)
-        _log_indexing_progress(f_path, res, counter[0], total_files)
-        return res
+        indexing_state_manager.update_progress(counter[0], total_files, f_path, run_id=run_id)
+        _log_indexing_progress(f_path, result, counter[0], total_files)
+        return result
 
 
-def _finalize_indexing_status() -> None:
-    """Sets final indexing status and emits completion log."""
-    if indexing_state_manager.cancel_requested:
-        indexing_state_manager.status = "cancelled"
+async def _cancel_pending_chunk_tasks(tasks: list[asyncio.Task]) -> None:
+    """Cancels any unfinished chunk tasks and awaits completion cleanly."""
+    pending = [task for task in tasks if not task.done()]
+    for task in pending:
+        task.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
+
+
+async def _process_indexing_chunk(
+    chunk_files: list[str],
+    semaphore: asyncio.Semaphore,
+    total_files: int,
+    counter: list[int],
+    run_id: Optional[int],
+) -> None:
+    """Processes a single chunk of files concurrently and commits the batch atomically."""
+    tasks = [
+        asyncio.create_task(
+            _process_single_indexing_file(f_path, semaphore, total_files, counter, run_id=run_id)
+        )
+        for f_path in chunk_files
+    ]
+    try:
+        results = await asyncio.gather(*tasks)
+    except BaseException:
+        await _cancel_pending_chunk_tasks(tasks)
+        raise
+
+    if indexing_state_manager.is_run_cancelled(run_id):
+        return
+
+    raw_batch_data = [item for item in results if isinstance(item, dict)]
+    if raw_batch_data:
+        batch_data = _deduplicate_batch_items(raw_batch_data)
+        await asyncio.to_thread(_commit_batch_with_retry, batch_data)
+
+
+def _finalize_indexing_status(
+    error_message: Optional[str] = None,
+    run_id: Optional[int] = None,
+) -> None:
+    """Sets final indexing status and emits completion, cancellation, or error log."""
+    final_status = indexing_state_manager.finalize_run(
+        error_message=error_message,
+        run_id=run_id,
+    )
+    if final_status == "cancelled":
         print("[Indexer] Background indexing cancelled.", flush=True)
-    else:
-        indexing_state_manager.status = "idle"
-        indexing_state_manager.update_progress(0, 0, "")
+    elif final_status == "error":
+        safe_run_id = run_id if run_id is not None else 0
+        print(f"[Indexer] Background indexing failed [run={safe_run_id}]: {error_message}", flush=True)
+    elif final_status == "idle":
         print("[Indexer] Background indexing completed.", flush=True)
         print("[Indexer] Sync completed.", flush=True)
 
 
-async def run_indexing_background(folder_paths: list[str]):
+async def _wait_if_paused(run_id: Optional[int]) -> bool:
+    """Waits while indexing is paused; returns False if the run was cancelled."""
+    if indexing_state_manager.is_run_cancelled(run_id):
+        return False
+    if not indexing_state_manager.pause_event.is_set():
+        print("[Indexer] Background indexing waiting for pause release...", flush=True)
+        await indexing_state_manager.pause_event.wait()
+        if indexing_state_manager.is_run_cancelled(run_id):
+            return False
+    return True
+
+
+async def run_indexing_background(folder_paths: list[str], run_id: Optional[int] = None):
     """
     Main background scheduler executing the indexing lifecycle without blocking the main event loop.
-    Guarantees status reset to idle and completion log emission in all execution branches via finally.
+    Propagates batch commit failures to error state and prevents false completion logs.
     """
-    indexing_state_manager.initialize_background_run()
+    active_run_id = indexing_state_manager.initialize_background_run(run_id=run_id)
+    if active_run_id is None:
+        logger.info("[Indexer] Skipping cancelled or superseded background run (run_id=%s).", run_id)
+        return
 
+    error_message: Optional[str] = None
     try:
         files = await asyncio.to_thread(scan_directory, folder_paths)
         total_files = len(files)
-        indexing_state_manager.update_progress(0, total_files, "")
+        indexing_state_manager.update_progress(0, total_files, "", run_id=active_run_id)
         print(f"[Indexer] Starting background indexing. Found {total_files} files.", flush=True)
 
         await asyncio.to_thread(cleanup_zombie_records)
@@ -524,31 +622,24 @@ async def run_indexing_background(folder_paths: list[str]):
         counter = [0]
         chunk_size = 100
 
-        for i in range(0, len(files), chunk_size):
-            if indexing_state_manager.cancel_requested:
+        for idx in range(0, len(files), chunk_size):
+            if not await _wait_if_paused(active_run_id):
                 break
-
-            if not indexing_state_manager.pause_event.is_set():
-                print("[Indexer] Background indexing waiting for pause release...", flush=True)
-                await indexing_state_manager.pause_event.wait()
-                if indexing_state_manager.cancel_requested:
-                    break
-
-            chunk_files = files[i:i+chunk_size]
-            tasks = [_process_single_indexing_file(f, semaphore, total_files, counter) for f in chunk_files]
-            results = await asyncio.gather(*tasks)
-
-            raw_batch_data = [res for res in results if isinstance(res, dict)]
-            if raw_batch_data:
-                batch_data = _deduplicate_batch_items(raw_batch_data)
-                await asyncio.to_thread(_commit_batch_with_retry, batch_data)
-
+            await _process_indexing_chunk(
+                files[idx:idx + chunk_size], semaphore, total_files, counter, active_run_id
+            )
             await asyncio.sleep(0.01)
 
-    except Exception as e:
-        print(f"[Indexer] Background task error: {e}", flush=True)
+    except Exception as exc:
+        error_message = _normalize_indexing_error(exc)
+        logger.error("[Indexer] Background task error: %s", error_message, exc_info=True)
+        print(f"[Indexer] Background task error: {error_message}", flush=True)
+    except BaseException as exc:
+        error_message = _normalize_indexing_error(exc)
+        logger.error("[Indexer] Background task interrupted: %s", error_message)
+        raise
     finally:
-        _finalize_indexing_status()
+        _finalize_indexing_status(error_message=error_message, run_id=active_run_id)
 
 
 __all__ = [

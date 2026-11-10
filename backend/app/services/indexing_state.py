@@ -8,22 +8,26 @@ pause/resume events, and cancel requests.
 import asyncio
 import threading
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 logger = logging.getLogger("focal_node.indexing_state")
 
 class IndexingStateManager:
     def __init__(self):
+        self._run_generation: int = 0
+        self._cancelled_run_ids: set[int] = set()
+        self._cancel_requested: bool = False
         self._status_dict: Dict[str, Any] = {
             "status": "idle",
             "total_files": 0,
             "processed_files": 0,
-            "current_file": ""
+            "current_file": "",
+            "error_message": None,
+            "run_id": 0,
         }
         self._lock = threading.RLock()
         self._pause_event: asyncio.Event | None = None
         self._pause_loop: Any = None
-        self.cancel_requested = False
 
     @property
     def pause_event(self) -> asyncio.Event:
@@ -80,6 +84,36 @@ class IndexingStateManager:
                     evt.clear()
 
     @property
+    def cancel_requested(self) -> bool:
+        with self._lock:
+            return self._cancel_requested
+
+    @cancel_requested.setter
+    def cancel_requested(self, val: bool) -> None:
+        with self._lock:
+            self._cancel_requested = bool(val)
+
+    @property
+    def current_run_id(self) -> int:
+        with self._lock:
+            return self._run_generation
+
+    def _record_cancelled_run(self, run_id: int) -> None:
+        if len(self._cancelled_run_ids) >= 64:
+            oldest_run = min(self._cancelled_run_ids)
+            self._cancelled_run_ids.discard(oldest_run)
+        self._cancelled_run_ids.add(run_id)
+
+    def is_run_cancelled(self, run_id: Optional[int] = None) -> bool:
+        with self._lock:
+            if run_id is None:
+                return self._cancel_requested
+            return run_id in self._cancelled_run_ids or run_id != self._run_generation
+
+    def is_run_active(self, run_id: Optional[int] = None) -> bool:
+        return not self.is_run_cancelled(run_id)
+
+    @property
     def status(self) -> str:
         with self._lock:
             return self._status_dict["status"]
@@ -93,8 +127,16 @@ class IndexingStateManager:
         with self._lock:
             return dict(self._status_dict)
 
-    def update_progress(self, processed_files: int, total_files: int, current_file: str):
+    def update_progress(
+        self,
+        processed_files: int,
+        total_files: int,
+        current_file: str,
+        run_id: Optional[int] = None,
+    ):
         with self._lock:
+            if run_id is not None and run_id != self._run_generation:
+                return
             self._status_dict["processed_files"] = processed_files
             self._status_dict["total_files"] = total_files
             self._status_dict["current_file"] = current_file
@@ -108,33 +150,86 @@ class IndexingStateManager:
         with self._lock:
             if self._status_dict["status"] in ["processing", "paused"]:
                 return False
+            self._run_generation += 1
             self._status_dict["status"] = "processing"
             self._status_dict["total_files"] = 0
             self._status_dict["processed_files"] = 0
             self._status_dict["current_file"] = ""
-            self.cancel_requested = False
+            self._status_dict["error_message"] = None
+            self._status_dict["run_id"] = self._run_generation
+            self._cancel_requested = False
             self._set_event_safe(True)
             return True
 
-    def initialize_background_run(self) -> None:
+    def initialize_background_run(self, run_id: Optional[int] = None) -> Optional[int]:
         """
         Ensures processing state and active event for background task startup
         without momentarily resetting status to 'idle'.
+        Returns None if the scheduled run_id was already cancelled or superseded.
         """
         with self._lock:
+            if run_id is not None:
+                if run_id != self._run_generation or run_id in self._cancelled_run_ids:
+                    return None
+                active_run_id = run_id
+            else:
+                self._run_generation += 1
+                active_run_id = self._run_generation
+
             self._status_dict["status"] = "processing"
-            self.cancel_requested = False
+            self._status_dict["error_message"] = None
+            self._status_dict["run_id"] = active_run_id
+            self._cancel_requested = False
             self._set_event_safe(True)
+            return active_run_id
+
+    def finalize_run(
+        self,
+        error_message: Optional[str] = None,
+        run_id: Optional[int] = None,
+    ) -> Optional[str]:
+        """
+        Atomically finalizes a background indexing run into 'cancelled', 'error', or 'idle'.
+        Returns None if run_id belongs to a superseded run so stale tasks cannot overwrite state.
+        """
+        with self._lock:
+            if run_id is not None and run_id != self._run_generation:
+                return None
+
+            is_cancelled = self._cancel_requested or (
+                run_id is not None and run_id in self._cancelled_run_ids
+            )
+            if is_cancelled:
+                self._status_dict["status"] = "cancelled"
+                self._status_dict["error_message"] = None
+                self._set_event_safe(True)
+                return "cancelled"
+
+            if error_message is not None:
+                self._status_dict["status"] = "error"
+                self._status_dict["error_message"] = error_message
+                self._set_event_safe(True)
+                return "error"
+
+            self._status_dict["status"] = "idle"
+            self._status_dict["total_files"] = 0
+            self._status_dict["processed_files"] = 0
+            self._status_dict["current_file"] = ""
+            self._status_dict["error_message"] = None
+            return "idle"
 
     def reset_status(self):
         with self._lock:
+            self._run_generation += 1
             self._status_dict = {
                 "status": "idle",
                 "total_files": 0,
                 "processed_files": 0,
-                "current_file": ""
+                "current_file": "",
+                "error_message": None,
+                "run_id": self._run_generation,
             }
-            self.cancel_requested = False
+            self._cancel_requested = False
             self._set_event_safe(True)
 
     def pause(self):
@@ -154,7 +249,9 @@ class IndexingStateManager:
     def cancel(self):
         with self._lock:
             if self._status_dict["status"] in ["processing", "paused"]:
-                self.cancel_requested = True
+                self._cancel_requested = True
+                if self._run_generation > 0:
+                    self._record_cancelled_run(self._run_generation)
                 self._set_event_safe(True)  # Unblock pause wait if currently paused
                 self._status_dict["status"] = "cancelled"
                 logger.info("[IndexerState] Background indexing cancelled.")

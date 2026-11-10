@@ -471,6 +471,128 @@ def test_tc_idx_09_start_sync_concurrency_toctou_prevention(client, tmp_path, mo
     indexing_state_manager.reset_status()
 
 
+@pytest.mark.asyncio
+async def test_tc_idx_10_batch_commit_failure_propagates_and_sets_error_status(client, monkeypatch, capsys):
+    """
+    [TC-IDX-10 / DEFECT-04]
+    Verifies that:
+    1. _commit_batch_with_retry rolls back and re-raises the exception after 3 failed attempts
+       rather than swallowing it and returning None.
+    2. run_indexing_background aborts subsequent chunks on batch commit failure, transitions
+       indexing_state_manager to status="error" with single-line error_message, exposes it
+       via GET /api/index/status, and does NOT emit false completion logs.
+    3. State recovers cleanly via try_start_indexing(), and stale/pre-cancelled runs cannot
+       resurrect or overwrite newer runs.
+    """
+    from unittest.mock import MagicMock, patch
+    import services.indexing_service as idx_svc
+    from services.indexing_state import indexing_state_manager
+
+    indexing_state_manager.reset_status()
+
+    # --- Part 1: _commit_batch_with_retry boundary & propagation ---
+    with pytest.raises(ValueError, match="max_attempts must be at least 1"):
+        idx_svc._commit_batch_with_retry([{"image_data": {"id": "x"}}], max_attempts=0)
+
+    # Empty batch returns immediately without DB access
+    idx_svc._commit_batch_with_retry([], max_attempts=3)
+
+    mock_session = MagicMock()
+    batch_payload = [{"image_data": {"id": "p1", "file_path": "/p1.jpg"}}]
+    with patch.object(idx_svc, "SessionLocal", return_value=mock_session), \
+         patch("services.photo.register_photos_batch_atomic", side_effect=RuntimeError("DB disk full\n[SQL: INSERT]")) as mock_reg, \
+         patch("time.sleep"):
+        with pytest.raises(RuntimeError, match="DB disk full"):
+            idx_svc._commit_batch_with_retry(batch_payload, max_attempts=3)
+
+    assert mock_reg.call_count == 3
+    assert mock_session.rollback.call_count == 3
+    assert mock_session.close.call_count == 3
+
+    # --- Part 2: End-to-end run_indexing_background stops on chunk failure & prevents false completion ---
+    indexing_state_manager.reset_status()
+    assert indexing_state_manager.try_start_indexing() is True
+    first_run_id = indexing_state_manager.current_run_id
+
+    # 105 files across 2 chunks (100 + 5): chunk 1 commit fails, so chunk 2 must never execute
+    files_list = [f"/fake/img_{i}.jpg" for i in range(105)]
+    processed_paths = []
+
+    def fake_index_single(path):
+        processed_paths.append(path)
+        return {
+            "image_data": {"id": f"id_{path}", "file_path": path},
+            "metadata_data": {},
+            "ai_data": {},
+            "embedding": [0.1] * 4,
+        }
+
+    capsys.readouterr()
+    with patch.object(idx_svc, "scan_directory", return_value=files_list), \
+         patch.object(idx_svc, "cleanup_zombie_records"), \
+         patch.object(idx_svc, "index_single_file_sync", side_effect=fake_index_single), \
+         patch("services.photo.register_photos_batch_atomic", side_effect=RuntimeError("SQLite I/O\nline2")), \
+         patch("time.sleep"):
+        await idx_svc.run_indexing_background(["/fake"], run_id=first_run_id)
+
+    captured_stdout = capsys.readouterr().out
+    assert "[Indexer] Background indexing completed." not in captured_stdout
+    assert "[Indexer] Sync completed." not in captured_stdout
+    assert f"[Indexer] Background indexing failed [run={first_run_id}]: SQLite I/O line2" in captured_stdout
+
+    # Only chunk 1 (100 files) should have been processed before aborting
+    assert len(processed_paths) == 100
+
+    status_resp = client.get("/api/index/status")
+    assert status_resp.status_code == 200
+    status_json = status_resp.json()
+    assert status_json["status"] == "error"
+    assert status_json["error_message"] == "SQLite I/O line2"
+    assert status_json["processed_files"] == 100
+    assert status_json["total_files"] == 105
+    assert status_json["run_id"] == first_run_id
+
+    # --- Part 3: Recovery from error state & pre-cancel/stale-run protection ---
+    assert indexing_state_manager.try_start_indexing() is True
+    cancelled_run_id = indexing_state_manager.current_run_id
+    assert indexing_state_manager.status == "processing"
+    assert indexing_state_manager.get_status_dict()["error_message"] is None
+
+    # Pre-cancel before background task starts: initialize_background_run must return None
+    indexing_state_manager.cancel()
+    assert indexing_state_manager.initialize_background_run(run_id=cancelled_run_id) is None
+    assert indexing_state_manager.status == "cancelled"
+
+    # Start a new run and ensure stale run_id cannot overwrite its active status
+    assert indexing_state_manager.try_start_indexing() is True
+    active_run_id = indexing_state_manager.current_run_id
+    assert active_run_id > cancelled_run_id
+    assert indexing_state_manager.finalize_run(error_message="stale err", run_id=first_run_id) is None
+    assert indexing_state_manager.status == "processing"
+
+    # Cancellation takes precedence over error_message on active run finalization
+    indexing_state_manager.cancel()
+    assert indexing_state_manager.finalize_run(error_message="err during cancel", run_id=active_run_id) == "cancelled"
+    assert indexing_state_manager.status == "cancelled"
+    assert indexing_state_manager.get_status_dict()["error_message"] is None
+
+    # BaseException (CancelledError) must transition to error (not idle/completed) when not user-cancelled
+    import asyncio
+    indexing_state_manager.reset_status()
+    assert indexing_state_manager.try_start_indexing() is True
+    interrupted_run_id = indexing_state_manager.current_run_id
+    capsys.readouterr()
+    with patch.object(idx_svc, "scan_directory", side_effect=asyncio.CancelledError()):
+        with pytest.raises(asyncio.CancelledError):
+            await idx_svc.run_indexing_background(["/fake"], run_id=interrupted_run_id)
+    interrupted_stdout = capsys.readouterr().out
+    assert "[Indexer] Background indexing completed." not in interrupted_stdout
+    assert indexing_state_manager.status == "error"
+    assert indexing_state_manager.get_status_dict()["error_message"] == "CancelledError"
+
+    indexing_state_manager.reset_status()
+
+
 def test_start_indexing_empty_payload(client):
     """
     Verifies /api/index/start returns 400 Bad Request if folder_paths is empty.
