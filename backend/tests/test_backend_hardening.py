@@ -2146,3 +2146,269 @@ def test_document_structuring_prompt_and_fallback():
     assert st["progress"] == 75
     assert "리포트 문서 양식" in st["message"]
 
+
+def test_tc_idx_17_rejects_unregistered_parent_and_root_paths(client, db_session, tmp_path, monkeypatch):
+    """
+    TC-IDX-17 (DEFECT-11): Verifies DELETE /api/folders and remove_folder_data reject
+    unregistered root, ancestor, subpath, traversal, sibling, empty, and relative paths
+    while preserving all registered IndexedFolder records, images, thumbnails, and vectors.
+    """
+    import unicodedata
+    from unittest.mock import patch
+    import services.indexing_service as idx_svc
+    from services.indexing_state import indexing_state_manager
+
+    indexing_state_manager.reset_status()
+    thumb_dir = tmp_path / "thumbs_tc17_reject"
+    thumb_dir.mkdir()
+    monkeypatch.setattr(idx_svc, "get_thumbnail_path", lambda pid: str(thumb_dir / f"{pid}.jpg"))
+
+    photos_root = tmp_path / "photos"
+    trip_dir = photos_root / "2026" / "trip"
+    family_dir = photos_root / "2026" / "family"
+    korean_dir_nfc = unicodedata.normalize("NFC", str(tmp_path / "한글보관함" / "여행"))
+    trip_dir.mkdir(parents=True)
+    family_dir.mkdir(parents=True)
+    os.makedirs(korean_dir_nfc, exist_ok=True)
+
+    db_session.add_all([
+        models.IndexedFolder(path=str(trip_dir)),
+        models.IndexedFolder(path=str(family_dir)),
+        models.IndexedFolder(path=korean_dir_nfc),
+        models.Image(
+            id="tc17_trip_1",
+            parent_dir=str(trip_dir),
+            file_path=str(trip_dir / "a.jpg"),
+            file_name="a.jpg",
+            file_size=10,
+            file_mtime=time.time(),
+            mime_type="image/jpeg",
+        ),
+        models.Image(
+            id="tc17_family_1",
+            parent_dir=str(family_dir),
+            file_path=str(family_dir / "b.jpg"),
+            file_name="b.jpg",
+            file_size=10,
+            file_mtime=time.time(),
+            mime_type="image/jpeg",
+        ),
+        models.Image(
+            id="tc17_kor_1",
+            parent_dir=korean_dir_nfc,
+            file_path=os.path.join(korean_dir_nfc, "kor.jpg"),
+            file_name="kor.jpg",
+            file_size=10,
+            file_mtime=time.time(),
+            mime_type="image/jpeg",
+        ),
+    ])
+    db_session.commit()
+
+    for pid in ("tc17_trip_1", "tc17_family_1", "tc17_kor_1"):
+        (thumb_dir / f"{pid}.jpg").write_bytes(b"thumb")
+
+    deleted_vectors: list[str] = []
+    with patch.object(idx_svc, "vector_repo") as mock_vector:
+        mock_vector.delete.side_effect = lambda ids: deleted_vectors.extend(ids)
+
+        for unregistered_path in [
+            "/",
+            "//",
+            str(tmp_path),
+            str(photos_root),
+            str(photos_root / "2026"),
+            str(trip_dir / "sub"),
+            str(trip_dir / ".."),
+            str(photos_root / "2026" / "trip_other"),
+        ]:
+            resp = client.delete("/api/folders", params={"path": unregistered_path})
+            assert resp.status_code == 404, f"Expected 404 for {unregistered_path}, got {resp.status_code}"
+
+        for invalid_path in ["", "   ", ".", "..", "photos/2026/trip", f"{trip_dir}\x00evil"]:
+            resp = client.delete("/api/folders", params={"path": invalid_path})
+            assert resp.status_code == 400, f"Expected 400 for {invalid_path!r}, got {resp.status_code}"
+
+        # Defense-in-depth: direct service invocation must also refuse unregistered parents
+        with pytest.raises(idx_svc.FolderNotRegisteredError):
+            idx_svc.remove_folder_data("/", db=db_session)
+        with pytest.raises(idx_svc.FolderNotRegisteredError):
+            idx_svc.remove_folder_data(str(photos_root), db=db_session)
+        with pytest.raises(ValueError):
+            idx_svc.remove_folder_data("   ", db=db_session)
+
+    assert deleted_vectors == []
+    assert db_session.query(models.IndexedFolder).count() == 3
+    assert db_session.query(models.Image).count() == 3
+    for pid in ("tc17_trip_1", "tc17_family_1", "tc17_kor_1"):
+        assert (thumb_dir / f"{pid}.jpg").exists()
+
+
+def test_tc_idx_17_canonical_match_symlink_guards_and_indexing_conflict(client, db_session, tmp_path, monkeypatch):
+    """
+    TC-IDX-17 (DEFECT-11): Verifies NFC/NFD + trailing-slash exact matching, nested vs
+    sibling folder scoping, leaf/file symlink containment, active indexing 409 conflict,
+    and ChromaDB failure rollback propagation.
+    """
+    import unicodedata
+    from unittest.mock import patch
+    import services.indexing_service as idx_svc
+    from services.indexing_state import indexing_state_manager
+
+    indexing_state_manager.reset_status()
+    thumb_dir = tmp_path / "thumbs_tc17_ok"
+    thumb_dir.mkdir()
+    monkeypatch.setattr(idx_svc, "get_thumbnail_path", lambda pid: str(thumb_dir / f"{pid}.jpg"))
+
+    # 1. NFC IndexedFolder vs NFD image + NFD delete query with trailing slash
+    kor_nfc = unicodedata.normalize("NFC", str(tmp_path / "여행사진"))
+    kor_nfd = unicodedata.normalize("NFD", str(tmp_path / "여행사진"))
+    os.makedirs(kor_nfc, exist_ok=True)
+
+    # 2. Nested folders + sibling prefix folder
+    parent_dir = tmp_path / "Album"
+    child_dir = parent_dir / "Best"
+    sibling_dir = tmp_path / "Album_Backup"
+    parent_dir.mkdir()
+    child_dir.mkdir()
+    sibling_dir.mkdir()
+
+    # 3. Symlink escalation guard: Temp replaced by symlink to tmp_path + Protected sibling
+    protected_dir = tmp_path / "Protected"
+    protected_dir.mkdir()
+    temp_link = tmp_path / "TempLink"
+    os.symlink(str(tmp_path), str(temp_link))
+
+    # 4. Cross-folder file symlink guard: FolderB/shortcut.jpg -> FolderA/sunset.jpg
+    folder_a = tmp_path / "FolderA"
+    folder_b = tmp_path / "FolderB"
+    folder_a.mkdir()
+    folder_b.mkdir()
+    sunset_a = folder_a / "sunset.jpg"
+    sunset_a.write_bytes(b"a")
+    shortcut_b = folder_b / "shortcut.jpg"
+    os.symlink(str(sunset_a), str(shortcut_b))
+
+    db_session.add_all([
+        models.IndexedFolder(path=kor_nfc),
+        models.IndexedFolder(path=str(parent_dir)),
+        models.IndexedFolder(path=str(child_dir)),
+        models.IndexedFolder(path=str(sibling_dir)),
+        models.IndexedFolder(path=str(temp_link)),
+        models.IndexedFolder(path=str(protected_dir)),
+        models.IndexedFolder(path=str(folder_a)),
+        models.IndexedFolder(path=str(folder_b)),
+        models.Image(
+            id="tc17_kor_nfd",
+            parent_dir=kor_nfd,
+            file_path=os.path.join(kor_nfd, unicodedata.normalize("NFD", "바다.jpg")),
+            file_name="바다.jpg",
+            file_size=5,
+            file_mtime=time.time(),
+            mime_type="image/jpeg",
+        ),
+        models.Image(
+            id="tc17_parent_img",
+            parent_dir=str(parent_dir),
+            file_path=str(parent_dir / "p.jpg"),
+            file_name="p.jpg",
+            file_size=5,
+            file_mtime=time.time(),
+            mime_type="image/jpeg",
+        ),
+        models.Image(
+            id="tc17_child_img",
+            parent_dir=str(child_dir),
+            file_path=str(child_dir / "c.jpg"),
+            file_name="c.jpg",
+            file_size=5,
+            file_mtime=time.time(),
+            mime_type="image/jpeg",
+        ),
+        models.Image(
+            id="tc17_sibling_img",
+            parent_dir=str(sibling_dir),
+            file_path=str(sibling_dir / "s.jpg"),
+            file_name="s.jpg",
+            file_size=5,
+            file_mtime=time.time(),
+            mime_type="image/jpeg",
+        ),
+        models.Image(
+            id="tc17_protected_img",
+            parent_dir=str(protected_dir),
+            file_path=str(protected_dir / "keep.jpg"),
+            file_name="keep.jpg",
+            file_size=5,
+            file_mtime=time.time(),
+            mime_type="image/jpeg",
+        ),
+        models.Image(
+            id="tc17_folder_a_img",
+            parent_dir=str(folder_a),
+            file_path=str(sunset_a),
+            file_name="sunset.jpg",
+            file_size=5,
+            file_mtime=time.time(),
+            mime_type="image/jpeg",
+        ),
+        models.Image(
+            id="tc17_folder_b_shortcut",
+            parent_dir=str(folder_b),
+            file_path=str(shortcut_b),
+            file_name="shortcut.jpg",
+            file_size=5,
+            file_mtime=time.time(),
+            mime_type="image/jpeg",
+        ),
+    ])
+    db_session.commit()
+    (thumb_dir / "tc17_kor_nfd.jpg").write_bytes(b"tk")
+
+    with patch.object(idx_svc, "vector_repo") as mock_vector:
+        # A. NFD query with trailing slash deletes NFC IndexedFolder and NFD image
+        resp_kor = client.delete("/api/folders", params={"path": kor_nfd + os.sep})
+        assert resp_kor.status_code == 200
+        assert db_session.query(models.Image).filter_by(id="tc17_kor_nfd").first() is None
+        assert not (thumb_dir / "tc17_kor_nfd.jpg").exists()
+        mock_vector.delete.assert_called_with(["tc17_kor_nfd"])
+
+        # B. Deleting registered TempLink (symlink to tmp_path) must NOT delete Protected or others
+        resp_sym = client.delete("/api/folders", params={"path": str(temp_link)})
+        assert resp_sym.status_code == 200
+        assert db_session.query(models.IndexedFolder).filter_by(path=str(protected_dir)).first() is not None
+        assert db_session.query(models.Image).filter_by(id="tc17_protected_img").first() is not None
+
+        # C. Deleting registered parent Album deletes Album + Album/Best, preserves Album_Backup
+        resp_parent = client.delete("/api/folders", params={"path": str(parent_dir)})
+        assert resp_parent.status_code == 200
+        assert db_session.query(models.IndexedFolder).filter_by(path=str(child_dir)).first() is None
+        assert db_session.query(models.Image).filter_by(id="tc17_parent_img").first() is None
+        assert db_session.query(models.Image).filter_by(id="tc17_child_img").first() is None
+        assert db_session.query(models.IndexedFolder).filter_by(path=str(sibling_dir)).first() is not None
+        assert db_session.query(models.Image).filter_by(id="tc17_sibling_img").first() is not None
+
+        # D. Deleting FolderA must NOT delete FolderB/shortcut.jpg pointing to FolderA/sunset.jpg
+        resp_a = client.delete("/api/folders", params={"path": str(folder_a)})
+        assert resp_a.status_code == 200
+        assert db_session.query(models.Image).filter_by(id="tc17_folder_a_img").first() is None
+        assert db_session.query(models.Image).filter_by(id="tc17_folder_b_shortcut").first() is not None
+
+        # E. Active indexing returns 409 for registered folder and 404 for unregistered path
+        assert indexing_state_manager.try_start_indexing() is True
+        try:
+            assert client.delete("/api/folders", params={"path": "/"}).status_code == 404
+            conflict_resp = client.delete("/api/folders", params={"path": str(folder_b)})
+            assert conflict_resp.status_code == 409
+            assert db_session.query(models.IndexedFolder).filter_by(path=str(folder_b)).first() is not None
+        finally:
+            indexing_state_manager.reset_status()
+
+        # F. ChromaDB failure rolls back SQLite and returns 500 instead of false 200
+        mock_vector.delete.side_effect = RuntimeError("Chroma delete failure")
+        err_resp = client.delete("/api/folders", params={"path": str(folder_b)})
+        assert err_resp.status_code == 500
+        assert db_session.query(models.IndexedFolder).filter_by(path=str(folder_b)).first() is not None
+        assert db_session.query(models.Image).filter_by(id="tc17_folder_b_shortcut").first() is not None
+
+

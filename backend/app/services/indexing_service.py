@@ -134,7 +134,7 @@ def _purge_photo_records_batch(db: Session, photo_ids: List[str]) -> None:
 
 def _normalize_path_for_comparison(path: str) -> str:
     """Resolves symlinks and normalizes Unicode (NFC) and case for path comparisons."""
-    if not path:
+    if not isinstance(path, str) or not path.strip():
         return ""
     try:
         resolved_path = os.path.realpath(path)
@@ -226,61 +226,159 @@ def cleanup_zombie_records(db: Session = None):
             db.close()
 
 
-def remove_folder_data(folder_path: str, db: Session = None):
-    """
-    Deletes a folder from IndexedFolder and removes all associated photos
-    from SQLite, ChromaDB, and Thumbnail cache.
-    """
-    close_db = False
-    if db is None:
-        db = SessionLocal()
-        close_db = True
+class FolderNotRegisteredError(ValueError):
+    """Raised when attempting to remove a folder not registered in IndexedFolder."""
+
+
+class FolderDeletionConflictError(RuntimeError):
+    """Raised when folder deletion conflicts with an active indexing run."""
+
+
+def _resolve_path_without_leaf_symlink(path: str) -> str:
+    """Normalizes path and resolves parent symlinks without expanding a leaf symlink."""
+    normalized_path = os.path.normpath(path)
+    if normalized_path.startswith("//"):
+        normalized_path = "/" + normalized_path.lstrip("/")
+    if normalized_path == os.sep:
+        return os.sep
+    if os.path.islink(normalized_path):
+        resolved_parent = os.path.realpath(os.path.dirname(normalized_path))
+        return os.path.join(resolved_parent, os.path.basename(normalized_path))
+    return os.path.realpath(normalized_path)
+
+
+def _normalize_folder_deletion_path(path: str) -> str:
+    """Normalizes a path for folder deletion without expanding leaf symlinks."""
+    if not isinstance(path, str) or not path.strip():
+        return ""
     try:
-        real_target = os.path.realpath(folder_path)
-        search_prefix = real_target if real_target.endswith(os.sep) else real_target + os.sep
-        path_without_sep = real_target.rstrip(os.sep)
+        resolved_path = _resolve_path_without_leaf_symlink(path)
+    except Exception as path_err:
+        logger.debug("Safe path resolution failed for %s; falling back to normpath: %s", path, path_err)
+        resolved_path = os.path.normpath(path)
+    return unicodedata.normalize("NFC", resolved_path).lower()
 
-        target_lower = real_target.lower()
-        prefix_lower = search_prefix.lower()
-        without_sep_lower = path_without_sep.lower()
-        orig_lower = folder_path.lower()
-        orig_prefix_lower = (folder_path if folder_path.endswith(os.sep) else folder_path + os.sep).lower()
 
-        images_to_delete = db.query(DBImage.id).filter(
-            or_(
-                func.lower(DBImage.parent_dir) == target_lower,
-                func.lower(DBImage.parent_dir) == without_sep_lower,
-                func.lower(DBImage.parent_dir) == orig_lower,
-                func.lower(DBImage.parent_dir).startswith(prefix_lower),
-                func.lower(DBImage.parent_dir).startswith(orig_prefix_lower),
-                func.lower(DBImage.file_path).startswith(prefix_lower),
-                func.lower(DBImage.file_path).startswith(orig_prefix_lower),
-                func.lower(DBImage.file_path) == target_lower
-            )
-        ).all()
-        image_ids = list(set(row.id for row in images_to_delete)) if images_to_delete else []
+def _validate_folder_deletion_pair(folder_path: str) -> tuple[str, str]:
+    """Validates folder_path is a non-empty absolute path and returns its canonical (root, prefix)."""
+    if not isinstance(folder_path, str) or not folder_path.strip() or "\x00" in folder_path:
+        raise ValueError("Folder path must be a non-empty valid path.")
+    if not os.path.isabs(folder_path):
+        raise ValueError(f"Folder path must be an absolute path: {folder_path}")
+    normalized_root = _normalize_folder_deletion_path(folder_path)
+    if not normalized_root:
+        raise ValueError(f"Invalid folder path: {folder_path}")
+    folder_prefix = normalized_root if normalized_root.endswith(os.sep) else normalized_root + os.sep
+    return normalized_root, folder_prefix
 
-        if image_ids:
-            print(f"[Indexer] Removing {len(image_ids)} images for folder {folder_path}", flush=True)
-            _purge_photo_records_batch(db, image_ids)
 
-        all_indexed = db.query(IndexedFolder).all()
-        for f_rec in all_indexed:
-            f_real = os.path.realpath(f_rec.path).lower()
-            if (
-                f_real in [target_lower, without_sep_lower, orig_lower]
-                or f_rec.path.lower() in [target_lower, without_sep_lower, orig_lower]
-                or f_real.startswith(prefix_lower)
-            ):
-                db.delete(f_rec)
+def _is_target_or_nested_folder(
+    candidate_path: str,
+    normalized_target: str,
+    target_prefix: str,
+) -> bool:
+    """Returns True if candidate_path equals normalized_target or is nested beneath target_prefix."""
+    normalized_candidate = _normalize_folder_deletion_path(candidate_path)
+    if not normalized_candidate:
+        return False
+    return normalized_candidate == normalized_target or normalized_candidate.startswith(target_prefix)
 
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        print(f"[Indexer] Error removing folder data: {e}", flush=True)
+
+def _find_matching_indexed_folders(
+    db: Session,
+    normalized_target: str,
+    target_prefix: str,
+    original_path: str,
+) -> list[IndexedFolder]:
+    """Requires an exact canonical IndexedFolder match, then returns it with nested subfolders."""
+    all_indexed = db.query(IndexedFolder).all()
+    exact_matches = [
+        folder_record
+        for folder_record in all_indexed
+        if _normalize_folder_deletion_path(folder_record.path) == normalized_target
+    ]
+    if not exact_matches:
+        raise FolderNotRegisteredError(f"Folder is not registered: {original_path}")
+
+    return [
+        folder_record
+        for folder_record in all_indexed
+        if _is_target_or_nested_folder(folder_record.path, normalized_target, target_prefix)
+    ]
+
+
+def _belongs_to_deletion_target(
+    file_path: str,
+    parent_dir: str,
+    target_pair: tuple[str, str],
+) -> bool:
+    """Checks if an image record belongs to target_pair without following leaf symlinks."""
+    target_root, target_prefix = target_pair
+    normalized_parent = _normalize_folder_deletion_path(parent_dir)
+    if normalized_parent == target_root or normalized_parent.startswith(target_prefix):
+        return True
+    if not isinstance(file_path, str) or not file_path.strip():
+        return False
+    file_dir_norm = _normalize_folder_deletion_path(os.path.dirname(file_path))
+    return file_dir_norm == target_root or file_dir_norm.startswith(target_prefix)
+
+
+def _find_folder_image_ids(db: Session, target_pair: tuple[str, str]) -> list[str]:
+    """Collects unique IDs of images belonging to the deleted folder target."""
+    all_images = db.query(DBImage.id, DBImage.file_path, DBImage.parent_dir).all()
+    matched_ids: list[str] = []
+    seen_ids: set[str] = set()
+    for image_id, file_path, parent_dir in all_images:
+        if image_id in seen_ids:
+            continue
+        if _belongs_to_deletion_target(file_path, parent_dir, target_pair):
+            seen_ids.add(image_id)
+            matched_ids.append(image_id)
+    return matched_ids
+
+
+def _execute_folder_deletion(
+    active_db: Session,
+    folder_path: str,
+    target_pair: tuple[str, str],
+) -> None:
+    """Validates registration and active indexing state, then deletes folder records atomically."""
+    normalized_target, target_prefix = target_pair
+    folders_to_delete = _find_matching_indexed_folders(
+        active_db, normalized_target, target_prefix, folder_path
+    )
+    if indexing_state_manager.status in ("processing", "paused"):
+        raise FolderDeletionConflictError("Cannot remove folder while indexing is in progress or paused.")
+
+    image_ids = _find_folder_image_ids(active_db, target_pair)
+    if image_ids:
+        print(f"[Indexer] Removing {len(image_ids)} images for folder {folder_path}", flush=True)
+        _purge_photo_records_batch(active_db, image_ids)
+    for folder_record in folders_to_delete:
+        active_db.delete(folder_record)
+    active_db.commit()
+
+
+def remove_folder_data(folder_path: str, db: Session = None) -> None:
+    """
+    Deletes a registered folder (and nested registered subfolders) from IndexedFolder
+    and removes all associated photos from SQLite, ChromaDB, and Thumbnail cache.
+    """
+    target_pair = _validate_folder_deletion_pair(folder_path)
+    close_db = db is None
+    active_db = SessionLocal() if close_db else db
+    try:
+        _execute_folder_deletion(active_db, folder_path, target_pair)
+    except (FolderNotRegisteredError, FolderDeletionConflictError, ValueError):
+        active_db.rollback()
+        raise
+    except Exception as remove_err:
+        active_db.rollback()
+        logger.error("[Indexer] Error removing folder data for %s: %s", folder_path, remove_err)
+        raise
     finally:
         if close_db:
-            db.close()
+            active_db.close()
 
 
 # --- Indexing Pipeline Workers ---
@@ -711,6 +809,8 @@ __all__ = [
     "scan_directory",
     "delete_photo_atomic_sync",
     "cleanup_zombie_records",
+    "FolderNotRegisteredError",
+    "FolderDeletionConflictError",
     "remove_folder_data",
     "run_ai_pipeline_sync",
     "index_single_file_sync",

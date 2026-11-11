@@ -332,8 +332,10 @@ def test_indexing_service_deletion_order():
     # 1. Test remove_folder_data
     call_order = []
     mock_db = MagicMock()
-    mock_db.query.return_value.filter.return_value.all.return_value = [MagicMock(id="img_1")]
-    mock_db.query.return_value.all.return_value = []
+    mock_db.query.return_value.all.side_effect = [
+        [MagicMock(path="/fake/folder")],
+        [("img_1", "/fake/folder/photo.jpg", "/fake/folder")],
+    ]
     mock_db.commit.side_effect = lambda: call_order.append("sqlite_commit")
 
     with patch("services.indexing_service.vector_repo") as mock_vector:

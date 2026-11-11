@@ -66,3 +66,33 @@ def test_photo_repository_folder_methods(db_session):
     assert found is not None
     assert found.path == "/test/custom_folder"
 
+
+def test_delete_unregistered_and_invalid_folders(client, db_session):
+    registered_path = "/test/photos/2026/trip"
+    folder = IndexedFolder(path=registered_path)
+    img = Image(
+        id="hash_keep_1",
+        parent_dir=registered_path,
+        file_path=f"{registered_path}/keep.jpg",
+        file_name="keep.jpg",
+        file_size=100,
+        file_mtime=time.time(),
+        mime_type="image/jpeg",
+    )
+    db_session.add_all([folder, img])
+    db_session.commit()
+
+    # Unregistered parent and root paths must be rejected with 404
+    for bad_target in ["/", "/test", "/test/photos", "/test/photos/2026"]:
+        resp = client.delete(f"/api/folders?path={bad_target}")
+        assert resp.status_code == 404
+
+    # Empty / relative paths must be rejected with 400
+    for invalid_target in ["", "   ", "relative/path", "."]:
+        resp = client.delete(f"/api/folders?path={invalid_target}")
+        assert resp.status_code == 400
+
+    assert db_session.query(IndexedFolder).count() == 1
+    assert db_session.query(Image).count() == 1
+
+
