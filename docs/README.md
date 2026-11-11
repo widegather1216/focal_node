@@ -8,10 +8,10 @@
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
 - **Active 도메인**: [`01_indexing_storage`](./features/01_indexing_storage/README.md)
-- **현재 단계 (Stage)**: `🩹 Debugging (DEFECT-01~05 해결 완료, P0 결함 DEFECT-06 등 6건 잔여 디버깅 진행 중)`
-- **직전 완료 작업**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) 도메인 DEFECT-05 해결 완료 (`index_single_file_sync` 선행 삭제 제거·예외 격리 및 `replaces_image_id` 전달, `_save_photos_atomic_internal` 동일 미커밋 트랜잭션 내 선삭제+`flush()` 및 커밋 직후 격리된 구 벡터/썸네일 정리 `_cleanup_replaced_artifacts` 적용, 신규 회귀 테스트 `TC-IDX-11` 통과 및 백엔드 137종 전수 통과)
+- **현재 단계 (Stage)**: `🩹 Debugging (DEFECT-01~06 해결 완료, P1 결함 DEFECT-07 등 5건 잔여 디버깅 진행 중)`
+- **직전 완료 작업**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) 도메인 DEFECT-06 해결 완료 (`backend/app/services/indexing_service.py`에 `_normalize_path_for_comparison`·`_to_folder_prefix_pair`·`_belongs_to_any_folder` 도입으로 `unicodedata.normalize("NFC", ...).lower()` 일원화 적용 및 `_identify_zombie_photo_ids` NFD/NFC 한글 폴더 오삭제 차단, 신규 회귀 테스트 `TC-IDX-12` 통과 및 백엔드 138종 전수 통과)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"01_indexing_storage 도메인의 DEFECT-06 티켓 해결해줘"` *(macOS NFD/NFC 정규화 불일치로 인한 한글 폴더 사진 전량 오삭제 차단)*
+  > `"01_indexing_storage 도메인의 DEFECT-07 티켓 해결해줘"` *(ExifRead `values=[]` 빈 리스트 `IndexError`로 인한 EXIF 메타데이터 파싱 중단 해소)*
 
 ---
 
@@ -20,7 +20,7 @@
 | 도메인 (Bounded Context) | 생명주기 상태 | 구현 진척도 (Active Step 1~4) | QA 인수 통과율 | 미해결 티켓 (`🚨D` / `🧐R`) | 최근 작업 요약 |
 | :--- | :--- :---: | :---: | :---: | :---: | :--- |
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `5/5 (100%)` | `0 / 0` | DEFECT-01~04 전수 해결 완료 (손상 인덱스 valid=False, 실패 시 거짓 완료 차단, 1종 조기완료 차단, 중복 스레드/락 삭제 가드), Sign-Off 완료 |
-| 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `8/17 (47%)` | `6 / 0` | DEFECT-05 해결 완료(index_single_file_sync 선행 삭제 제거·원자적 교체 커밋 및 post-commit 구 산출물 격리 정리, TC-IDX-11 PASS), DEFECT-06~11 6건 잔여 |
+| 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `9/17 (53%)` | `5 / 0` | DEFECT-06 해결 완료(macOS NFD/NFC 유니코드 정규화 통일로 한글 폴더 사진 좀비 오삭제 차단, TC-IDX-12 PASS), DEFECT-07~11 5건 잔여 |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 📐 Planning | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 거리 임계값 + RRF 랭킹 + 35mm/점수 필터 + 스마트 앨범 Step 1~4 대기 |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `13/13 (100%)` | `0 / 2` | `DEFECT-02~03` 및 `REFACTOR-04~07` 해결 완료, `REFACTOR` 2건 대기 |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 📐 Planning | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 2` | 통계 차트 클릭 갤러리 드릴다운(`Click-to-Filter`) Step 3~4 대기 |
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-11]` `[systematic-debugger]` [`01_indexing_storage`]**: DEFECT-06 결함 해결 및 원자적 커밋 완료 (`ad2eca2` / `backend/app/services/indexing_service.py`에 `_normalize_path_for_comparison`·`_to_folder_prefix_pair`·`_belongs_to_any_folder`를 도입해 `os.path.realpath`/`normpath` 결과에 `unicodedata.normalize("NFC", ...).lower()`를 일관 적용하고, `_identify_zombie_photo_ids`가 직접 전달받은 prefix까지 NFC 정규화 후 판정하도록 교정함으로써 macOS APFS NFD 파일시스템 경로와 UI/Tauri NFC 폴더 경로 불일치로 인한 한글 폴더 사진 전량 오삭제를 완전 차단하고 삭제 파일/미등록 형제 접두어 폴더 정리는 정상 유지, 신규 회귀 테스트 `TC-IDX-12`(`test_tc_idx_12_korean_folder_nfd_nfc_zombie_prevention`) 작성 및 백엔드 138종(`138 passed`) 전수 통과, `verification.md`/`README.md` 동기화).
 
 - **`[2026-11-11]` `[systematic-debugger]` [`01_indexing_storage`]**: DEFECT-05 결함 해결 및 원자적 커밋 완료 (`46ce1f9` / `backend/app/services/indexing_service.py`의 `index_single_file_sync`를 `_find_existing_id_or_skip`·`_resolve_hash_conflict`로 분리해 stat/DB/해시 구간까지 예외 안전화하고 배치 커밋 전 `delete_photo_atomic_sync` 선행 삭제를 제거하여 top-level `replaces_image_id`만 전달하도록 수정, `backend/app/services/photo.py`의 `_save_photos_atomic_internal`에서 동일 미커밋 SQLite 트랜잭션 내 `db.add_all` 직전 `_delete_replaced_rows_in_tx(..., synchronize_session="fetch") + db.flush()`로 자식/부모 행을 선삭제하여 `UNIQUE(images.file_path)` 충돌·커밋 실패 롤백 유실·테스트 FK 캐스케이드 누락을 동시 차단하고 커밋 성공 직후에만 `stale_old_ids`에 대해 격리된 `_cleanup_replaced_artifacts`로 구 ChromaDB 벡터/구 썸네일을 정리해 post-commit 삭제 오류가 `_commit_batch_with_retry` 재시도로 재진입하지 않도록 방어, 신규 회귀 테스트 `TC-IDX-11`(`test_tc_idx_11_modified_file_reindex_preserves_old_record_on_interrupt`) 작성 및 백엔드 137종(`137 passed`) 전수 통과, `verification.md`/`README.md` 동기화).
 

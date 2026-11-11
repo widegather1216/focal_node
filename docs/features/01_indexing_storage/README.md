@@ -1,8 +1,8 @@
 # 💾 [01_indexing_storage] Indexing Pipeline, Storage & RAW Media
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-01~05 해결 완료 / DEFECT 6건 잔여 디버깅 진행 중)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-01~06 해결 완료 / DEFECT 5건 잔여 디버깅 진행 중)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 6건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 5건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -35,23 +35,25 @@
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-11-11 / systematic-debugger + atomic-commit-crafter / DEFECT-05 해결 및 원자적 커밋 완료 (46ce1f9 / TC-IDX-11 PASS)`
-- **Recent Commits (2026-11-11 16:15)**:
+- **직전 완료 작업**: `2026-11-11 / systematic-debugger + atomic-commit-crafter / DEFECT-06 해결 및 원자적 커밋 완료 (ad2eca2 / TC-IDX-12 PASS)`
+- **Recent Commits (2026-11-11 16:44)**:
+  - `ad2eca2` - `fix(indexing): normalize unicode paths to NFC during zombie cleanup`
   - `46ce1f9` - `fix(indexing): defer superseded record deletion until batch commit succeeds`
   - `6ffe113` - `fix(indexing): propagate batch commit errors and isolate run lifecycle`
   - `6cba0eb` - `fix(ui): surface indexing errors in tauri bridge and progress card`
 - **해결된 결함 (Resolved Defect)**:
+  - `DEFECT-06`: `backend/app/services/indexing_service.py`에 `_normalize_path_for_comparison`·`_to_folder_prefix_pair`·`_belongs_to_any_folder`를 도입해 `os.path.realpath`/`normpath` 이후 `unicodedata.normalize("NFC", ...).lower()`를 일관 적용하고, `_identify_zombie_photo_ids` 및 `cleanup_zombie_records`가 NFC/NFD 경로 불일치로 한글 폴더 내 정상 사진을 좀비로 오판해 삭제하지 않도록 수정함(물리적 삭제 파일 및 유사 접두어 미등록 형제 폴더 정리는 유지, `TC-IDX-12` 신규 회귀 테스트 통과).
   - `DEFECT-05`: `index_single_file_sync`에서 배치 커밋 전 구 레코드를 즉시 삭제하던 `delete_photo_atomic_sync` 호출을 제거하고 stat/DB/해시 구간까지 예외 안전화(`_find_existing_id_or_skip`, `_resolve_hash_conflict`)한 뒤 top-level `replaces_image_id`를 전달하도록 개편함. `_save_photos_atomic_internal`에서 동일 미커밋 SQLite 트랜잭션 내 `db.add_all` 직전 `_delete_replaced_rows_in_tx(..., synchronize_session="fetch") + db.flush()`로 자식/부모 행을 선삭제해 `UNIQUE(file_path)` 충돌·롤백 유실·고아 행 잔류를 차단하고, 커밋 성공 직후에만 격리된 `_cleanup_replaced_artifacts`로 구 벡터/구 썸네일을 정리하도록 수정함.
   - `DEFECT-04`: `_commit_batch_with_retry`에서 세션 롤백 후 3회 실패 시 예외를 재전파하도록 수정하고, `IndexingStateManager`에 `run_id` 세대 격리·원자적 `finalize_run`·`error_message`를 도입해 예외 및 `BaseException` 발생 시 후속 청크 실행과 거짓 완료 로그(`Background indexing completed.`/`Sync completed.`) 발행을 차단하고 `status="error"`로 전이하도록 조치. Tauri `indexing-error` 이벤트, Zustand `reportIndexingError`/`dismissIndexingError`, `useIndexingStatus` `'error'` 분기, `IndexingProgressCard` 에러 전용 UI까지 전 계층 정합성을 보완함.
   - `DEFECT-03`: `IndexingStateManager`에 원자적 상태 선점 메서드 `try_start_indexing()`을 도입하여 락 내부에서 즉시 `"processing"`을 선점하고 중복 요청을 400 거부하도록 조치. 경로/DB 작업 예외 발생 시 `reset_status()` 안전 롤백 및 `run_indexing_background` startup 시 `initialize_background_run()`으로 상태가 순간적으로 `idle`로 풀리는 레이스를 원천 차단하여 중복 인덱서 실행 및 ChromaDB 벡터 영구 소실 해소.
   - `DEFECT-02`: `VectorRepository.delete`에서 ChromaDB `collection.delete` 실패 시 예외를 삼키던 결함을 제거하고 `logger.error` 후 `raise`로 재전파. `CompensatingTransactionManager.delete_and_commit`이 예외를 감지하여 SQLite `commit`을 방지하고 `rollback`을 수행함으로써 SQLite만 삭제되고 ChromaDB에 좀비 벡터가 영구 잔류하는 정합성 붕괴 완전 해소.
   - `DEFECT-01`: ChromaDB `get(include=["embeddings"])` 반환 `numpy.ndarray`에 대한 직접 불리언 평가 제거, Guard Clause 및 `.tolist()` 변환으로 100% `ValueError` 크래시 방지 및 단일 사진 재인덱싱/유사도 검색 안정화.
 - **잔여 우선순위 결함 (Open DEFECT Logs)**:
-  - `DEFECT-06`: macOS NFD/NFC 정규화 불일치로 인한 `_identify_zombie_photo_ids`의 한글 폴더 사진 전량 오삭제
-  - `DEFECT-07~11`: ExifRead `values=[]` IndexError, 비동기 라우트 동기 DB 쿼리 이벤트 루프 동결, `_pause_loop` 고착, 내보내기 허위 성공 표시, `DELETE /api/folders` 무검증 재귀 삭제
+  - `DEFECT-07`: ExifRead `values=[]` 빈 리스트 `IndexError`로 인한 EXIF 메타데이터 파싱 전면 중단
+  - `DEFECT-08~11`: 비동기 라우트 동기 DB 쿼리 이벤트 루프 동결, `_pause_loop` 고착, 내보내기 허위 성공 표시, `DELETE /api/folders` 무검증 재귀 삭제
 - **검증 완료된 테스트 실행 명령어**:
-  - `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_11 -v` (PASS)
-  - `./venv/bin/pytest backend/tests/ -v` (137 passed)
+  - `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_12 -v` (PASS)
+  - `./venv/bin/pytest backend/tests/ -v` (138 passed)
   - `python3 -B ~/.gemini/config/skills/interactive-feature-planner/scripts/check_wiki_health.py docs` (exit 0)
 - **다음 세션 포커스 및 추천 프롬프트**:
-  - `DEFECT-06` 해결: `"01_indexing_storage 도메인의 DEFECT-06 티켓 해결해줘"` (`macOS NFD/NFC 정규화 불일치로 인한 한글 폴더 사진 오삭제 방지`)
+  - `DEFECT-07` 해결: `"01_indexing_storage 도메인의 DEFECT-07 티켓 해결해줘"` (`ExifRead values=[] IndexError로 인한 EXIF 파싱 중단 해소`)

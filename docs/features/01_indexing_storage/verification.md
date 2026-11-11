@@ -1,8 +1,8 @@
 # 🧪 [01_indexing_storage] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-01~05 해결 완료 / DEFECT 6건 잔여 디버깅 진행 중)`
+- **검증 상태**: `🩹 Debugging (DEFECT-01~06 해결 완료 / DEFECT 5건 잔여 디버깅 진행 중)`
 - **인수 조건 통과율**: `1 / 4 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 6건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 5건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -54,7 +54,7 @@
 | **Boundary**| `TC-IDX-09` | 인덱싱/동기화 동시 호출 시 TOCTOU 방지 | `start` + `sync` 동시 호출 | 단일 태스크만 시작되고 벡터 소실 차단 | `PASS (Fixed in DEFECT-03)` |
 | **Negative**| `TC-IDX-10` | 배치 커밋 실패 시 에러 전파 및 거짓 완료 차단 | `_commit_batch_with_retry` 3회 실패 | 예외 raise 및 status="error" 전이 | `PASS (Fixed in DEFECT-04)` |
 | **Boundary**| `TC-IDX-11` | 수정 파일 재인덱싱 중단 시 기존 레코드 보존 | 재인덱싱 중 취소/실패 주입 | 신규 커밋 전 구 레코드 조기 삭제 차단 | `PASS (Fixed in DEFECT-05)` |
-| **Boundary**| `TC-IDX-12` | macOS NFD/NFC 한글 폴더 사진 오삭제 방지 | 한글 폴더 NFD/NFC 동기화 | 좀비 오판 차단 및 사진 보존 | `FAIL (DEFECT-06)` |
+| **Boundary**| `TC-IDX-12` | macOS NFD/NFC 한글 폴더 사진 오삭제 방지 | 한글 폴더 NFD/NFC 동기화 | 좀비 오판 차단 및 사진 보존 | `PASS (Fixed in DEFECT-06)` |
 | **Negative**| `TC-IDX-13` | ExifRead 빈 리스트(`values=[]`) 파싱 안정성 | 손상/초과 IFD 태그 파싱 | IndexError 방지 및 나머지 EXIF 보존 | `FAIL (DEFECT-07)` |
 | **Boundary**| `TC-IDX-14` | 비동기 미디어 라우트 내 동기 DB I/O 격리 | 썸네일/원본/내보내기 동시 요청 | 메인 비동기 이벤트 루프 동결 방지 | `FAIL (DEFECT-08)` |
 | **Boundary**| `TC-IDX-15` | IndexingStateManager 크로스 스레드 루프 바인딩 | 백그라운드 스레드 pause/resume | call_soon_threadsafe 안전 전달 | `FAIL (DEFECT-09)` |
@@ -106,12 +106,12 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_11 -v` (`PASS`), `./venv/bin/pytest backend/tests/ -v` (`137 passed`)
 
 ### [DEFECT-06] macOS 유니코드 정규화(NFD vs NFC) 불일치로 인한 `_identify_zombie_photo_ids`의 한글 폴더 사진 전량 오삭제
-- **현재 상태**: `🟡 OPEN`
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
 - **심각도**: 🔴 P0 Critical (False-Positive Data Purge)
-- **위치**: [`backend/app/services/indexing_service.py#L132-L147`](../../../backend/app/services/indexing_service.py#L132-L147)
-- **실증 여부**: `✅ Empirical Probe Reproduced`
-- **근본 원인 분석**: UI/Tauri에서 전달된 폴더 경로(NFC)와 macOS APFS 파일시스템 경로(NFD)의 바이트 시퀀스가 달라 `unicodedata.normalize` 없는 `startswith()` 비교가 `False`를 반환함. 파일이 실제 디스크에 존재함에도 좀비로 오인되어 다음 동기화 시 정상 한글 사진들이 전량 오삭제됨.
-- **수정 설계 방향**: 경로 정규화 시 `unicodedata.normalize("NFC", ...)`를 적용하여 NFD/NFC 정규화 차이로 인한 비교 실패 차단.
+- **해결 내역**:
+  - **수정 파일**: [`backend/app/services/indexing_service.py`](../../../backend/app/services/indexing_service.py#L133-L213), [`backend/tests/test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py#L872-L1011)
+  - **원인 및 조치**: macOS APFS에서 `os.path.realpath()`/`os.path.normpath()`가 입력 문자열의 유니코드 정규화 형식(NFC vs NFD)을 변환하지 않아 UI/Tauri(NFC) 등록 폴더와 APFS/os.walk(NFD) 이미지 경로 비교가 실패하던 결함을 해소함. `_normalize_path_for_comparison` 및 `_to_folder_prefix_pair` 헬퍼를 추출해 `unicodedata.normalize("NFC", resolved_path).lower()`로 정규화를 일원화하고, `_belongs_to_any_folder`와 `_identify_zombie_photo_ids`가 직접 전달받은 prefix까지 NFC 정규화 후 판정하도록 수정함(물리적 삭제 파일 및 미등록 형제 접두어 폴더 정리는 정상 유지).
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_12 -v` (`PASS`), `./venv/bin/pytest backend/tests/ -v` (`138 passed`)
 
 ### [DEFECT-07] `_get_tag_val`의 `tag.values == []` 빈 리스트 `IndexError`로 인한 EXIF 메타데이터 파싱 전면 중단
 - **현재 상태**: `🟡 OPEN`
