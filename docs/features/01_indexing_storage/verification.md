@@ -1,8 +1,8 @@
 # 🧪 [01_indexing_storage] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-01~06 해결 완료 / DEFECT 5건 잔여 디버깅 진행 중)`
+- **검증 상태**: `🩹 Debugging (DEFECT-01~07 해결 완료 / DEFECT 4건 잔여 디버깅 진행 중)`
 - **인수 조건 통과율**: `1 / 4 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 5건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 4건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -55,7 +55,7 @@
 | **Negative**| `TC-IDX-10` | 배치 커밋 실패 시 에러 전파 및 거짓 완료 차단 | `_commit_batch_with_retry` 3회 실패 | 예외 raise 및 status="error" 전이 | `PASS (Fixed in DEFECT-04)` |
 | **Boundary**| `TC-IDX-11` | 수정 파일 재인덱싱 중단 시 기존 레코드 보존 | 재인덱싱 중 취소/실패 주입 | 신규 커밋 전 구 레코드 조기 삭제 차단 | `PASS (Fixed in DEFECT-05)` |
 | **Boundary**| `TC-IDX-12` | macOS NFD/NFC 한글 폴더 사진 오삭제 방지 | 한글 폴더 NFD/NFC 동기화 | 좀비 오판 차단 및 사진 보존 | `PASS (Fixed in DEFECT-06)` |
-| **Negative**| `TC-IDX-13` | ExifRead 빈 리스트(`values=[]`) 파싱 안정성 | 손상/초과 IFD 태그 파싱 | IndexError 방지 및 나머지 EXIF 보존 | `FAIL (DEFECT-07)` |
+| **Negative**| `TC-IDX-13` | ExifRead 빈 리스트(`values=[]`) 파싱 안정성 | 손상/초과 IFD 태그 파싱 | IndexError 방지 및 나머지 EXIF 보존 | `PASS (Fixed in DEFECT-07)` |
 | **Boundary**| `TC-IDX-14` | 비동기 미디어 라우트 내 동기 DB I/O 격리 | 썸네일/원본/내보내기 동시 요청 | 메인 비동기 이벤트 루프 동결 방지 | `FAIL (DEFECT-08)` |
 | **Boundary**| `TC-IDX-15` | IndexingStateManager 크로스 스레드 루프 바인딩 | 백그라운드 스레드 pause/resume | call_soon_threadsafe 안전 전달 | `FAIL (DEFECT-09)` |
 | **Negative**| `TC-IDX-16` | 사진 내보내기 실패 시 에러 보존 및 UI 피드백 | 0장 내보내기 에러 응답 수신 | 허위 녹색 완료 차단 및 실패 안내 | `FAIL (DEFECT-10)` |
@@ -114,12 +114,12 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_12 -v` (`PASS`), `./venv/bin/pytest backend/tests/ -v` (`138 passed`)
 
 ### [DEFECT-07] `_get_tag_val`의 `tag.values == []` 빈 리스트 `IndexError`로 인한 EXIF 메타데이터 파싱 전면 중단
-- **현재 상태**: `🟡 OPEN`
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
 - **심각도**: 🟠 P1 High (Partial Metadata Loss)
-- **위치**: [`backend/app/utils/image.py#L102`](../../../backend/app/utils/image.py#L102)
-- **실증 여부**: `✅ Empirical Probe Reproduced`
-- **근본 원인 분석**: ExifRead가 비정상/손상 필드에 대해 `values = []`를 반환할 때, `tag.values[0]` 접근 시 `IndexError`가 발생하여 전체 EXIF 파싱이 중단되고 모든 메타데이터가 누락됨.
-- **수정 설계 방향**: `isinstance(tag.values, list) and len(tag.values) > 0` 검사 후 `tag.values[0]` 접근.
+- **해결 내역**:
+  - **수정 파일**: [`backend/app/utils/image.py`](../../../backend/app/utils/image.py#L99-L125), [`backend/app/utils/image.py#L239-L312`](../../../backend/app/utils/image.py#L239-L312), [`backend/tests/test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py#L1014-L1129)
+  - **원인 및 조치**: ExifRead가 `count=0` 또는 `count>=1000` 초과·손상 IFD 태그에 대해 `values=[]`를 반환할 때 `_get_tag_val`이 `tag.values[0]`에 직접 접근하여 `IndexError`를 발생시키고 `_parse_exif_tags_dict`의 나머지 모든 EXIF 파싱을 중단시키던 결함을 해소함. `_unwrap_tag_values` 헬퍼를 도입해 빈 리스트/튜플(`[]`, `()`), 공백 문자열, 빈 바이트 및 `None`을 필터링하되 숫자 `0`은 보존하고 `_get_tag_val`이 후속 대체 키(`EXIF ISOSpeed`, `Image LensModel`, `Image DateTime` 등)를 계속 탐색하도록 교정함. 또한 `_parse_positive_float`, `_parse_int`, `_extract_tags_dict`를 분리해 손상된 `Ratio(n, 0)`(`ZeroDivisionError`) 및 비정형 튜플(`TypeError`)이 후속 EXIF 필드를 중단하지 않도록 방어함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_13 -v` (`PASS`), `./venv/bin/pytest backend/tests/ -v` (`139 passed`)
 
 ### [DEFECT-08] `photos.py` 비동기 엔드포인트 내 동기 DB I/O 호출로 인한 FastAPI 단일 비동기 이벤트 루프 동결
 - **현재 상태**: `🟡 OPEN`
