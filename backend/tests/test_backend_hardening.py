@@ -593,6 +593,282 @@ async def test_tc_idx_10_batch_commit_failure_propagates_and_sets_error_status(c
     indexing_state_manager.reset_status()
 
 
+@pytest.mark.asyncio
+async def test_tc_idx_11_modified_file_reindex_preserves_old_record_on_interrupt(tmp_path, monkeypatch):
+    """
+    [TC-IDX-11 / DEFECT-05]
+    Verifies that re-indexing a modified file defers old-record deletion until
+    new-record batch commit succeeds:
+    1. Cancellation before batch commit preserves old SQLite rows, Chroma vector, and thumbnail.
+    2. Batch commit failure across retries rolls back SQLite + compensates new vector, preserving old state.
+    3. Successful replacement avoids UNIQUE(file_path) conflicts, cleans child/parent rows without orphans,
+       and isolates post-commit old-vector deletion errors from re-entering commit retries.
+    4. mtime-only touch and pipeline error paths keep existing records intact.
+    """
+    from unittest.mock import MagicMock, patch
+    from sqlalchemy.orm import sessionmaker
+    import services.indexing_service as idx_svc
+    import services.pipeline as pipeline_mod
+    from services.indexing_state import indexing_state_manager
+    from repositories.vector_repository import VectorRepository
+    from tests.conftest import engine as test_engine
+
+    photo_dir = tmp_path / "photos"
+    photo_dir.mkdir()
+    thumb_dir = tmp_path / "thumbs"
+    thumb_dir.mkdir()
+
+    monkeypatch.setattr(photo_service, "THUMBNAIL_CACHE_DIR", str(thumb_dir))
+    monkeypatch.setattr("services.photo.THUMBNAIL_CACHE_DIR", str(thumb_dir))
+    monkeypatch.setattr(
+        pipeline_mod,
+        "generate_and_cache_thumbnail",
+        lambda src_path, img_id: (thumb_dir / f"{img_id}.jpg").write_bytes(b"thumb:" + img_id.encode()),
+    )
+
+    mock_siglip = MagicMock()
+    mock_siglip.get_image_embedding.return_value = [0.2] * 768
+    mock_siglip.get_zero_shot_hints.return_value = ["landscape", "sky"]
+    mock_gemma = MagicMock()
+    mock_gemma.generate_caption_and_tags.return_value = {
+        "caption": "Updated test image",
+        "tags": ["updated"],
+        "aesthetic_tags": ["clean"],
+    }
+    monkeypatch.setattr(pipeline_mod, "get_siglip_adapter", lambda: mock_siglip)
+    monkeypatch.setattr(pipeline_mod, "get_gemma_adapter", lambda: mock_gemma)
+
+    photo_file = photo_dir / "edited.jpg"
+    Image.new("RGB", (32, 32), color="red").save(str(photo_file), format="JPEG")
+    os.utime(photo_file, (100.0, 100.0))
+    old_id = idx_svc.calculate_sha256(str(photo_file))
+    old_thumb = thumb_dir / f"{old_id}.jpg"
+    old_thumb.write_bytes(b"old-thumb")
+
+    SessionFactory = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+    setup_db = SessionFactory()
+    try:
+        setup_db.add(models.IndexedFolder(path=str(photo_dir)))
+        setup_db.add(
+            models.Image(
+                id=old_id,
+                parent_dir=str(photo_dir),
+                file_path=str(photo_file),
+                file_name="edited.jpg",
+                file_size=photo_file.stat().st_size,
+                file_mtime=100.0,
+                mime_type="image/jpeg",
+                is_favorite=True,
+            )
+        )
+        setup_db.add(models.ImageMetadata(image_id=old_id, width=32, height=32, camera_model="Sony A7M4"))
+        setup_db.add(models.AIAnalysis(image_id=old_id, caption="old caption", critique="keep critique"))
+        setup_db.commit()
+    finally:
+        setup_db.close()
+
+    chroma_vectors = {old_id: [0.1] * 768}
+
+    def fake_upsert(ids, embeddings, metadatas):
+        for pid, emb in zip(ids, embeddings):
+            chroma_vectors[pid] = emb
+
+    def fake_delete(ids):
+        for pid in ids:
+            chroma_vectors.pop(pid, None)
+
+    mock_coll = MagicMock()
+    mock_coll.upsert.side_effect = fake_upsert
+    mock_coll.delete.side_effect = fake_delete
+
+    # Modify file bytes so SHA-256 changes
+    Image.new("RGB", (32, 32), color="blue").save(str(photo_file), format="JPEG")
+    os.utime(photo_file, (200.0, 200.0))
+    new_id = idx_svc.calculate_sha256(str(photo_file))
+    assert new_id != old_id
+
+    # --- Part 1: Cancellation after index_single_file_sync (before batch commit) ---
+    indexing_state_manager.reset_status()
+    assert indexing_state_manager.try_start_indexing() is True
+    cancel_run_id = indexing_state_manager.current_run_id
+
+    orig_index_single = idx_svc.index_single_file_sync
+
+    def cancel_after_single(path):
+        single_result = orig_index_single(path)
+        assert isinstance(single_result, dict)
+        assert single_result.get("replaces_image_id") == old_id
+        indexing_state_manager.cancel()
+        return single_result
+
+    with patch.object(VectorRepository, "collection", new_callable=lambda: mock_coll), \
+         patch.object(idx_svc, "cleanup_zombie_records"), \
+         patch.object(idx_svc, "index_single_file_sync", side_effect=cancel_after_single):
+        await idx_svc.run_indexing_background([str(photo_dir)], run_id=cancel_run_id)
+
+    check_db = SessionFactory()
+    try:
+        assert check_db.query(models.Image).filter_by(id=old_id).first().is_favorite is True
+        assert check_db.query(models.AIAnalysis).filter_by(image_id=old_id).first().critique == "keep critique"
+        assert check_db.query(models.Image).filter_by(id=new_id).first() is None
+    finally:
+        check_db.close()
+    assert old_id in chroma_vectors and new_id not in chroma_vectors
+    assert old_thumb.exists()
+
+    # --- Part 2: Batch commit failure across 3 retries restores SQLite & compensates new vector ---
+    indexing_state_manager.reset_status()
+    assert indexing_state_manager.try_start_indexing() is True
+    fail_run_id = indexing_state_manager.current_run_id
+
+    orig_upsert_and_commit = photo_service.CompensatingTransactionManager.upsert_and_commit
+
+    def fail_sqlite_commit_in_tx(self, image_ids, embeddings, metadatas):
+        self.db.commit = MagicMock(side_effect=RuntimeError("SQLite commit disk full"))
+        return orig_upsert_and_commit(self, image_ids, embeddings, metadatas)
+
+    with patch.object(VectorRepository, "collection", new_callable=lambda: mock_coll), \
+         patch.object(idx_svc, "cleanup_zombie_records"), \
+         patch.object(photo_service.CompensatingTransactionManager, "upsert_and_commit", fail_sqlite_commit_in_tx), \
+         patch("time.sleep"):
+        await idx_svc.run_indexing_background([str(photo_dir)], run_id=fail_run_id)
+
+    assert indexing_state_manager.status == "error"
+    assert "SQLite commit disk full" in indexing_state_manager.get_status_dict()["error_message"]
+
+    check_db = SessionFactory()
+    try:
+        assert check_db.query(models.Image).filter_by(id=old_id).first().is_favorite is True
+        assert check_db.query(models.ImageMetadata).filter_by(image_id=old_id).first().camera_model == "Sony A7M4"
+        assert check_db.query(models.AIAnalysis).filter_by(image_id=old_id).first().critique == "keep critique"
+        assert check_db.query(models.Image).filter_by(id=new_id).first() is None
+    finally:
+        check_db.close()
+    assert old_id in chroma_vectors and new_id not in chroma_vectors
+    assert old_thumb.exists()
+
+    # --- Part 3: Post-commit Chroma delete error does NOT trigger retry or lose new_id ---
+    mock_coll.delete.side_effect = RuntimeError("Post-commit Chroma delete error")
+    indexing_state_manager.reset_status()
+    assert indexing_state_manager.try_start_indexing() is True
+    post_err_run_id = indexing_state_manager.current_run_id
+
+    with patch.object(VectorRepository, "collection", new_callable=lambda: mock_coll), \
+         patch.object(idx_svc, "cleanup_zombie_records"):
+        await idx_svc.run_indexing_background([str(photo_dir)], run_id=post_err_run_id)
+
+    assert indexing_state_manager.status == "idle"
+    check_db = SessionFactory()
+    try:
+        assert check_db.query(models.Image).filter_by(id=old_id).first() is None
+        assert check_db.query(models.ImageMetadata).filter_by(image_id=old_id).first() is None
+        assert check_db.query(models.AIAnalysis).filter_by(image_id=old_id).first() is None
+        assert check_db.query(models.Image).filter_by(id=new_id).first() is not None
+    finally:
+        check_db.close()
+    assert new_id in chroma_vectors
+    assert not old_thumb.exists()
+    assert (thumb_dir / f"{new_id}.jpg").exists()
+
+    # --- Part 4: Clean replacement + mtime-only touch + pipeline error preservation ---
+    mock_coll.delete.side_effect = fake_delete
+    Image.new("RGB", (32, 32), color="green").save(str(photo_file), format="JPEG")
+    os.utime(photo_file, (300.0, 300.0))
+    v3_id = idx_svc.calculate_sha256(str(photo_file))
+    assert v3_id != new_id
+
+    indexing_state_manager.reset_status()
+    assert indexing_state_manager.try_start_indexing() is True
+    clean_run_id = indexing_state_manager.current_run_id
+
+    with patch.object(VectorRepository, "collection", new_callable=lambda: mock_coll), \
+         patch.object(idx_svc, "cleanup_zombie_records"):
+        await idx_svc.run_indexing_background([str(photo_dir)], run_id=clean_run_id)
+
+    assert indexing_state_manager.status == "idle"
+    check_db = SessionFactory()
+    try:
+        assert check_db.query(models.Image).filter_by(id=new_id).first() is None
+        assert check_db.query(models.Image).filter_by(id=v3_id).first() is not None
+    finally:
+        check_db.close()
+    assert v3_id in chroma_vectors and new_id not in chroma_vectors
+    assert not (thumb_dir / f"{new_id}.jpg").exists()
+    assert (thumb_dir / f"{v3_id}.jpg").exists()
+
+    # mtime-only touch returns "skipped" and preserves record
+    os.utime(photo_file, (400.0, 400.0))
+    assert idx_svc.index_single_file_sync(str(photo_file)) == "skipped"
+    check_db = SessionFactory()
+    try:
+        v3_row = check_db.query(models.Image).filter_by(id=v3_id).first()
+        assert v3_row is not None and abs(v3_row.file_mtime - 400.0) < 0.01
+    finally:
+        check_db.close()
+
+    # Missing file / pipeline error preserves v3_id
+    assert idx_svc.index_single_file_sync(str(photo_dir / "missing.jpg")) == "error"
+    Image.new("RGB", (32, 32), color="yellow").save(str(photo_file), format="JPEG")
+    os.utime(photo_file, (500.0, 500.0))
+    with patch.object(pipeline_mod.IndexingPipeline, "run", return_value="error"):
+        assert idx_svc.index_single_file_sync(str(photo_file)) == "error"
+    check_db = SessionFactory()
+    try:
+        assert check_db.query(models.Image).filter_by(id=v3_id).first() is not None
+    finally:
+        check_db.close()
+
+    # --- Part 5: Idempotent replacement when old_id absent & self/cross-batch protection ---
+    swap_thumb = thumb_dir / "swap_a.jpg"
+    swap_thumb.write_bytes(b"thumb:swap_a")
+    swap_batch = [
+        {
+            "image_data": {
+                "id": "swap_b",
+                "parent_dir": str(photo_dir),
+                "file_path": str(photo_dir / "swap_b.jpg"),
+                "file_name": "swap_b.jpg",
+                "file_size": 100,
+                "file_mtime": 600.0,
+                "mime_type": "image/jpeg",
+                "is_favorite": False,
+            },
+            "metadata_data": {"width": 10, "height": 10},
+            "ai_data": {"caption": "swap b", "tags": [], "aesthetic_tags": []},
+            "embedding": [0.3] * 768,
+            "replaces_image_id": "swap_a",
+        },
+        {
+            "image_data": {
+                "id": "swap_a",
+                "parent_dir": str(photo_dir),
+                "file_path": str(photo_dir / "swap_a_new.jpg"),
+                "file_name": "swap_a_new.jpg",
+                "file_size": 100,
+                "file_mtime": 600.0,
+                "mime_type": "image/jpeg",
+                "is_favorite": False,
+            },
+            "metadata_data": {"width": 10, "height": 10},
+            "ai_data": {"caption": "swap a", "tags": [], "aesthetic_tags": []},
+            "embedding": [0.4] * 768,
+            "replaces_image_id": "non_existent_old_id",
+        },
+    ]
+    swap_db = SessionFactory()
+    try:
+        with patch.object(VectorRepository, "collection", new_callable=lambda: mock_coll):
+            register_photos_batch_atomic(swap_db, swap_batch)
+        assert swap_db.query(models.Image).filter_by(id="swap_a").first() is not None
+        assert swap_db.query(models.Image).filter_by(id="swap_b").first() is not None
+    finally:
+        swap_db.close()
+    assert "swap_a" in chroma_vectors and "swap_b" in chroma_vectors
+    assert swap_thumb.exists()
+
+    indexing_state_manager.reset_status()
+
+
 def test_start_indexing_empty_payload(client):
     """
     Verifies /api/index/start returns 400 Bad Request if folder_paths is empty.

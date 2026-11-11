@@ -260,58 +260,82 @@ def run_ai_pipeline_sync(file_path: str) -> Tuple[Dict[str, Any], list[float], D
     return metadata, embedding, ai_result
 
 
+def _find_existing_id_or_skip(
+    file_path: str, file_size: int, file_mtime: float
+) -> tuple[bool, Optional[str]]:
+    """Checks SQLite by file_path and returns (should_skip, existing_image_id_if_modified)."""
+    db_session: Optional[Session] = None
+    try:
+        db_session = SessionLocal()
+        existing_by_path = db_session.query(DBImage).filter(DBImage.file_path == file_path).first()
+        if existing_by_path is None:
+            return False, None
+        mtime_unchanged = abs(existing_by_path.file_mtime - file_mtime) < 0.01
+        if mtime_unchanged and existing_by_path.file_size == file_size:
+            return True, None
+        print(f"[Indexer] File modified. Marking for re-indexing: {file_path}", flush=True)
+        return False, existing_by_path.id
+    finally:
+        if db_session is not None:
+            db_session.close()
+
+
+def _resolve_hash_conflict(
+    file_path: str, image_id: str, file_size: int, file_mtime: float
+) -> Optional[str]:
+    """Handles existing SHA-256 matches by updating mtime/size or reporting duplicate hash."""
+    db_session: Optional[Session] = None
+    try:
+        db_session = SessionLocal()
+        existing_by_id = db_session.query(DBImage).filter(DBImage.id == image_id).first()
+        if existing_by_id is None:
+            return None
+        if existing_by_id.file_path == file_path:
+            existing_by_id.file_mtime = file_mtime
+            existing_by_id.file_size = file_size
+            db_session.commit()
+            return "skipped"
+        print(f"[Indexer] Hash duplicate found. Skipping: {file_path}", flush=True)
+        return "skipped_duplicate_hash"
+    except Exception:
+        if db_session is not None:
+            _safe_rollback_session(db_session)
+        raise
+    finally:
+        if db_session is not None:
+            db_session.close()
+
+
 def index_single_file_sync(file_path: str) -> Union[dict, str]:
     """
     Performs hashing, EXIF extraction, thumbnail generation, embedding inference,
-    caption inference, and atomic registration via IndexingPipeline.
+    caption inference, and prepares atomic registration payload via IndexingPipeline.
     """
-    file_size = os.path.getsize(file_path)
-    file_mtime = os.path.getmtime(file_path)
-    
-    db: Session = SessionLocal()
-    image_id_to_delete = None
     try:
-        existing_by_path = db.query(DBImage).filter(DBImage.file_path == file_path).first()
-        if existing_by_path:
-            if abs(existing_by_path.file_mtime - file_mtime) < 0.01 and existing_by_path.file_size == file_size:
-                return "skipped"
-            else:
-                print(f"[Indexer] File modified. Marking for re-indexing: {file_path}", flush=True)
-                image_id_to_delete = existing_by_path.id
+        file_size = os.path.getsize(file_path)
+        file_mtime = os.path.getmtime(file_path)
+        should_skip, superseded_id = _find_existing_id_or_skip(file_path, file_size, file_mtime)
+        if should_skip:
+            return "skipped"
 
         image_id = calculate_sha256(file_path)
-        
-        existing_by_id = db.query(DBImage).filter(DBImage.id == image_id).first()
-        if existing_by_id:
-            if existing_by_id.file_path == file_path:
-                existing_by_id.file_mtime = file_mtime
-                existing_by_id.file_size = file_size
-                db.commit()
-                return "skipped"
-            print(f"[Indexer] Hash duplicate found. Skipping: {file_path}", flush=True)
-            return "skipped_duplicate_hash"
-    finally:
-        db.close()
+        conflict_status = _resolve_hash_conflict(file_path, image_id, file_size, file_mtime)
+        if conflict_status is not None:
+            return conflict_status
 
-    try:
         from services.pipeline import IndexingPipeline
-        pipeline = IndexingPipeline()
-        res = pipeline.run(file_path, image_id=image_id)
-        if isinstance(res, str):
-            return res
-            
-        if image_id_to_delete:
-            db_delete: Session = SessionLocal()
-            try:
-                delete_photo_atomic_sync(db_delete, image_id_to_delete)
-            except Exception as e:
-                print(f"[Indexer] Failed to delete old record {image_id_to_delete}: {e}", flush=True)
-            finally:
-                db_delete.close()
-                
-        return res
-    except Exception as e:
-        print(f"[Indexer] Error indexing file {file_path}: {e}", flush=True)
+        pipeline_result = IndexingPipeline().run(file_path, image_id=image_id)
+        if isinstance(pipeline_result, str):
+            return pipeline_result
+
+        new_image_id = pipeline_result.get("image_data", {}).get("id")
+        if superseded_id and superseded_id != new_image_id:
+            # Defer old record deletion until batch commit succeeds to avoid data loss on interrupt.
+            pipeline_result["replaces_image_id"] = superseded_id
+        return pipeline_result
+    except Exception as index_err:
+        logger.error("[Indexer] Error indexing file %s: %s", file_path, index_err)
+        print(f"[Indexer] Error indexing file {file_path}: {index_err}", flush=True)
         return "error"
 
 

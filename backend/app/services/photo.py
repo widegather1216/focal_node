@@ -11,6 +11,7 @@ from PIL import Image
 from models import Image as DBImage, ImageMetadata as DBImageMetadata, AIAnalysis as DBAIAnalysis
 from utils.image import is_raw_image, decode_raw_to_pil, load_pil_image
 from repositories.atomic_transaction import CompensatingTransactionManager
+from repositories.vector_repository import VectorRepository
 
 from config import THUMBNAILS_DIR
 
@@ -148,6 +149,79 @@ def _prepare_chroma_metadata(metadata_data: dict) -> dict:
         "lens_model": metadata_data.get("lens_model") or ""
     }
 
+def _extract_replacement_ids(items_data: list[dict]) -> list[str]:
+    """Collects ordered, deduplicated superseded photo IDs without mutating items_data."""
+    replace_ids = [
+        item.get("replaces_image_id")
+        for item in items_data
+        if isinstance(item.get("replaces_image_id"), str) and item.get("replaces_image_id")
+    ]
+    return list(dict.fromkeys(replace_ids))
+
+
+def _delete_replaced_rows_in_tx(db: Session, replace_ids: list[str]) -> None:
+    """Deletes superseded rows within the open SQLite transaction before inserting replacements."""
+    if not replace_ids:
+        return
+    for i in range(0, len(replace_ids), 900):
+        chunk = replace_ids[i : i + 900]
+        db.query(DBImageMetadata).filter(DBImageMetadata.image_id.in_(chunk)).delete(synchronize_session="fetch")
+        db.query(DBAIAnalysis).filter(DBAIAnalysis.image_id.in_(chunk)).delete(synchronize_session="fetch")
+        db.query(DBImage).filter(DBImage.id.in_(chunk)).delete(synchronize_session="fetch")
+    # Flush deletions first so UNIQUE(images.file_path) does not collide with replacement inserts.
+    db.flush()
+
+
+def _cleanup_replaced_artifacts(stale_old_ids: list[str]) -> None:
+    """Removes superseded ChromaDB vectors and disk thumbnails strictly after SQLite commit."""
+    if not stale_old_ids:
+        return
+    try:
+        VectorRepository().delete(stale_old_ids)
+    except Exception as vector_err:
+        # Never re-raise post-commit cleanup failures into batch commit retry loops.
+        logger.warning("Failed to delete superseded ChromaDB vectors %s after commit: %s", stale_old_ids, vector_err)
+
+    for old_id in stale_old_ids:
+        thumb_path = get_thumbnail_path(old_id)
+        try:
+            os.remove(thumb_path)
+        except FileNotFoundError:
+            logger.debug("Superseded thumbnail cache file %s already absent", thumb_path)
+        except OSError as thumb_err:
+            logger.warning("Failed to remove superseded thumbnail cache %s: %s", thumb_path, thumb_err)
+
+
+def _build_atomic_batch_payloads(
+    items_data: list[dict],
+) -> tuple[list[DBImage], list[DBImageMetadata], list[DBAIAnalysis], list[str], list[list[float]], list[dict], set[str]]:
+    """Builds ORM models and ChromaDB payloads from raw indexing items without mutating inputs."""
+    db_images, db_metadatas, db_ais = [], [], []
+    chroma_ids, chroma_embeddings, chroma_metadatas = [], [], []
+    committed_new_ids: set[str] = set()
+
+    for item in items_data:
+        image_data = item["image_data"]
+        metadata_data = item["metadata_data"].copy()
+        ai_data = item["ai_data"].copy()
+        embedding = item.get("embedding")
+
+        image_id = image_data["id"]
+        committed_new_ids.add(image_id)
+        db_image, db_metadata, db_ai = _prepare_photo_models(image_data, metadata_data, ai_data)
+
+        db_images.append(db_image)
+        db_metadatas.append(db_metadata)
+        db_ais.append(db_ai)
+
+        if embedding is not None:
+            chroma_ids.append(image_id)
+            chroma_embeddings.append(embedding)
+            chroma_metadatas.append(_prepare_chroma_metadata(metadata_data))
+
+    return db_images, db_metadatas, db_ais, chroma_ids, chroma_embeddings, chroma_metadatas, committed_new_ids
+
+
 def _save_photos_atomic_internal(db: Session, items_data: list[dict], refresh_models: bool = False) -> list[DBImage]:
     """
     Unified function for atomic saves to SQLite and ChromaDB with compensating transactions.
@@ -155,37 +229,29 @@ def _save_photos_atomic_internal(db: Session, items_data: list[dict], refresh_mo
     if not items_data:
         return []
 
-    db_images, db_metadatas, db_ais = [], [], []
-    chroma_ids, chroma_embeddings, chroma_metadatas = [], [], []
-    
-    for item in items_data:
-        image_data = item["image_data"]
-        metadata_data = item["metadata_data"].copy()
-        ai_data = item["ai_data"].copy()
-        embedding = item.get("embedding")
-        
-        image_id = image_data["id"]
-        db_image, db_metadata, db_ai = _prepare_photo_models(image_data, metadata_data, ai_data)
-        
-        db_images.append(db_image)
-        db_metadatas.append(db_metadata)
-        db_ais.append(db_ai)
-        
-        if embedding is not None:
-            chroma_meta = _prepare_chroma_metadata(metadata_data)
-            chroma_ids.append(image_id)
-            chroma_embeddings.append(embedding)
-            chroma_metadatas.append(chroma_meta)
-            
+    replace_ids = _extract_replacement_ids(items_data)
+    _delete_replaced_rows_in_tx(db, replace_ids)
+
+    (
+        db_images, db_metadatas, db_ais,
+        chroma_ids, chroma_embeddings, chroma_metadatas, committed_new_ids
+    ) = _build_atomic_batch_payloads(items_data)
+
     db.add_all(db_images)
     db.add_all(db_metadatas)
     db.add_all(db_ais)
 
     if chroma_ids:
-        tx_manager = CompensatingTransactionManager(db)
-        tx_manager.upsert_and_commit(chroma_ids, chroma_embeddings, chroma_metadatas)
+        CompensatingTransactionManager(db).upsert_and_commit(chroma_ids, chroma_embeddings, chroma_metadatas)
     else:
-        db.commit()
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+    stale_old_ids = [old_id for old_id in replace_ids if old_id not in committed_new_ids]
+    _cleanup_replaced_artifacts(stale_old_ids)
 
     if refresh_models:
         for img in db_images:
