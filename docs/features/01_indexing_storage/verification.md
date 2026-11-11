@@ -1,8 +1,8 @@
 # 🧪 [01_indexing_storage] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-01~09 해결 완료 / DEFECT 2건 잔여 디버깅 진행 중)`
+- **검증 상태**: `🩹 Debugging (DEFECT-01~10 해결 완료 / DEFECT 1건 잔여 디버깅 진행 중)`
 - **인수 조건 통과율**: `1 / 4 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 2건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 1건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -58,7 +58,7 @@
 | **Negative**| `TC-IDX-13` | ExifRead 빈 리스트(`values=[]`) 파싱 안정성 | 손상/초과 IFD 태그 파싱 | IndexError 방지 및 나머지 EXIF 보존 | `PASS (Fixed in DEFECT-07)` |
 | **Boundary**| `TC-IDX-14` | 비동기 미디어 라우트 내 동기 DB I/O 격리 | 썸네일/원본/내보내기 동시 요청 | 메인 비동기 이벤트 루프 동결 방지 | `PASS (Fixed in DEFECT-08)` |
 | **Boundary**| `TC-IDX-15` | IndexingStateManager 크로스 스레드 루프 바인딩 | 백그라운드 스레드 pause/resume | call_soon_threadsafe 안전 전달 | `PASS (Fixed in DEFECT-09)` |
-| **Negative**| `TC-IDX-16` | 사진 내보내기 실패 시 에러 보존 및 UI 피드백 | 0장 내보내기 에러 응답 수신 | 허위 녹색 완료 차단 및 실패 안내 | `FAIL (DEFECT-10)` |
+| **Negative**| `TC-IDX-16` | 사진 내보내기 실패 시 에러 보존 및 UI 피드백 | 0장 내보내기 에러 응답 수신 | 허위 녹색 완료 차단 및 실패 안내 | `PASS (Fixed in DEFECT-10)` |
 | **Security**| `TC-IDX-17` | 폴더 삭제 시 미등록 상위 경로 재귀 삭제 차단 | DELETE /api/folders?path=/ | 미등록 상위 경로 요청 거부 및 데이터 보호 | `FAIL (DEFECT-11)` |
 
 ---
@@ -138,12 +138,12 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_15 -v` (`4 passed`), `./venv/bin/pytest backend/tests/ -v` (`146 passed`)
 
 ### [DEFECT-10] `ActionBar.tsx`의 사진 내보내기 실패 시 "0장 완료" 녹색 체크 허위 표시 및 선택 강제 해제
-- **현재 상태**: `🟡 OPEN`
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
 - **심각도**: 🟠 P1 High (False Success UI Masking)
-- **위치**: [`src/components/ActionBar.tsx#L33-L43`](../../../src/components/ActionBar.tsx#L33-L43), [`src/services/api.ts#L109-L154`](../../../src/services/api.ts#L109-L154)
-- **실증 여부**: `✅ Deterministic Trace Verified`
-- **근본 원인 분석**: `POST /api/photos/export`가 에러로 인해 `status="failed"` 및 0장을 반환해도 `ActionBar.tsx`가 `data.status`를 무시하고 "0장의 사진 내보내기 완료"를 녹색 체크로 띄우며 선택을 해제함.
-- **수정 설계 방향**: `data.status === "failed"` 또는 에러 존재 시 실패 알림 붉은색 배너 표시 및 선택 상태 유지.
+- **해결 내역**:
+  - **수정 파일**: [`backend/app/api/photos.py`](../../../backend/app/api/photos.py#L86-L105), [`backend/app/api/photos.py`](../../../backend/app/api/photos.py#L232-L331), [`src/utils/exportStream.ts`](../../../src/utils/exportStream.ts#L1-L285), [`src/services/api.ts`](../../../src/services/api.ts#L111-L136), [`src/store/useAppStore.ts`](../../../src/store/useAppStore.ts#L197-L210), [`src/components/ActionBar.tsx`](../../../src/components/ActionBar.tsx#L1-L357), [`backend/tests/test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py#L1729-L1909)
+  - **원인 및 조치**: 2-Way 경쟁 가설 추적 및 Devil's Advocate 적대적 검증을 통해 다계층 내보내기 계약·SSE 파서·UI 수명주기 결함을 일괄 해소함. 백엔드 `_prepare_export_items_sync`/`_stream_export_events`는 요청 중복 ID 제거·부분 DB 누락 항목 `errors` 포함·`failed`/`partial`/`success` 상태와 `failed_count`/`total_count`/`exported_ids`/`failed_ids`·예기치 않은 스트림 오류 `event: error`를 명시 발행하도록 개선함. 프론트엔드 `src/utils/exportStream.ts`는 WHATWG 스펙 준수 라인 파서(CRLF/청크 경계 `\r` 보류·EOF 잔여 버퍼 및 `TextDecoder` 플러시·멀티라인 `data:`·주석/접두어 충돌 방어·`event: error` 예외 전파)와 `evaluateExportOutcome`을 구현했고 `api.ts`는 `AbortSignal` 전달 및 사전 중복 제거를 적용함. `useAppStore.ts`의 원자적 `deselectPhotoIds`와 `ActionBar.tsx` 상태 머신을 연동해 실패(`error`)·부분실패(`partial`) 시 붉은색/호박색 경고 배너(`AlertTriangle`)·선택 상태 유지(부분실패 시 실패 ID만 잔류)·`[다시 시도]`/`[닫기]`·`StrictMode`/타이머/중복 클릭/`AbortError` 세대 가드를 구현함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_16 -v` (`2 passed`), `./venv/bin/pytest backend/tests/ -v` (`148 passed`), `npx tsc --noEmit && npm run build` (`PASS`), Node `node --test` 순수 SSE/스토어/API 단위 검증 (`9 passed`)
 
 ### [DEFECT-11] `DELETE /api/folders`의 등록 여부 미검증으로 인한 상위 경로 전달 시 전체 사진/폴더 재귀적 강제 삭제
 - **현재 상태**: `🟡 OPEN`

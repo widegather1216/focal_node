@@ -41,10 +41,13 @@ backend/app/
 
 src/
 ├── components/
-│   ├── ActionBar.tsx                  # [기존] 다중 선택 사진 일괄 내보내기(SSE 진행률) 플로팅 액션바
+│   ├── ActionBar.tsx                  # [기존] 다중 선택 사진 일괄 내보내기(SSE 진행률·실패/부분실패 복구 배너) 플로팅 액션바
 │   └── sidebar/
 │       ├── FolderList.tsx             # [기존] 등록된 로컬 폴더 리스트 및 삭제 제어
 │       └── IndexingProgressCard.tsx   # [수정대상] 2-Pass(프리뷰 스캔 / AI 분석) 진행률·일시정지·취소 위젯
+├── services/api.ts                    # [기존] exportPhotos SSE 스트림 클라이언트 및 AbortSignal 지원
+├── store/useAppStore.ts               # [기존] selectedPhotoIds 원자적 선택/부분 해제(deselectPhotoIds) 상태 관리
+├── utils/exportStream.ts              # [기존] WHATWG SSE 청크 파서, ExportResult 정규화 및 내보내기 결과 판정 순수 유틸리티
 └── hooks/useIndexingStatus.ts         # [기존] 인덱싱 진행 상태 Polling 커스텀 훅
 ```
 
