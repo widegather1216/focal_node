@@ -869,6 +869,148 @@ async def test_tc_idx_11_modified_file_reindex_preserves_old_record_on_interrupt
     indexing_state_manager.reset_status()
 
 
+def test_tc_idx_12_korean_folder_nfd_nfc_zombie_prevention(db_session, tmp_path, monkeypatch):
+    """
+    TC-IDX-12 (DEFECT-06): Verifies that NFD vs NFC Unicode normalization differences
+    between IndexedFolder (e.g. Tauri NFC) and Image paths (e.g. macOS APFS NFD)
+    do not cause false-positive zombie purge during cleanup_zombie_records,
+    while preserving genuine zombie cleanup for deleted files and sibling folders.
+    """
+    import unicodedata
+    from unittest.mock import patch
+    from services.indexing_service import cleanup_zombie_records, _identify_zombie_photo_ids
+    import services.indexing_service as idx_svc
+
+    thumb_dir = tmp_path / "thumbs_tc_idx_12"
+    thumb_dir.mkdir()
+    monkeypatch.setattr(idx_svc, "get_thumbnail_path", lambda pid: str(thumb_dir / f"{pid}.jpg"))
+
+    # 1. NFC IndexedFolder vs NFD Image paths (macOS APFS simulation)
+    korean_root_nfc = unicodedata.normalize("NFC", str(tmp_path / "한글사진폴더"))
+    korean_root_nfd = unicodedata.normalize("NFD", str(tmp_path / "한글사진폴더"))
+    os.mkdir(korean_root_nfc)
+
+    sub_nfd = os.path.join(korean_root_nfd, unicodedata.normalize("NFD", "제주여행"))
+    os.mkdir(sub_nfd)
+    sub_nfc = unicodedata.normalize("NFC", sub_nfd)
+
+    root_photo_nfd = os.path.join(korean_root_nfd, unicodedata.normalize("NFD", "바다풍경.jpg"))
+    with open(root_photo_nfd, "wb") as f_handle:
+        f_handle.write(b"jpg-root")
+
+    sub_photo_nfd = os.path.join(sub_nfd, unicodedata.normalize("NFD", "한라산.jpg"))
+    with open(sub_photo_nfd, "wb") as f_handle:
+        f_handle.write(b"jpg-sub")
+
+    # 2. Reverse direction: NFD IndexedFolder vs NFC Image paths
+    reverse_dir_nfd = unicodedata.normalize("NFD", str(tmp_path / "역방향폴더"))
+    reverse_dir_nfc = unicodedata.normalize("NFC", reverse_dir_nfd)
+    os.mkdir(reverse_dir_nfd)
+    reverse_photo_nfc = os.path.join(reverse_dir_nfc, unicodedata.normalize("NFC", "노을.jpg"))
+    with open(reverse_photo_nfc, "wb") as f_handle:
+        f_handle.write(b"jpg-rev")
+
+    # 3. Genuine zombies: physically deleted file inside Korean folder + sibling unindexed folder
+    deleted_korean_file = os.path.join(korean_root_nfd, unicodedata.normalize("NFD", "삭제됨.jpg"))
+    sibling_unindexed_dir = unicodedata.normalize("NFC", str(tmp_path / "한글사진폴더_미등록"))
+    os.mkdir(sibling_unindexed_dir)
+    sibling_photo = os.path.join(sibling_unindexed_dir, unicodedata.normalize("NFD", "외부.jpg"))
+    with open(sibling_photo, "wb") as f_handle:
+        f_handle.write(b"jpg-sibling")
+
+    db_session.add_all([
+        models.IndexedFolder(path=korean_root_nfc),
+        models.IndexedFolder(path=reverse_dir_nfd),
+        models.Image(
+            id="tc12_nfd_in_nfc_root",
+            parent_dir=korean_root_nfd,
+            file_path=root_photo_nfd,
+            file_name=unicodedata.normalize("NFD", "바다풍경.jpg"),
+            file_size=8,
+            file_mtime=time.time(),
+            mime_type="image/jpeg",
+            is_favorite=False,
+        ),
+        models.Image(
+            id="tc12_nfd_in_nfc_sub",
+            parent_dir=sub_nfd,
+            file_path=sub_photo_nfd,
+            file_name=unicodedata.normalize("NFD", "한라산.jpg"),
+            file_size=7,
+            file_mtime=time.time(),
+            mime_type="image/jpeg",
+            is_favorite=True,
+        ),
+        models.Image(
+            id="tc12_nfc_in_nfd_root",
+            parent_dir=reverse_dir_nfc,
+            file_path=reverse_photo_nfc,
+            file_name=unicodedata.normalize("NFC", "노을.jpg"),
+            file_size=7,
+            file_mtime=time.time(),
+            mime_type="image/jpeg",
+            is_favorite=False,
+        ),
+        models.Image(
+            id="tc12_genuine_deleted",
+            parent_dir=korean_root_nfd,
+            file_path=deleted_korean_file,
+            file_name=unicodedata.normalize("NFD", "삭제됨.jpg"),
+            file_size=7,
+            file_mtime=time.time(),
+            mime_type="image/jpeg",
+            is_favorite=False,
+        ),
+        models.Image(
+            id="tc12_sibling_unindexed",
+            parent_dir=sibling_unindexed_dir,
+            file_path=sibling_photo,
+            file_name=unicodedata.normalize("NFD", "외부.jpg"),
+            file_size=11,
+            file_mtime=time.time(),
+            mime_type="image/jpeg",
+            is_favorite=False,
+        ),
+    ])
+    db_session.commit()
+
+    (thumb_dir / "tc12_nfd_in_nfc_root.jpg").write_bytes(b"keep-thumb-1")
+    (thumb_dir / "tc12_nfd_in_nfc_sub.jpg").write_bytes(b"keep-thumb-2")
+    (thumb_dir / "tc12_nfc_in_nfd_root.jpg").write_bytes(b"keep-thumb-3")
+    (thumb_dir / "tc12_genuine_deleted.jpg").write_bytes(b"del-thumb")
+    (thumb_dir / "tc12_sibling_unindexed.jpg").write_bytes(b"sib-thumb")
+
+    # Direct call to _identify_zombie_photo_ids with NFC prefix for subfolder vs NFD DB row
+    direct_zombies = _identify_zombie_photo_ids(
+        db_session,
+        [(sub_nfc, sub_nfc + os.sep), (reverse_dir_nfd, reverse_dir_nfd + os.sep)],
+    )
+    assert "tc12_nfd_in_nfc_sub" not in direct_zombies
+    assert "tc12_nfc_in_nfd_root" not in direct_zombies
+    assert "tc12_genuine_deleted" in direct_zombies
+    assert "tc12_sibling_unindexed" in direct_zombies
+
+    deleted_vector_ids = []
+    with patch.object(idx_svc, "vector_repo") as mock_vector:
+        mock_vector.delete.side_effect = lambda ids: deleted_vector_ids.extend(ids)
+        cleanup_zombie_records(db=db_session)
+
+    # Existing Korean-path images (both NFC and NFD variants) MUST survive
+    assert db_session.query(models.Image).filter_by(id="tc12_nfd_in_nfc_root").first() is not None
+    assert db_session.query(models.Image).filter_by(id="tc12_nfd_in_nfc_sub").first() is not None
+    assert db_session.query(models.Image).filter_by(id="tc12_nfc_in_nfd_root").first() is not None
+    assert (thumb_dir / "tc12_nfd_in_nfc_root.jpg").exists()
+    assert (thumb_dir / "tc12_nfd_in_nfc_sub.jpg").exists()
+    assert (thumb_dir / "tc12_nfc_in_nfd_root.jpg").exists()
+
+    # Physically deleted and unindexed sibling-prefix images MUST be purged
+    assert db_session.query(models.Image).filter_by(id="tc12_genuine_deleted").first() is None
+    assert db_session.query(models.Image).filter_by(id="tc12_sibling_unindexed").first() is None
+    assert not (thumb_dir / "tc12_genuine_deleted.jpg").exists()
+    assert not (thumb_dir / "tc12_sibling_unindexed.jpg").exists()
+    assert set(deleted_vector_ids) == {"tc12_genuine_deleted", "tc12_sibling_unindexed"}
+
+
 def test_start_indexing_empty_payload(client):
     """
     Verifies /api/index/start returns 400 Bad Request if folder_paths is empty.

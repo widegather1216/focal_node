@@ -9,6 +9,7 @@ import os
 import hashlib
 import asyncio
 import logging
+import unicodedata
 from typing import List, Tuple, Dict, Any, Union, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
@@ -129,27 +130,63 @@ def _purge_photo_records_batch(db: Session, photo_ids: List[str]) -> None:
     vector_repo.delete(photo_ids)
 
 
-def _identify_zombie_photo_ids(db: Session, normalized_folder_prefixes: list) -> List[str]:
-    def belongs_to_any_folder(file_path: str, parent_dir: str) -> bool:
-        if not normalized_folder_prefixes:
-            return False
-        try:
-            real_parent = os.path.realpath(parent_dir).lower()
-            real_file = os.path.realpath(file_path).lower()
-        except Exception:
-            real_parent = os.path.normpath(parent_dir).lower()
-            real_file = os.path.normpath(file_path).lower()
+def _normalize_path_for_comparison(path: str) -> str:
+    """Resolves symlinks and normalizes Unicode (NFC) and case for path comparisons."""
+    if not path:
+        return ""
+    try:
+        resolved_path = os.path.realpath(path)
+    except Exception as path_err:
+        logger.debug("realpath failed for %s; falling back to normpath: %s", path, path_err)
+        resolved_path = os.path.normpath(path)
+    # macOS APFS stores filenames in NFD while UI/Tauri passes NFC strings; unify to NFC before comparing.
+    return unicodedata.normalize("NFC", resolved_path).lower()
 
-        for real_f, f_prefix in normalized_folder_prefixes:
-            if real_parent == real_f or real_parent.startswith(f_prefix) or real_file.startswith(f_prefix):
-                return True
+
+def _to_folder_prefix_pair(folder_path: str) -> Optional[tuple[str, str]]:
+    """Builds a normalized (root_path, prefix_with_sep) pair for folder boundary checks."""
+    normalized_root = _normalize_path_for_comparison(folder_path)
+    if not normalized_root:
+        return None
+    folder_prefix = normalized_root if normalized_root.endswith(os.sep) else normalized_root + os.sep
+    return normalized_root, folder_prefix
+
+
+def _belongs_to_any_folder(
+    file_path: str,
+    parent_dir: str,
+    canonical_prefixes: list[tuple[str, str]],
+) -> bool:
+    """Returns True when the file or parent directory resides under any indexed folder."""
+    if not canonical_prefixes:
         return False
+    normalized_parent = _normalize_path_for_comparison(parent_dir)
+    normalized_file = _normalize_path_for_comparison(file_path)
+    for folder_root, folder_prefix in canonical_prefixes:
+        if (
+            normalized_parent == folder_root
+            or normalized_parent.startswith(folder_prefix)
+            or normalized_file.startswith(folder_prefix)
+        ):
+            return True
+    return False
 
+
+def _identify_zombie_photo_ids(db: Session, normalized_folder_prefixes: list) -> List[str]:
+    """Identifies photo IDs missing on disk or no longer belonging to any indexed folder."""
+    canonical_prefixes = [
+        pair
+        for folder_root, _ in normalized_folder_prefixes
+        if (pair := _to_folder_prefix_pair(folder_root)) is not None
+    ]
     all_images = db.query(DBImage.id, DBImage.file_path, DBImage.parent_dir).all()
-    zombie_ids = []
-    for img_id, file_path, parent_dir in all_images:
-        if not os.path.exists(file_path) or not belongs_to_any_folder(file_path, parent_dir):
-            zombie_ids.append(img_id)
+    zombie_ids: List[str] = []
+    for image_id, file_path, parent_dir in all_images:
+        if not file_path or not os.path.exists(file_path):
+            zombie_ids.append(image_id)
+            continue
+        if not _belongs_to_any_folder(file_path, parent_dir, canonical_prefixes):
+            zombie_ids.append(image_id)
     return zombie_ids
 
 
@@ -167,14 +204,11 @@ def cleanup_zombie_records(db: Session = None):
 
     try:
         indexed_folders = db.query(IndexedFolder.path).all()
-        normalized_folder_prefixes = []
-        for f in indexed_folders:
-            try:
-                real_f = os.path.realpath(f.path).lower()
-            except Exception:
-                real_f = os.path.normpath(f.path).lower()
-            f_prefix = real_f if real_f.endswith(os.sep) else real_f + os.sep
-            normalized_folder_prefixes.append((real_f, f_prefix))
+        normalized_folder_prefixes = [
+            pair
+            for folder_record in indexed_folders
+            if (pair := _to_folder_prefix_pair(folder_record.path)) is not None
+        ]
 
         zombie_ids = _identify_zombie_photo_ids(db, normalized_folder_prefixes)
         if zombie_ids:
