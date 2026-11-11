@@ -1,8 +1,8 @@
 # 🧪 [01_indexing_storage] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-01~07 해결 완료 / DEFECT 4건 잔여 디버깅 진행 중)`
+- **검증 상태**: `🩹 Debugging (DEFECT-01~08 해결 완료 / DEFECT 3건 잔여 디버깅 진행 중)`
 - **인수 조건 통과율**: `1 / 4 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 4건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 3건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -56,7 +56,7 @@
 | **Boundary**| `TC-IDX-11` | 수정 파일 재인덱싱 중단 시 기존 레코드 보존 | 재인덱싱 중 취소/실패 주입 | 신규 커밋 전 구 레코드 조기 삭제 차단 | `PASS (Fixed in DEFECT-05)` |
 | **Boundary**| `TC-IDX-12` | macOS NFD/NFC 한글 폴더 사진 오삭제 방지 | 한글 폴더 NFD/NFC 동기화 | 좀비 오판 차단 및 사진 보존 | `PASS (Fixed in DEFECT-06)` |
 | **Negative**| `TC-IDX-13` | ExifRead 빈 리스트(`values=[]`) 파싱 안정성 | 손상/초과 IFD 태그 파싱 | IndexError 방지 및 나머지 EXIF 보존 | `PASS (Fixed in DEFECT-07)` |
-| **Boundary**| `TC-IDX-14` | 비동기 미디어 라우트 내 동기 DB I/O 격리 | 썸네일/원본/내보내기 동시 요청 | 메인 비동기 이벤트 루프 동결 방지 | `FAIL (DEFECT-08)` |
+| **Boundary**| `TC-IDX-14` | 비동기 미디어 라우트 내 동기 DB I/O 격리 | 썸네일/원본/내보내기 동시 요청 | 메인 비동기 이벤트 루프 동결 방지 | `PASS (Fixed in DEFECT-08)` |
 | **Boundary**| `TC-IDX-15` | IndexingStateManager 크로스 스레드 루프 바인딩 | 백그라운드 스레드 pause/resume | call_soon_threadsafe 안전 전달 | `FAIL (DEFECT-09)` |
 | **Negative**| `TC-IDX-16` | 사진 내보내기 실패 시 에러 보존 및 UI 피드백 | 0장 내보내기 에러 응답 수신 | 허위 녹색 완료 차단 및 실패 안내 | `FAIL (DEFECT-10)` |
 | **Security**| `TC-IDX-17` | 폴더 삭제 시 미등록 상위 경로 재귀 삭제 차단 | DELETE /api/folders?path=/ | 미등록 상위 경로 요청 거부 및 데이터 보호 | `FAIL (DEFECT-11)` |
@@ -122,12 +122,12 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_13 -v` (`PASS`), `./venv/bin/pytest backend/tests/ -v` (`139 passed`)
 
 ### [DEFECT-08] `photos.py` 비동기 엔드포인트 내 동기 DB I/O 호출로 인한 FastAPI 단일 비동기 이벤트 루프 동결
-- **현재 상태**: `🟡 OPEN`
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
 - **심각도**: 🟠 P1 High (Event Loop Freeze / Denial of Service)
-- **위치**: [`backend/app/api/photos.py#L52-L58`](../../../backend/app/api/photos.py#L52-L58), [`L90-L97`](../../../backend/app/api/photos.py#L90-L97), [`L205-L210`](../../../backend/app/api/photos.py#L205-L210)
-- **실증 여부**: `✅ Deterministic Trace Verified`
-- **근본 원인 분석**: `get_photo_thumbnail`, `get_photo_original`, `export_photos`가 `async def`로 선언되었으나 `photo_repo.get_by_id` 및 `photo_repo.get_by_ids` 동기 쿼리를 `asyncio.to_thread` 없이 직접 실행함. 백그라운드 인덱싱 DB 쓰기 락 경합 시 메인 비동기 루프가 동결됨.
-- **수정 설계 방향**: DB 세션 쿼리 호출부를 `await asyncio.to_thread(...)`로 오프로딩.
+- **해결 내역**:
+  - **수정 파일**: [`backend/app/api/photos.py`](../../../backend/app/api/photos.py#L25-L264), [`backend/tests/test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py#L1132-L1455)
+  - **원인 및 조치**: Devil's Advocate 자문 교차 검증을 통해 `get_photo_thumbnail`, `get_photo_original`, `export_photos`의 동기 DB 조회(`get_by_id`, `get_by_ids`) 및 동기 파일시스템 I/O(`get_photo_original` 비-RAW 분기의 `os.path.exists`, `export_photos`의 `os.path.exists`/`os.path.isdir`) 직접 실행뿐 아니라, `from database import SessionLocal` 값 바인딩으로 인한 테스트 격리 누락, `Depends(get_db)` 세션을 워커 스레드로 넘길 때의 `StaticPool`/커넥션 풀 고갈 위험, 전역 `_decode_semaphore`의 다중 이벤트 루프 바인딩 충돌, `except Exception`의 `HTTPException(404/422)` 삼킴까지 일괄 해소함. `_fetch_photo_media_record_sync`, `_read_cached_thumbnail_sync`, `_stat_regular_file_sync`, `_decode_raw_original`, `_prepare_export_items_sync`를 분리하여 모든 DB·파일시스템 I/O를 `await asyncio.to_thread(...)` 내부로 격리하고 워커 스레드에서 `database.SessionLocal()`을 열고 닫은 뒤 평문 값(tuple/dict)만 반환하도록 개편함. 또한 `get_decode_semaphore()`를 `WeakKeyDictionary[AbstractEventLoop, Semaphore]` 기반으로 루프별 격리하고 비-RAW `FileResponse`에 `stat_result` 및 `S_ISREG` 검증과 `except HTTPException: raise` 가드를 추가함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_14 -v` (`3 passed`), `./venv/bin/pytest backend/tests/ -v` (`142 passed`)
 
 ### [DEFECT-09] `IndexingStateManager._pause_loop` 영구 `None` 고착으로 인한 크로스 스레드 `call_soon_threadsafe` 누락 및 이벤트 루프 블로킹
 - **현재 상태**: `🟡 OPEN`

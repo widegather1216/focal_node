@@ -1,8 +1,8 @@
 # 💾 [01_indexing_storage] Indexing Pipeline, Storage & RAW Media
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-01~07 해결 완료 / DEFECT 4건 잔여 디버깅 진행 중)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-01~08 해결 완료 / DEFECT 3건 잔여 디버깅 진행 중)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 4건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 3건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -35,14 +35,16 @@
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-11-11 / systematic-debugger + atomic-commit-crafter / DEFECT-07 해결 및 원자적 커밋 완료 (fc00077 / TC-IDX-13 PASS)`
-- **Recent Commits (2026-11-11 21:04)**:
+- **직전 완료 작업**: `2026-11-11 / systematic-debugger + atomic-commit-crafter / DEFECT-08 해결 및 원자적 커밋 완료 (01eec79 / TC-IDX-14 PASS)`
+- **Recent Commits (2026-11-11 21:18)**:
+  - `01eec79` - `fix(media): offload sync db and fs i/o in async photo endpoints`
   - `fc00077` - `fix(exif): guard empty exifread tag values and malformed numeric fields`
   - `ad2eca2` - `fix(indexing): normalize unicode paths to NFC during zombie cleanup`
   - `46ce1f9` - `fix(indexing): defer superseded record deletion until batch commit succeeds`
   - `6ffe113` - `fix(indexing): propagate batch commit errors and isolate run lifecycle`
   - `6cba0eb` - `fix(ui): surface indexing errors in tauri bridge and progress card`
 - **해결된 결함 (Resolved Defect)**:
+  - `DEFECT-08`: `backend/app/api/photos.py`의 비동기 라우트(`get_photo_thumbnail`, `get_photo_original`, `export_photos`) 내 동기 DB 조회(`get_by_id`, `get_by_ids`) 및 동기 파일시스템 I/O(`os.path.exists`/`isdir`/`stat`)를 `_fetch_photo_media_record_sync`, `_read_cached_thumbnail_sync`, `_stat_regular_file_sync`, `_decode_raw_original`, `_prepare_export_items_sync`로 분리해 `await asyncio.to_thread(...)` 내부에서 `database.SessionLocal()`을 열고 닫고 평문 값만 반환하도록 수정함. 또한 `get_decode_semaphore()`를 `WeakKeyDictionary` 기반 이벤트 루프별 격리로 전환하고 비-RAW `FileResponse` `stat_result`·`S_ISREG` 검증 및 `except HTTPException: raise`를 추가하여 404/422 계약을 복원함(신규 회귀 테스트 `TC-IDX-14` 3건 및 백엔드 142종 전수 통과).
   - `DEFECT-07`: `backend/app/utils/image.py`에 `_unwrap_tag_values`, `_parse_positive_float`, `_parse_int`, `_extract_tags_dict`를 도입하고 `_get_tag_val`이 빈 리스트(`[]`)/튜플/공백 문자열/빈 바이트를 건너뛰어 후속 대체 키를 계속 탐색하도록 수정함. 또한 `Ratio(n, 0)`(`ZeroDivisionError`) 및 비정형 튜플(`TypeError`)로 인한 후속 EXIF 필드 파싱 중단을 차단하고 신규 회귀 테스트 `TC-IDX-13`(`test_tc_idx_13_exif_empty_tag_values_preserves_remaining_metadata`) 및 백엔드 139종 전수 통과를 확인함.
   - `DEFECT-06`: `backend/app/services/indexing_service.py`에 `_normalize_path_for_comparison`·`_to_folder_prefix_pair`·`_belongs_to_any_folder`를 도입해 `os.path.realpath`/`normpath` 이후 `unicodedata.normalize("NFC", ...).lower()`를 일관 적용하고, `_identify_zombie_photo_ids` 및 `cleanup_zombie_records`가 NFC/NFD 경로 불일치로 한글 폴더 내 정상 사진을 좀비로 오판해 삭제하지 않도록 수정함(물리적 삭제 파일 및 유사 접두어 미등록 형제 폴더 정리는 유지, `TC-IDX-12` 신규 회귀 테스트 통과).
   - `DEFECT-05`: `index_single_file_sync`에서 배치 커밋 전 구 레코드를 즉시 삭제하던 `delete_photo_atomic_sync` 호출을 제거하고 stat/DB/해시 구간까지 예외 안전화(`_find_existing_id_or_skip`, `_resolve_hash_conflict`)한 뒤 top-level `replaces_image_id`를 전달하도록 개편함. `_save_photos_atomic_internal`에서 동일 미커밋 SQLite 트랜잭션 내 `db.add_all` 직전 `_delete_replaced_rows_in_tx(..., synchronize_session="fetch") + db.flush()`로 자식/부모 행을 선삭제해 `UNIQUE(file_path)` 충돌·롤백 유실·고아 행 잔류를 차단하고, 커밋 성공 직후에만 격리된 `_cleanup_replaced_artifacts`로 구 벡터/구 썸네일을 정리하도록 수정함.
@@ -51,11 +53,11 @@
   - `DEFECT-02`: `VectorRepository.delete`에서 ChromaDB `collection.delete` 실패 시 예외를 삼키던 결함을 제거하고 `logger.error` 후 `raise`로 재전파. `CompensatingTransactionManager.delete_and_commit`이 예외를 감지하여 SQLite `commit`을 방지하고 `rollback`을 수행함으로써 SQLite만 삭제되고 ChromaDB에 좀비 벡터가 영구 잔류하는 정합성 붕괴 완전 해소.
   - `DEFECT-01`: ChromaDB `get(include=["embeddings"])` 반환 `numpy.ndarray`에 대한 직접 불리언 평가 제거, Guard Clause 및 `.tolist()` 변환으로 100% `ValueError` 크래시 방지 및 단일 사진 재인덱싱/유사도 검색 안정화.
 - **잔여 우선순위 결함 (Open DEFECT Logs)**:
-  - `DEFECT-08`: `photos.py` 비동기 엔드포인트 내 동기 DB I/O 호출로 인한 FastAPI 단일 비동기 이벤트 루프 동결
-  - `DEFECT-09~11`: `_pause_loop` 고착, 내보내기 허위 성공 표시, `DELETE /api/folders` 무검증 재귀 삭제
+  - `DEFECT-09`: `IndexingStateManager._pause_loop` 영구 `None` 고착으로 인한 크로스 스레드 `call_soon_threadsafe` 누락 및 이벤트 루프 블로킹
+  - `DEFECT-10~11`: 내보내기 허위 성공 표시, `DELETE /api/folders` 무검증 재귀 삭제
 - **검증 완료된 테스트 실행 명령어**:
-  - `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_13 -v` (PASS)
-  - `./venv/bin/pytest backend/tests/ -v` (139 passed)
+  - `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_14 -v` (3 passed)
+  - `./venv/bin/pytest backend/tests/ -v` (142 passed)
   - `python3 -B ~/.gemini/config/skills/interactive-feature-planner/scripts/check_wiki_health.py docs` (exit 0)
 - **다음 세션 포커스 및 추천 프롬프트**:
-  - `DEFECT-08` 해결: `"01_indexing_storage 도메인의 DEFECT-08 티켓 해결해줘"` (`비동기 미디어 라우트 내 동기 DB I/O 오프로딩`)
+  - `DEFECT-09` 해결: `"01_indexing_storage 도메인의 DEFECT-09 티켓 해결해줘"` (`IndexingStateManager._pause_loop` 고착 해소)
