@@ -1,8 +1,8 @@
 # 🧪 [01_indexing_storage] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-01~10 해결 완료 / DEFECT 1건 잔여 디버깅 진행 중)`
+- **검증 상태**: `📐 Planning (DEFECT-01~11 및 REFACTOR-01 전수 해결 완료 / Active Iteration Step 1 진행 대기)`
 - **인수 조건 통과율**: `1 / 4 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 1건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -59,7 +59,7 @@
 | **Boundary**| `TC-IDX-14` | 비동기 미디어 라우트 내 동기 DB I/O 격리 | 썸네일/원본/내보내기 동시 요청 | 메인 비동기 이벤트 루프 동결 방지 | `PASS (Fixed in DEFECT-08)` |
 | **Boundary**| `TC-IDX-15` | IndexingStateManager 크로스 스레드 루프 바인딩 | 백그라운드 스레드 pause/resume | call_soon_threadsafe 안전 전달 | `PASS (Fixed in DEFECT-09)` |
 | **Negative**| `TC-IDX-16` | 사진 내보내기 실패 시 에러 보존 및 UI 피드백 | 0장 내보내기 에러 응답 수신 | 허위 녹색 완료 차단 및 실패 안내 | `PASS (Fixed in DEFECT-10)` |
-| **Security**| `TC-IDX-17` | 폴더 삭제 시 미등록 상위 경로 재귀 삭제 차단 | DELETE /api/folders?path=/ | 미등록 상위 경로 요청 거부 및 데이터 보호 | `FAIL (DEFECT-11)` |
+| **Security**| `TC-IDX-17` | 폴더 삭제 시 미등록 상위 경로 재귀 삭제 차단 | DELETE /api/folders?path=/ | 미등록 상위 경로 요청 거부 및 데이터 보호 | `PASS (Fixed in DEFECT-11)` |
 
 ---
 
@@ -146,12 +146,12 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_16 -v` (`2 passed`), `./venv/bin/pytest backend/tests/ -v` (`148 passed`), `npx tsc --noEmit && npm run build` (`PASS`), Node `node --test` 순수 SSE/스토어/API 단위 검증 (`9 passed`)
 
 ### [DEFECT-11] `DELETE /api/folders`의 등록 여부 미검증으로 인한 상위 경로 전달 시 전체 사진/폴더 재귀적 강제 삭제
-- **현재 상태**: `🟡 OPEN`
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
 - **심각도**: 🟠 P1 High (Arbitrary Mass Deletion)
-- **위치**: [`backend/app/api/folders.py#L19-L30`](../../../backend/app/api/folders.py#L19-L30), [`backend/app/services/indexing_service.py#L213-L241`](../../../backend/app/services/indexing_service.py#L213-L241)
-- **실증 여부**: `✅ Empirical Probe Reproduced`
-- **근본 원인 분석**: `DELETE /api/folders?path=...`가 등록된 `IndexedFolder`인지 검증하지 않고 `remove_folder_data`를 호출하여, 상위 디렉터리(`/` 또는 `/Users/name`) 입력 시 하위의 모든 개별 등록 폴더와 사진을 재귀적으로 일괄 삭제함.
-- **수정 설계 방향**: 요청된 경로가 `IndexedFolder`에 등록된 폴더인지 확인 후 일치하는 폴더에 대해서만 삭제 수행.
+- **해결 내역**:
+  - **수정 파일**: [`backend/app/api/folders.py`](../../../backend/app/api/folders.py#L1-L52), [`backend/app/services/indexing_service.py`](../../../backend/app/services/indexing_service.py#L135-L382), [`src/store/useAppStore.ts`](../../../src/store/useAppStore.ts#L261-L286), [`src/components/sidebar/FolderList.tsx`](../../../src/components/sidebar/FolderList.tsx#L10-L166), [`src/components/Sidebar.tsx`](../../../src/components/Sidebar.tsx#L339-L347), [`backend/tests/test_api_folders.py`](../../../backend/tests/test_api_folders.py#L71-L97), [`backend/tests/test_concurrency_hardening.py`](../../../backend/tests/test_concurrency_hardening.py#L324-L346), [`backend/tests/test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py#L2150-L2413)
+  - **원인 및 조치**: 1차 적대적 Devil's Advocate 검증을 통해 API·서비스 무검증 접두어 삭제뿐 아니라 빈/공백 문자열의 `os.path.realpath("") == CWD` 우회, 리프 심볼릭 링크를 통한 상위 디렉터리 확장(`[F3]`), 교차 폴더 파일 심볼릭 링크 연쇄 삭제(`[F4]`), `remove_folder_data` 예외 삼킴(`200 OK` 위장), `IndexingStateManager` 활성 인덱싱 중 동시 삭제 레이스(`[F2]`), 프론트엔드 `useAppStore.removeFolder`/`FolderList.tsx` 실패 무묵인 및 허위 선택 해제(`[F1]`)까지 일괄 해소함. `indexing_service.py`에 `_resolve_path_without_leaf_symlink`·`_normalize_folder_deletion_path`·`_validate_folder_deletion_pair`·`_find_matching_indexed_folders`·`_belongs_to_deletion_target`·`_execute_folder_deletion`을 도입해 비어 있지 않은 절대 경로만 허용하고, NFC/NFD 및 말단 슬래시를 통합 정규화한 뒤 등록된 `IndexedFolder`와 **정확히 일치**하는 경우에만 삭제를 승인(`FolderNotRegisteredError` -> 404, 잘못된 경로 `ValueError` -> 400, 활성 인덱싱 중 삭제 `FolderDeletionConflictError` -> 409, DB/Chroma 오류 롤백 후 재전파 -> 500)하도록 교정함(하위 중첩 등록 폴더는 함께 정리하고 형제 접두어 폴더 및 교차 파일 심볼릭 링크는 보존). 프론트엔드 `useAppStore.ts`는 `!response.ok` 시 에러를 전파(404 시 폴더 목록 동기화)하고, `FolderList.tsx`는 `isIndexing` 중 삭제 버튼을 비활성화하며 실패 시 쿼리 무효화·선택 해제를 차단하고 오류 알림을 노출하도록 보완함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_17 -v` (`2 passed`), `./venv/bin/pytest backend/tests/test_api_folders.py -v` (`5 passed`), `./venv/bin/pytest backend/tests/ -q` (`151 passed`), `npx tsc --noEmit && npm run build` (`PASS`)
 
 ---
 

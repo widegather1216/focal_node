@@ -1,8 +1,8 @@
 # 💾 [01_indexing_storage] Indexing Pipeline, Storage & RAW Media
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-01~10 해결 완료 / DEFECT 1건 잔여 디버깅 진행 중)`
+- **현재 상태 (Lifecycle)**: `📐 Planning (DEFECT-01~11 및 REFACTOR-01 전수 해결 완료 / Active Iteration Step 1 진행 대기)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 1건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -35,8 +35,10 @@
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-11-11 / systematic-debugger / DEFECT-10 해결 및 커밋 완료 (b4924d6, aee3928 / TC-IDX-16 PASS)`
-- **Recent Commits (2026-11-11 22:01)**:
+- **직전 완료 작업**: `2026-11-11 / systematic-debugger / DEFECT-11 해결 및 커밋 완료 (9b7f06d, 8434790 / TC-IDX-17 PASS)`
+- **Recent Commits (2026-11-11 23:01)**:
+  - `8434790` - `fix(ui): surface folder removal errors and guard active indexing`
+  - `9b7f06d` - `fix(folders): enforce registered path match on folder deletion`
   - `aee3928` - `fix(ui): surface export failures and preserve failed selection`
   - `b4924d6` - `fix(media): enforce failure contracts in photo export sse stream`
   - `b0804df` - `fix(indexing): fix cross-thread pause loop binding and multi-loop wakeups`
@@ -47,6 +49,7 @@
   - `6ffe113` - `fix(indexing): propagate batch commit errors and isolate run lifecycle`
   - `6cba0eb` - `fix(ui): surface indexing errors in tauri bridge and progress card`
 - **해결된 결함 (Resolved Defect)**:
+  - `DEFECT-11`: `backend/app/services/indexing_service.py` 및 `backend/app/api/folders.py`에서 빈/공백/상대/널바이트 경로를 `400`으로 사전 차단하고 `_resolve_path_without_leaf_symlink`·`_normalize_folder_deletion_path`로 리프 심볼릭 링크 확장 없이 NFC/NFD 및 말단 슬래시를 정규화한 뒤, 등록된 `IndexedFolder`와 **정확히 일치**하는 경우에만 삭제를 허용하도록 교정함(미등록 상위/루트/형제 경로 `FolderNotRegisteredError` -> `404`, 활성 인덱싱 중 삭제 `FolderDeletionConflictError` -> `409`, DB/ChromaDB 오류 롤백 후 재전파 -> `500`, 교차 파일 심볼릭 링크 및 형제 접두어 폴더 보존). 프론트엔드 `src/store/useAppStore.ts`(`removeFolder` 에러 전파·404 동기화), `src/components/sidebar/FolderList.tsx`(`isIndexing` 삭제 비활성화·실패 시 선택 유지 및 알림), `src/components/Sidebar.tsx`를 연동함(신규 회귀 테스트 `TC-IDX-17` 2종 및 `test_api_folders.py` 5종 포함 백엔드 151종·`tsc && vite build` 전수 통과).
   - `DEFECT-10`: `backend/app/api/photos.py`의 `_prepare_export_items_sync`·`_stream_export_events`에서 중복 ID 제거, 부분 DB 누락 항목 추적, `failed`/`partial`/`success` 상태 및 `failed_count`/`total_count`/`exported_ids`/`failed_ids`, 예기치 못한 스트림 오류 `event: error` SSE 계약을 정립함. 프론트엔드 `src/utils/exportStream.ts`로 WHATWG SSE 파서(CRLF·청크 경계 `\r` 보류·EOF/UTF-8 플러시·멀티라인 `data:`·주석/접두어 충돌 방어·`event: error`·`evaluateExportOutcome`)를 분리하고 `src/services/api.ts`(`AbortSignal` 연동·`Set` 중복 제거), `src/store/useAppStore.ts`(`deselectPhotoIds` 원자적 해제), `src/components/ActionBar.tsx`(실패 붉은색/부분실패 호박색 배너·선택 유지·`[다시 시도]`/`[닫기]`·`StrictMode`/타이머/중복 클릭/`AbortError` 세대 가드)를 연동함(신규 백엔드 회귀 테스트 `TC-IDX-16` 2종 및 전체 148종·`tsc`/`vite build`·Node 9종 전수 통과).
   - `DEFECT-09`: `backend/app/services/indexing_state.py`에 `RLock` 기반 `_ThreadSafeAsyncEvent(asyncio.Event)`를 도입해 sync FastAPI 워커 스레드의 `try_start_indexing()` 선행 호출 시 `_pause_loop` 영구 `None` 고착과 다중 루프 간 대기자 고아화·`cancel->start->pause` 기상 펄스 유실·닫힌 루프 `RuntimeError`를 구조적으로 해소함. 각 대기자의 `(waiter_loop, waiter_future)`를 추적해 락 해제 후 루프별 `call_soon_threadsafe`로 안전 기상시키며, 원자적 `wait_if_paused(run_id)`, `initialize_background_run`의 선점 일시정지 보존, `finalize_run("idle")` 이벤트 복구, `indexing_service.py` 스캔/좀비 정리 전 대기 가드, `api/indexing.py` 제어 라우트 원자적 `bool` 검사를 연동함(신규 회귀 테스트 `TC-IDX-15` 4종 및 백엔드 146종 전수 통과).
   - `DEFECT-08`: `backend/app/api/photos.py`의 비동기 라우트(`get_photo_thumbnail`, `get_photo_original`, `export_photos`) 내 동기 DB 조회(`get_by_id`, `get_by_ids`) 및 동기 파일시스템 I/O(`os.path.exists`/`isdir`/`stat`)를 `_fetch_photo_media_record_sync`, `_read_cached_thumbnail_sync`, `_stat_regular_file_sync`, `_decode_raw_original`, `_prepare_export_items_sync`로 분리해 `await asyncio.to_thread(...)` 내부에서 `database.SessionLocal()`을 열고 닫고 평문 값만 반환하도록 수정함. 또한 `get_decode_semaphore()`를 `WeakKeyDictionary` 기반 이벤트 루프별 격리로 전환하고 비-RAW `FileResponse` `stat_result`·`S_ISREG` 검증 및 `except HTTPException: raise`를 추가하여 404/422 계약을 복원함(신규 회귀 테스트 `TC-IDX-14` 3건 및 백엔드 142종 전수 통과).
@@ -58,11 +61,12 @@
   - `DEFECT-02`: `VectorRepository.delete`에서 ChromaDB `collection.delete` 실패 시 예외를 삼키던 결함을 제거하고 `logger.error` 후 `raise`로 재전파. `CompensatingTransactionManager.delete_and_commit`이 예외를 감지하여 SQLite `commit`을 방지하고 `rollback`을 수행함으로써 SQLite만 삭제되고 ChromaDB에 좀비 벡터가 영구 잔류하는 정합성 붕괴 완전 해소.
   - `DEFECT-01`: ChromaDB `get(include=["embeddings"])` 반환 `numpy.ndarray`에 대한 직접 불리언 평가 제거, Guard Clause 및 `.tolist()` 변환으로 100% `ValueError` 크래시 방지 및 단일 사진 재인덱싱/유사도 검색 안정화.
 - **잔여 우선순위 결함 (Open DEFECT Logs)**:
-  - `DEFECT-11`: `DELETE /api/folders` 무검증 상위 경로 재귀 삭제
+  - 없음 (`0건` — Baseline `DEFECT-01~11` 및 `REFACTOR-01` 전수 해결 완료)
 - **검증 완료된 테스트 실행 명령어**:
-  - `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_16 -v` (2 passed)
-  - `./venv/bin/pytest backend/tests/ -v` (148 passed)
-  - `npx tsc --noEmit && npm run build` (PASS)
-  - `python3 -B ~/.gemini/config/skills/interactive-feature-planner/scripts/check_wiki_health.py docs` (exit 0)
+  - `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_17 -v` (`2 passed`)
+  - `./venv/bin/pytest backend/tests/test_api_folders.py -v` (`5 passed`)
+  - `./venv/bin/pytest backend/tests/ -q` (`151 passed`)
+  - `npx tsc --noEmit && npm run build` (`PASS`)
+  - `python3 -B ~/.gemini/config/skills/interactive-feature-planner/scripts/check_wiki_health.py docs` (`exit 0`)
 - **다음 세션 포커스 및 추천 프롬프트**:
-  - `DEFECT-11` 해결: `"01_indexing_storage 도메인의 DEFECT-11 티켓 해결해줘"` (`DELETE /api/folders` 미등록 상위 경로 재귀 일괄 삭제 차단)
+  - `Active Iteration` Step 1 착수: `"01_indexing_storage 도메인 Step 1 개발 진행해줘"` (`is_offline` 컬럼/마이그레이션 및 `phase` 상태 계약 구현)
