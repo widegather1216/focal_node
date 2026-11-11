@@ -1,8 +1,8 @@
 # 🧪 [01_indexing_storage] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-01~04 해결 완료 / DEFECT 7건 잔여 디버깅 진행 중)`
+- **검증 상태**: `🩹 Debugging (DEFECT-01~05 해결 완료 / DEFECT 6건 잔여 디버깅 진행 중)`
 - **인수 조건 통과율**: `1 / 4 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 7건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 6건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -53,7 +53,7 @@
 | **Boundary**| `TC-IDX-08` | ChromaDB 삭제 실패 시 보상 트랜잭션 롤백 | `delete_and_commit` 시 Chroma 에러 | SQLite 삭제 취소 및 예외 재전파 | `PASS (Fixed in DEFECT-02)` |
 | **Boundary**| `TC-IDX-09` | 인덱싱/동기화 동시 호출 시 TOCTOU 방지 | `start` + `sync` 동시 호출 | 단일 태스크만 시작되고 벡터 소실 차단 | `PASS (Fixed in DEFECT-03)` |
 | **Negative**| `TC-IDX-10` | 배치 커밋 실패 시 에러 전파 및 거짓 완료 차단 | `_commit_batch_with_retry` 3회 실패 | 예외 raise 및 status="error" 전이 | `PASS (Fixed in DEFECT-04)` |
-| **Boundary**| `TC-IDX-11` | 수정 파일 재인덱싱 중단 시 기존 레코드 보존 | 재인덱싱 중 취소/실패 주입 | 신규 커밋 전 구 레코드 조기 삭제 차단 | `FAIL (DEFECT-05)` |
+| **Boundary**| `TC-IDX-11` | 수정 파일 재인덱싱 중단 시 기존 레코드 보존 | 재인덱싱 중 취소/실패 주입 | 신규 커밋 전 구 레코드 조기 삭제 차단 | `PASS (Fixed in DEFECT-05)` |
 | **Boundary**| `TC-IDX-12` | macOS NFD/NFC 한글 폴더 사진 오삭제 방지 | 한글 폴더 NFD/NFC 동기화 | 좀비 오판 차단 및 사진 보존 | `FAIL (DEFECT-06)` |
 | **Negative**| `TC-IDX-13` | ExifRead 빈 리스트(`values=[]`) 파싱 안정성 | 손상/초과 IFD 태그 파싱 | IndexError 방지 및 나머지 EXIF 보존 | `FAIL (DEFECT-07)` |
 | **Boundary**| `TC-IDX-14` | 비동기 미디어 라우트 내 동기 DB I/O 격리 | 썸네일/원본/내보내기 동시 요청 | 메인 비동기 이벤트 루프 동결 방지 | `FAIL (DEFECT-08)` |
@@ -98,12 +98,12 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_10` (`PASS`), `./venv/bin/pytest backend/tests/` (136 passed), `npx tsc --noEmit && npm run build` (`PASS`), `cargo check --manifest-path src-tauri/Cargo.toml` (`PASS`)
 
 ### [DEFECT-05] `index_single_file_sync`의 선행 삭제(Delete-Before-Commit)로 인한 수정 파일 재인덱싱 취소/실패 시 데이터 영구 증발
-- **현재 상태**: `🟡 OPEN`
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
 - **심각도**: 🔴 P0 Critical (Data Loss on Interrupted Reindexing)
-- **위치**: [`backend/app/services/indexing_service.py#L278-L281`](../../../backend/app/services/indexing_service.py#L278-L281), [`L303-L310`](../../../backend/app/services/indexing_service.py#L303-L310)
-- **실증 여부**: `✅ Deterministic Trace Verified`
-- **근본 원인 분석**: 수정된 파일 재인덱싱 시 신규 배치 커밋 전에 구 해시 레코드를 `delete_photo_atomic_sync`로 즉시 커밋 삭제함. 신규 배치가 커밋되기 전에 취소되거나 에러 발생 시 구 데이터는 이미 삭제되었고 신규 데이터는 커밋되지 않아 사진이 완전히 증발함.
-- **수정 설계 방향**: 구 레코드 삭제를 파이프라인 즉시 커밋하지 않고, 신규 배치가 성공적으로 커밋된 후에 정리하도록 순서 조정.
+- **해결 내역**:
+  - **수정 파일**: [`backend/app/services/indexing_service.py`](../../../backend/app/services/indexing_service.py#L263-L339), [`backend/app/services/photo.py`](../../../backend/app/services/photo.py#L152-L259), [`backend/tests/test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py#L596-L869)
+  - **원인 및 조치**: 2-Way 경쟁 가설 추적 및 Devil's Advocate 검증을 통해 `index_single_file_sync`의 배치 커밋 전 `delete_photo_atomic_sync` 선행 삭제 결함과 `UNIQUE(images.file_path)` 충돌/테스트 FK 캐스케이드/post-commit 재시도 경계를 일괄 해소함. `index_single_file_sync`를 `_find_existing_id_or_skip`·`_resolve_hash_conflict`로 분리해 stat/DB/해시 구간까지 예외 안전화하고 즉시 삭제를 제거하여 top-level `replaces_image_id`만 전달하도록 수정함. `_save_photos_atomic_internal`에서는 동일 미커밋 SQLite 트랜잭션 내 `db.add_all` 직전 `_delete_replaced_rows_in_tx(..., synchronize_session="fetch") + db.flush()`로 자식/부모 행을 선삭제해 커밋 실패 시 `db.rollback()`으로 100% 원복을 보장했고, 커밋 성공 직후에만 `stale_old_ids`에 대해 격리된 `_cleanup_replaced_artifacts`를 실행해 구 벡터/구 썸네일을 정리하며 post-commit 삭제 오류가 `_commit_batch_with_retry` 재시도로 재진입하지 않도록 차단함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_11 -v` (`PASS`), `./venv/bin/pytest backend/tests/ -v` (`137 passed`)
 
 ### [DEFECT-06] macOS 유니코드 정규화(NFD vs NFC) 불일치로 인한 `_identify_zombie_photo_ids`의 한글 폴더 사진 전량 오삭제
 - **현재 상태**: `🟡 OPEN`
