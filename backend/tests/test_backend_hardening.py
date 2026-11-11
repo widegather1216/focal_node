@@ -1,3 +1,4 @@
+import json
 import os
 import time
 import pytest
@@ -1723,6 +1724,188 @@ def test_tc_idx_15_fastapi_sync_start_and_testclient_portal_resume(client, tmp_p
     assert cancel_res.status_code == 200
     assert indexing_state_manager.status == "cancelled"
     indexing_state_manager.reset_status()
+
+
+def _parse_export_sse_events(raw_stream_text: str) -> list[tuple[str, dict]]:
+    events: list[tuple[str, dict]] = []
+    for frame in raw_stream_text.strip().split("\n\n"):
+        if not frame.strip():
+            continue
+        event_name = "message"
+        data_lines: list[str] = []
+        for line in frame.splitlines():
+            if line.startswith("event:"):
+                event_name = line.split(":", 1)[1].strip()
+            elif line.startswith("data:"):
+                data_lines.append(line.split(":", 1)[1].strip())
+        if data_lines:
+            events.append((event_name, json.loads("\n".join(data_lines))))
+    return events
+
+
+def test_tc_idx_16_export_sse_failure_and_partial_contracts(client, db_session, tmp_path, monkeypatch):
+    """
+    TC-IDX-16 (DEFECT-10): Verifies POST /api/photos/export SSE contracts across
+    total failure, partial disk failure, partial missing DB IDs, deduplication,
+    PermissionError copy failure, and full success.
+    """
+    import shutil
+
+    photo_dir = tmp_path / "photos"
+    photo_dir.mkdir()
+    export_dir = tmp_path / "export"
+    export_dir.mkdir()
+
+    ok_file_1 = photo_dir / "valid_1.jpg"
+    ok_file_2 = photo_dir / "valid_2.jpg"
+    Image.new("RGB", (24, 24), color="teal").save(str(ok_file_1), format="JPEG")
+    Image.new("RGB", (24, 24), color="gold").save(str(ok_file_2), format="JPEG")
+
+    db_session.add_all([
+        models.Image(
+            id="tc16_ok_1",
+            parent_dir=str(photo_dir),
+            file_path=str(ok_file_1),
+            file_name="valid_1.jpg",
+            file_size=ok_file_1.stat().st_size,
+            file_mtime=time.time(),
+            mime_type="image/jpeg",
+        ),
+        models.Image(
+            id="tc16_ok_2",
+            parent_dir=str(photo_dir),
+            file_path=str(ok_file_2),
+            file_name="valid_2.jpg",
+            file_size=ok_file_2.stat().st_size,
+            file_mtime=time.time(),
+            mime_type="image/jpeg",
+        ),
+        models.Image(
+            id="tc16_missing_1",
+            parent_dir=str(photo_dir),
+            file_path=str(photo_dir / "missing_1.jpg"),
+            file_name="missing_1.jpg",
+            file_size=100,
+            file_mtime=time.time(),
+            mime_type="image/jpeg",
+        ),
+        models.Image(
+            id="tc16_missing_2",
+            parent_dir=str(photo_dir),
+            file_path=str(photo_dir / "missing_2.jpg"),
+            file_name="missing_2.jpg",
+            file_size=100,
+            file_mtime=time.time(),
+            mime_type="image/jpeg",
+        ),
+    ])
+    db_session.commit()
+
+    # 1. All files missing on disk -> status="failed", exported_count=0, failed_count=2
+    all_fail_resp = client.post(
+        "/api/photos/export",
+        json={"photo_ids": ["tc16_missing_1", "tc16_missing_2"], "destination_folder": str(export_dir)},
+    )
+    assert all_fail_resp.status_code == 200
+    all_fail_events = _parse_export_sse_events(all_fail_resp.text)
+    all_fail_done = dict(all_fail_events)["done"]
+    assert all_fail_done["status"] == "failed"
+    assert all_fail_done["exported_count"] == 0
+    assert all_fail_done["failed_count"] == 2
+    assert all_fail_done["total_count"] == 2
+    assert all_fail_done["exported_ids"] == []
+    assert all_fail_done["failed_ids"] == ["tc16_missing_1", "tc16_missing_2"]
+    assert len(all_fail_done["errors"]) == 2
+
+    # 2. Partial disk failure + duplicate photo_ids -> deduplicated & status="partial"
+    partial_disk_resp = client.post(
+        "/api/photos/export",
+        json={"photo_ids": ["tc16_ok_1", "tc16_ok_1", "tc16_missing_1"], "destination_folder": str(export_dir)},
+    )
+    assert partial_disk_resp.status_code == 200
+    partial_disk_done = dict(_parse_export_sse_events(partial_disk_resp.text))["done"]
+    assert partial_disk_done["status"] == "partial"
+    assert partial_disk_done["exported_count"] == 1
+    assert partial_disk_done["failed_count"] == 1
+    assert partial_disk_done["total_count"] == 2
+    assert partial_disk_done["exported_ids"] == ["tc16_ok_1"]
+    assert partial_disk_done["failed_ids"] == ["tc16_missing_1"]
+    assert len(partial_disk_done["errors"]) == 1
+
+    # 3. Partial DB missing ID -> reported as partial failure instead of silent drop
+    partial_db_resp = client.post(
+        "/api/photos/export",
+        json={"photo_ids": ["tc16_ok_2", "tc16_not_in_db"], "destination_folder": str(export_dir)},
+    )
+    assert partial_db_resp.status_code == 200
+    partial_db_done = dict(_parse_export_sse_events(partial_db_resp.text))["done"]
+    assert partial_db_done["status"] == "partial"
+    assert partial_db_done["exported_count"] == 1
+    assert partial_db_done["failed_count"] == 1
+    assert partial_db_done["total_count"] == 2
+    assert partial_db_done["exported_ids"] == ["tc16_ok_2"]
+    assert partial_db_done["failed_ids"] == ["tc16_not_in_db"]
+    assert "Photo not found in database: tc16_not_in_db" in partial_db_done["errors"]
+
+    # 4. Copy exception (PermissionError) -> status="failed" with error reason preserved
+    def fail_copy(_src, _dst):
+        raise PermissionError("read-only destination")
+
+    with monkeypatch.context() as scoped_patch:
+        scoped_patch.setattr(shutil, "copy2", fail_copy)
+        perm_fail_resp = client.post(
+            "/api/photos/export",
+            json={"photo_ids": ["tc16_ok_1"], "destination_folder": str(export_dir)},
+        )
+        assert perm_fail_resp.status_code == 200
+        perm_fail_done = dict(_parse_export_sse_events(perm_fail_resp.text))["done"]
+        assert perm_fail_done["status"] == "failed"
+        assert perm_fail_done["exported_count"] == 0
+        assert perm_fail_done["failed_count"] == 1
+        assert perm_fail_done["failed_ids"] == ["tc16_ok_1"]
+        assert "read-only destination" in perm_fail_done["errors"][0]
+
+    # 5. Clean full success contract preserved
+    success_resp = client.post(
+        "/api/photos/export",
+        json={"photo_ids": ["tc16_ok_1"], "destination_folder": str(export_dir)},
+    )
+    assert success_resp.status_code == 200
+    success_done = dict(_parse_export_sse_events(success_resp.text))["done"]
+    assert success_done["status"] == "success"
+    assert success_done["exported_count"] == 1
+    assert success_done["failed_count"] == 0
+    assert success_done["total_count"] == 1
+    assert success_done["exported_ids"] == ["tc16_ok_1"]
+    assert success_done["failed_ids"] == []
+    assert success_done["errors"] is None
+
+
+@pytest.mark.asyncio
+async def test_tc_idx_16_export_stream_unexpected_error_emits_error_event(monkeypatch):
+    """
+    TC-IDX-16 (DEFECT-10): Verifies unexpected stream exceptions inside _stream_export_events
+    emit a structured `event: error` SSE frame instead of silently dropping the stream.
+    """
+    import api.photos as api_photos
+
+    async def broken_process_item(_item, _dest_folder):
+        raise RuntimeError("unexpected disk controller failure")
+
+    monkeypatch.setattr(api_photos, "_process_single_export_item", broken_process_item)
+
+    chunks: list[str] = []
+    async for chunk in api_photos._stream_export_events(
+        [{"id": "p1", "file_path": "/tmp/a.jpg", "file_name": "a.jpg"}],
+        "/tmp",
+    ):
+        chunks.append(chunk.decode("utf-8"))
+
+    events = _parse_export_sse_events("".join(chunks))
+    event_names = [name for name, _payload in events]
+    assert "error" in event_names
+    error_payload = dict(events)["error"]
+    assert "unexpected disk controller failure" in error_payload["detail"]
 
 
 def test_start_indexing_empty_payload(client):

@@ -88,11 +88,21 @@ def _prepare_export_items_sync(photo_ids: List[str], dest_folder: str) -> list[d
     if not os.path.exists(dest_folder) or not os.path.isdir(dest_folder):
         raise HTTPException(status_code=400, detail="Invalid destination folder")
 
+    unique_ids = list(dict.fromkeys(photo_ids))
     with database.SessionLocal() as db:
-        images = PhotoRepository(db).get_by_ids(photo_ids)
+        images = PhotoRepository(db).get_by_ids(unique_ids)
         if not images:
             raise HTTPException(status_code=404, detail="No photos found to export")
-        return [{"file_path": img.file_path, "file_name": img.file_name} for img in images]
+        images_by_id = {img.id: img for img in images}
+        return [
+            {
+                "id": photo_id,
+                "file_path": images_by_id[photo_id].file_path if photo_id in images_by_id else None,
+                "file_name": images_by_id[photo_id].file_name if photo_id in images_by_id else photo_id,
+                "missing_error": None if photo_id in images_by_id else f"Photo not found in database: {photo_id}",
+            }
+            for photo_id in unique_ids
+        ]
 
 
 def _parse_ai_tags(ai_model) -> tuple[list[str], list[str]]:
@@ -220,39 +230,96 @@ def _resolve_unique_dest_path(dest_folder: str, file_name: str) -> tuple[str, st
     return target_path, final_name
 
 def _copy_export_file_sync(item_dict: dict, dest_folder: str) -> tuple[bool, str, Optional[str]]:
-    src_path = item_dict["file_path"]
-    src_name = item_dict["file_name"]
-    if not os.path.exists(src_path):
-        return False, src_name, f"File not found: {src_path}"
+    src_path = item_dict.get("file_path")
+    src_name = item_dict.get("file_name", "unknown")
+    if not src_path or not os.path.isfile(src_path):
+        return False, src_name, f"File not found: {src_path or src_name}"
 
     target_path, final_name = _resolve_unique_dest_path(dest_folder, src_name)
     shutil.copy2(src_path, target_path)
     return True, final_name, None
 
-async def _stream_export_events(export_items: list, dest_folder: str):
-    errors = []
-    exported_count = 0
-    total_count = len(export_items)
 
-    yield f"event: start\ndata: {json.dumps({'total': total_count})}\n\n".encode("utf-8")
+def _format_sse_event(event_name: str, payload: dict) -> bytes:
+    return f"event: {event_name}\ndata: {json.dumps(payload)}\n\n".encode("utf-8")
 
-    for idx, item in enumerate(export_items):
-        try:
-            success, final_name, err_msg = await asyncio.to_thread(_copy_export_file_sync, item, dest_folder)
-            if success:
-                exported_count += 1
-                yield f"event: progress\ndata: {json.dumps({'processed': idx + 1, 'total': total_count, 'file': final_name})}\n\n".encode("utf-8")
-            else:
-                errors.append(err_msg)
-        except Exception as e:
-            errors.append(f"Failed to copy {item['file_name']}: {str(e)}")
 
-    final_result = {
-        "status": "success" if exported_count > 0 else "failed",
+def _build_export_done_payload(
+    exported_count: int,
+    failed_count: int,
+    total_count: int,
+    exported_ids: list[str],
+    failed_ids: list[str],
+    errors: list[str],
+) -> dict:
+    if exported_count == 0:
+        export_status = "failed"
+    elif failed_count > 0:
+        export_status = "partial"
+    else:
+        export_status = "success"
+
+    return {
+        "status": export_status,
         "exported_count": exported_count,
+        "failed_count": failed_count,
+        "total_count": total_count,
+        "exported_ids": exported_ids,
+        "failed_ids": failed_ids,
         "errors": errors if errors else None,
     }
-    yield f"event: done\ndata: {json.dumps(final_result)}\n\n".encode("utf-8")
+
+
+async def _process_single_export_item(item: dict, dest_folder: str) -> tuple[bool, str, Optional[str]]:
+    file_name = item.get("file_name", "unknown")
+    missing_error = item.get("missing_error")
+    if missing_error:
+        return False, file_name, missing_error
+
+    try:
+        return await asyncio.to_thread(_copy_export_file_sync, item, dest_folder)
+    except Exception as exc:
+        logger.warning("Export copy failed for %s: %s", file_name, exc)
+        return False, file_name, f"Failed to copy {file_name}: {str(exc)}"
+
+
+async def _stream_export_events(export_items: list, dest_folder: str):
+    errors: list[str] = []
+    exported_ids: list[str] = []
+    failed_ids: list[str] = []
+    exported_count = 0
+    failed_count = 0
+    total_count = len(export_items)
+
+    try:
+        yield _format_sse_event("start", {"total": total_count})
+
+        for idx, item in enumerate(export_items):
+            success, final_name, err_msg = await _process_single_export_item(item, dest_folder)
+            item_id = item.get("id")
+            if success:
+                exported_count += 1
+                if isinstance(item_id, str) and item_id:
+                    exported_ids.append(item_id)
+                yield _format_sse_event(
+                    "progress",
+                    {"processed": idx + 1, "total": total_count, "file": final_name},
+                )
+            else:
+                failed_count += 1
+                if isinstance(item_id, str) and item_id:
+                    failed_ids.append(item_id)
+                errors.append(err_msg or f"Failed to export {final_name}")
+
+        done_payload = _build_export_done_payload(
+            exported_count, failed_count, total_count, exported_ids, failed_ids, errors
+        )
+        yield _format_sse_event("done", done_payload)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.exception("Unexpected error during export stream")
+        yield _format_sse_event("error", {"detail": f"Export stream failed: {str(exc)}"})
 
 @router.post("/export")
 async def export_photos(payload: schemas.ExportRequest):
