@@ -78,23 +78,20 @@ def sync_database(background_tasks: BackgroundTasks, db: Session = Depends(get_d
 
 @router.post("/pause")
 async def pause_indexing_endpoint():
-    if indexing_state_manager.status != "processing":
+    if not pause_indexing():
         raise HTTPException(status_code=400, detail=f"Cannot pause when status is '{indexing_state_manager.status}'.")
-    pause_indexing()
     return {"message": "Indexing paused"}
 
 @router.post("/resume")
 async def resume_indexing_endpoint():
-    if indexing_state_manager.status != "paused":
+    if not resume_indexing():
         raise HTTPException(status_code=400, detail=f"Cannot resume when status is '{indexing_state_manager.status}'.")
-    resume_indexing()
     return {"message": "Indexing resumed"}
 
 @router.post("/cancel")
 async def cancel_indexing_endpoint():
-    if indexing_state_manager.status not in ["processing", "paused"]:
+    if not cancel_indexing():
         raise HTTPException(status_code=400, detail=f"Cannot cancel when status is '{indexing_state_manager.status}'.")
-    cancel_indexing()
     return {"message": "Indexing cancelled"}
 
 @router.get("/status")

@@ -1453,6 +1453,278 @@ def test_tc_idx_14_conftest_sessionlocal_compatibility(client, db_session, tmp_p
     assert (export_dir / "sample.jpg").exists()
 
 
+def test_tc_idx_15_cross_thread_loop_binding_and_wake_after_sync_start():
+    """
+    TC-IDX-15 (DEFECT-09): Verifies that starting indexing from a sync worker thread
+    (no running event loop) does not permanently pin _pause_loop to None, binds cleanly
+    to the async loop, and wakes paused waiters promptly via call_soon_threadsafe.
+    """
+    import asyncio
+    import threading
+    from services.indexing_state import IndexingStateManager
+
+    manager = IndexingStateManager()
+
+    # 1. Simulate FastAPI sync route calling try_start_indexing() in an AnyIO worker thread
+    start_results = []
+    start_thread = threading.Thread(target=lambda: start_results.append(manager.try_start_indexing()))
+    start_thread.start()
+    start_thread.join(timeout=2.0)
+    assert start_results == [True]
+    run_id = manager.current_run_id
+
+    async def run_async_waiter():
+        loop = asyncio.get_running_loop()
+        orig_call_soon_threadsafe = loop.call_soon_threadsafe
+        threadsafe_calls = []
+
+        def spy_call_soon_threadsafe(callback, *args, **kwargs):
+            threadsafe_calls.append(callback)
+            return orig_call_soon_threadsafe(callback, *args, **kwargs)
+
+        loop.call_soon_threadsafe = spy_call_soon_threadsafe
+
+        active_id = manager.initialize_background_run(run_id=run_id)
+        assert active_id == run_id
+        assert manager._pause_loop is loop
+
+        assert manager.pause() is True
+        assert manager.pause_event.is_set() is False
+
+        resume_done = threading.Event()
+
+        def bg_resume():
+            threading.Event().wait(0.05)
+            manager.resume()
+            resume_done.set()
+
+        t_resume = threading.Thread(target=bg_resume)
+        t_resume.start()
+        await asyncio.wait_for(manager.pause_event.wait(), timeout=0.5)
+        t_resume.join(timeout=2.0)
+        assert resume_done.is_set()
+        assert len(threadsafe_calls) >= 1
+
+        # Also verify cross-thread cancel() wakes wait_if_paused() via call_soon_threadsafe
+        assert manager.pause() is True
+        cst_before_cancel = len(threadsafe_calls)
+
+        def bg_cancel():
+            threading.Event().wait(0.05)
+            manager.cancel()
+
+        t_cancel = threading.Thread(target=bg_cancel)
+        t_cancel.start()
+        should_continue = await asyncio.wait_for(manager.wait_if_paused(run_id), timeout=0.5)
+        t_cancel.join(timeout=2.0)
+        assert should_continue is False
+        assert manager.status == "cancelled"
+        assert len(threadsafe_calls) > cst_before_cancel
+
+    asyncio.run(run_async_waiter())
+
+
+def test_tc_idx_15_cross_loop_and_rapid_sequence_isolation():
+    """
+    TC-IDX-15 (DEFECT-09): Verifies multi-loop safety:
+    1. Another event loop calling resume() / cancel() wakes waiters on loop_1 without orphaning.
+    2. Rapid cancel() -> try_start_indexing() -> pause() never swallows Run 1 wakeup pulse.
+    3. Sequential closed loops and custom asyncio.Event setter transitions never raise RuntimeError.
+    """
+    import asyncio
+    import threading
+    from services.indexing_state import IndexingStateManager
+
+    manager = IndexingStateManager()
+
+    # Part 1: loop_1 paused while loop_2 calls resume()
+    async def run_cross_loop_resume():
+        assert manager.try_start_indexing() is True
+        assert manager.pause() is True
+
+        def second_loop_resume():
+            threading.Event().wait(0.05)
+            async def invoke_resume():
+                assert manager.resume() is True
+            asyncio.run(invoke_resume())
+
+        t = threading.Thread(target=second_loop_resume)
+        t.start()
+        await asyncio.wait_for(manager.pause_event.wait(), timeout=0.5)
+        t.join(timeout=2.0)
+        assert manager.status == "processing"
+
+    asyncio.run(run_cross_loop_resume())
+
+    # Part 2: Rapid cancel() -> try_start_indexing() -> pause() while Run 1 is waiting
+    manager.reset_status()
+
+    async def run_rapid_cancel_restart_pause():
+        assert manager.try_start_indexing() is True
+        run1 = manager.current_run_id
+        assert manager.pause() is True
+
+        def rapid_sequence():
+            threading.Event().wait(0.05)
+            assert manager.cancel() is True
+            assert manager.try_start_indexing() is True
+            assert manager.pause() is True
+
+        t = threading.Thread(target=rapid_sequence)
+        t.start()
+        run1_ok = await asyncio.wait_for(manager.wait_if_paused(run1), timeout=0.5)
+        t.join(timeout=2.0)
+        assert run1_ok is False
+        assert manager.status == "paused"
+        assert manager.pause_event.is_set() is False
+
+    asyncio.run(run_rapid_cancel_restart_pause())
+
+    # Part 3: Closed loop custom event recovery & sequential loops
+    async def bind_custom_event_on_closed_loop():
+        custom = asyncio.Event()
+        custom.clear()
+        manager.pause_event = custom
+        task = asyncio.create_task(manager.pause_event.wait())
+        await asyncio.sleep(0.01)
+        assert manager.resume() is True
+        await asyncio.wait_for(task, timeout=0.5)
+        assert manager.cancel() is True
+
+    manager.reset_status()
+    manager.status = "paused"
+    asyncio.run(bind_custom_event_on_closed_loop())
+
+    # Next loop must auto-recover from closed-loop custom event without reset_status()
+    async def next_loop_after_close():
+        assert manager.try_start_indexing() is True
+        assert manager.pause() is True
+        assert manager.pause_event.is_set() is False
+
+        def bg_resume():
+            threading.Event().wait(0.03)
+            assert manager.resume() is True
+
+        t = threading.Thread(target=bg_resume)
+        t.start()
+        await asyncio.wait_for(manager.pause_event.wait(), timeout=0.5)
+        t.join(timeout=2.0)
+        manager.reset_status()
+        assert manager.pause_event.is_set() is True
+
+    asyncio.run(next_loop_after_close())
+
+
+@pytest.mark.asyncio
+async def test_tc_idx_15_pre_pause_before_scan_and_finalize_idle_resets_event(monkeypatch):
+    """
+    TC-IDX-15 (DEFECT-09): Verifies pre-start pause() halts run_indexing_background
+    before directory scanning/zombie cleanup, and finalize_run('idle') restores pause_event.
+    """
+    import asyncio
+    from unittest.mock import MagicMock
+    import services.indexing_service as idx_svc
+    from services.indexing_state import indexing_state_manager
+
+    indexing_state_manager.reset_status()
+    assert indexing_state_manager.try_start_indexing() is True
+    run_id = indexing_state_manager.current_run_id
+
+    # Pause BEFORE background task starts
+    assert indexing_state_manager.pause() is True
+    assert indexing_state_manager.status == "paused"
+
+    scan_mock = MagicMock(return_value=[])
+    cleanup_mock = MagicMock()
+    monkeypatch.setattr(idx_svc, "scan_directory", scan_mock)
+    monkeypatch.setattr(idx_svc, "cleanup_zombie_records", cleanup_mock)
+
+    bg_task = asyncio.create_task(idx_svc.run_indexing_background(["/fake"], run_id=run_id))
+    await asyncio.sleep(0.05)
+
+    # Must still be paused BEFORE scan_directory and cleanup_zombie_records
+    assert indexing_state_manager.status == "paused"
+    assert scan_mock.call_count == 0
+    assert cleanup_mock.call_count == 0
+
+    # Resuming lets scan/cleanup complete and finalize cleanly to idle
+    assert indexing_state_manager.resume() is True
+    await asyncio.wait_for(bg_task, timeout=1.0)
+    assert scan_mock.call_count == 1
+    assert cleanup_mock.call_count == 1
+    assert indexing_state_manager.status == "idle"
+    assert indexing_state_manager.pause_event.is_set() is True
+
+    # Even if pause() happens right before finalize_run("idle"), event must reset to set
+    assert indexing_state_manager.try_start_indexing() is True
+    r2 = indexing_state_manager.current_run_id
+    assert indexing_state_manager.pause() is True
+    assert indexing_state_manager.finalize_run(run_id=r2) == "idle"
+    assert indexing_state_manager.pause_event.is_set() is True
+
+    indexing_state_manager.reset_status()
+
+
+def test_tc_idx_15_fastapi_sync_start_and_testclient_portal_resume(client, tmp_path, monkeypatch):
+    """
+    TC-IDX-15 (DEFECT-09): End-to-end FastAPI TestClient verification where
+    POST /api/index/start runs in AnyIO worker thread, background loop awaits pause,
+    and POST /api/index/resume / cancel from TestClient portal loop wakes it safely.
+    """
+    import asyncio
+    import threading
+    import api.indexing as indexing_api
+    from services.indexing_state import indexing_state_manager
+
+    indexing_state_manager.reset_status()
+    target_dir = tmp_path / "tc15_photos"
+    target_dir.mkdir()
+
+    captured_runs = []
+    monkeypatch.setattr(
+        indexing_api,
+        "run_indexing_background",
+        lambda paths, run_id=None: captured_runs.append((paths, run_id)),
+    )
+
+    start_res = client.post("/api/index/start", json={"folder_paths": [str(target_dir)]})
+    assert start_res.status_code == 202
+    assert len(captured_runs) == 1
+    run_id = captured_runs[0][1]
+
+    pause_res = client.post("/api/index/pause")
+    assert pause_res.status_code == 200
+    assert indexing_state_manager.status == "paused"
+
+    wait_result = []
+    wait_ready = threading.Event()
+
+    def run_bg_loop():
+        async def wait_paused():
+            wait_ready.set()
+            res = await asyncio.wait_for(indexing_state_manager.wait_if_paused(run_id), timeout=1.0)
+            wait_result.append(res)
+
+        asyncio.run(wait_paused())
+
+    bg_thread = threading.Thread(target=run_bg_loop)
+    bg_thread.start()
+    assert wait_ready.wait(timeout=1.0)
+    threading.Event().wait(0.05)
+
+    resume_res = client.post("/api/index/resume")
+    assert resume_res.status_code == 200
+    bg_thread.join(timeout=1.0)
+    assert not bg_thread.is_alive()
+    assert wait_result == [True]
+    assert indexing_state_manager.status == "processing"
+
+    cancel_res = client.post("/api/index/cancel")
+    assert cancel_res.status_code == 200
+    assert indexing_state_manager.status == "cancelled"
+    indexing_state_manager.reset_status()
+
+
 def test_start_indexing_empty_payload(client):
     """
     Verifies /api/index/start returns 400 Bad Request if folder_paths is empty.

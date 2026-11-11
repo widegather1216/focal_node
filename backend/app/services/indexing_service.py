@@ -35,14 +35,16 @@ vector_repo = VectorRepository()
 
 from services.indexing_state import indexing_state_manager
 
-def pause_indexing():
-    indexing_state_manager.pause()
+def pause_indexing() -> bool:
+    return indexing_state_manager.pause()
 
-def resume_indexing():
-    indexing_state_manager.resume()
 
-def cancel_indexing():
-    indexing_state_manager.cancel()
+def resume_indexing() -> bool:
+    return indexing_state_manager.resume()
+
+
+def cancel_indexing() -> bool:
+    return indexing_state_manager.cancel()
 
 
 # --- File Scanner Helpers ---
@@ -569,11 +571,7 @@ async def _process_single_indexing_file(
         return "cancelled"
 
     async with semaphore:
-        if indexing_state_manager.is_run_cancelled(run_id):
-            return "cancelled"
-        if not indexing_state_manager.pause_event.is_set():
-            await indexing_state_manager.pause_event.wait()
-        if indexing_state_manager.is_run_cancelled(run_id):
+        if not await indexing_state_manager.wait_if_paused(run_id):
             return "cancelled"
 
         result = await asyncio.to_thread(index_single_file_sync, f_path)
@@ -648,10 +646,7 @@ async def _wait_if_paused(run_id: Optional[int]) -> bool:
         return False
     if not indexing_state_manager.pause_event.is_set():
         print("[Indexer] Background indexing waiting for pause release...", flush=True)
-        await indexing_state_manager.pause_event.wait()
-        if indexing_state_manager.is_run_cancelled(run_id):
-            return False
-    return True
+    return await indexing_state_manager.wait_if_paused(run_id)
 
 
 async def run_indexing_background(folder_paths: list[str], run_id: Optional[int] = None):
@@ -666,11 +661,15 @@ async def run_indexing_background(folder_paths: list[str], run_id: Optional[int]
 
     error_message: Optional[str] = None
     try:
+        if not await _wait_if_paused(active_run_id):
+            return
         files = await asyncio.to_thread(scan_directory, folder_paths)
         total_files = len(files)
         indexing_state_manager.update_progress(0, total_files, "", run_id=active_run_id)
         print(f"[Indexer] Starting background indexing. Found {total_files} files.", flush=True)
 
+        if not await _wait_if_paused(active_run_id):
+            return
         await asyncio.to_thread(cleanup_zombie_records)
         if not files:
             print("[Indexer] No files found for indexing.", flush=True)
