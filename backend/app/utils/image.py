@@ -1,12 +1,15 @@
 import os
 import io
 import datetime
+import logging
 import mimetypes
 import threading
 from typing import Optional
 from PIL import Image, ImageOps
 import rawpy
 import exifread
+
+logger = logging.getLogger("focal_node.image_utils")
 
 # Disable decompression bomb checks for high-resolution cameras
 Image.MAX_IMAGE_PIXELS = None
@@ -93,13 +96,32 @@ def load_pil_image(file_path: str, min_dimension: Optional[int] = None) -> Image
         img_t = ImageOps.exif_transpose(raw_img)
         return img_t.convert("RGB") if img_t.mode != "RGB" else img_t.copy()
 
+def _unwrap_tag_values(raw_values):
+    """Unwraps list/tuple EXIF tag values and filters empty containers or blank strings."""
+    extracted = raw_values
+    if isinstance(raw_values, (list, tuple)):
+        if not raw_values:
+            return None
+        extracted = raw_values[0]
+    if extracted is None:
+        return None
+    if isinstance(extracted, str) and not extracted.strip():
+        return None
+    if isinstance(extracted, bytes) and not extracted:
+        return None
+    return extracted
+
+
 def _get_tag_val(tags: dict, keys: list[str] | str):
-    if isinstance(keys, str):
-        keys = [keys]
-    for k in keys:
-        tag = tags.get(k)
-        if tag is not None:
-            return tag.values[0] if isinstance(tag.values, list) else tag.values
+    """Returns the first non-empty EXIF tag value across candidate keys."""
+    candidate_keys = [keys] if isinstance(keys, str) else keys
+    for key in candidate_keys:
+        tag = tags.get(key)
+        if tag is None:
+            continue
+        extracted = _unwrap_tag_values(getattr(tag, "values", None))
+        if extracted is not None:
+            return extracted
     return None
 
 def _parse_ratio(ratio_obj) -> float | None:
@@ -214,57 +236,79 @@ def _extract_image_dimensions(file_path: str) -> tuple[Optional[int], Optional[i
     return width, height, color_space
 
 
+def _parse_positive_float(raw_value) -> float | None:
+    """Converts an EXIF numeric/Ratio value to a positive float, or returns None."""
+    if raw_value is None:
+        return None
+    try:
+        parsed_val = float(raw_value)
+        return parsed_val if parsed_val > 0 else None
+    except (ValueError, TypeError, ZeroDivisionError) as exc:
+        logger.debug("Failed to parse positive float EXIF value %r: %s", raw_value, exc)
+        return None
+
+
+def _parse_int(raw_value) -> int | None:
+    """Converts an EXIF numeric/Ratio value to an integer, or returns None."""
+    if raw_value is None:
+        return None
+    try:
+        return int(raw_value)
+    except (ValueError, TypeError, ZeroDivisionError) as exc:
+        logger.debug("Failed to parse integer EXIF value %r: %s", raw_value, exc)
+        return None
+
+
+def _extract_tags_dict(tags: dict) -> dict:
+    """Extracts normalized metadata fields from an ExifRead tag mapping."""
+    parsed = {}
+
+    model = _get_tag_val(tags, "Image Model")
+    if model:
+        parsed["camera_model"] = str(model).strip()
+
+    lens = _get_tag_val(tags, ["EXIF LensModel", "Image LensModel", "EXIF LensModelName"])
+    if lens:
+        parsed["lens_model"] = str(lens).strip()
+
+    parsed_f = _parse_ratio(_get_tag_val(tags, "EXIF FNumber"))
+    if parsed_f is not None:
+        parsed["f_number"] = round(parsed_f, 2)
+
+    fl_val = _get_tag_val(tags, "EXIF FocalLength")
+    if fl_val is not None:
+        parsed["focal_length"] = _parse_ratio(fl_val)
+
+    parsed_35 = _parse_positive_float(
+        _get_tag_val(tags, ["EXIF FocalLengthIn35mmFilm", "EXIF FocalLengthIn35mmFormat"])
+    )
+    if parsed_35 is not None:
+        parsed["focal_length_35mm"] = parsed_35
+
+    shutter_val = _get_tag_val(tags, "EXIF ExposureTime")
+    if shutter_val is not None:
+        parsed["shutter_speed"] = _parse_shutter_speed(shutter_val)
+
+    parsed_iso = _parse_int(_get_tag_val(tags, ["EXIF ISOSpeedRatings", "EXIF ISOSpeed"]))
+    if parsed_iso is not None:
+        parsed["iso"] = parsed_iso
+
+    date_val = _get_tag_val(tags, ["EXIF DateTimeOriginal", "Image DateTime"])
+    if date_val is not None:
+        parsed["capture_date"] = _parse_date(str(date_val))
+
+    return parsed
+
+
 def _parse_exif_tags_dict(file_path: str) -> dict:
     """Reads and parses core EXIF tags from image file."""
-    parsed = {}
     try:
-        with open(file_path, "rb") as f:
-            tags = exifread.process_file(f, details=False)
-
-            model = _get_tag_val(tags, "Image Model")
-            if model:
-                parsed["camera_model"] = str(model).strip()
-
-            lens = _get_tag_val(tags, ["EXIF LensModel", "Image LensModel", "EXIF LensModelName"])
-            if lens:
-                parsed["lens_model"] = str(lens).strip()
-
-            f_val = _get_tag_val(tags, "EXIF FNumber")
-            if f_val is not None:
-                parsed_f = _parse_ratio(f_val)
-                if parsed_f is not None:
-                    parsed["f_number"] = round(parsed_f, 2)
-
-            fl_val = _get_tag_val(tags, "EXIF FocalLength")
-            if fl_val is not None:
-                parsed["focal_length"] = _parse_ratio(fl_val)
-
-            fl35_val = _get_tag_val(tags, ["EXIF FocalLengthIn35mmFilm", "EXIF FocalLengthIn35mmFormat"])
-            if fl35_val is not None:
-                try:
-                    parsed_35 = float(fl35_val)
-                    if parsed_35 > 0:
-                        parsed["focal_length_35mm"] = parsed_35
-                except ValueError:
-                    pass
-
-            shutter_val = _get_tag_val(tags, "EXIF ExposureTime")
-            if shutter_val is not None:
-                parsed["shutter_speed"] = _parse_shutter_speed(shutter_val)
-
-            iso_val = _get_tag_val(tags, ["EXIF ISOSpeedRatings", "EXIF ISOSpeed"])
-            if iso_val is not None:
-                try:
-                    parsed["iso"] = int(iso_val)
-                except ValueError:
-                    pass
-
-            date_val = _get_tag_val(tags, ["EXIF DateTimeOriginal", "Image DateTime"])
-            if date_val is not None:
-                parsed["capture_date"] = _parse_date(str(date_val))
-    except Exception as e:
-        print(f"[extract_metadata] Warning: EXIF reading failed for {file_path}: {e}")
-    return parsed
+        with open(file_path, "rb") as file_handle:
+            tags = exifread.process_file(file_handle, details=False)
+        return _extract_tags_dict(tags)
+    except Exception as exc:
+        print(f"[extract_metadata] Warning: EXIF reading failed for {file_path}: {exc}")
+        return {}
 
 
 def _derive_sensor_and_crop(metadata: dict) -> None:

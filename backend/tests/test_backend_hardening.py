@@ -1011,6 +1011,123 @@ def test_tc_idx_12_korean_folder_nfd_nfc_zombie_prevention(db_session, tmp_path,
     assert set(deleted_vector_ids) == {"tc12_genuine_deleted", "tc12_sibling_unindexed"}
 
 
+def test_tc_idx_13_exif_empty_tag_values_preserves_remaining_metadata(tmp_path):
+    """
+    TC-IDX-13 (DEFECT-07): Verifies that ExifRead tags with empty values (values=[])
+    or empty/oversized IFD entries do not raise IndexError in _get_tag_val and do not
+    abort parsing of remaining EXIF metadata or fallback keys.
+    """
+    import io
+    import struct
+    import datetime
+    from types import SimpleNamespace
+    from utils.image import _get_tag_val, extract_metadata
+
+    # 1. Direct _get_tag_val boundary checks
+    tags = {
+        "EmptyList": SimpleNamespace(values=[]),
+        "EmptyTuple": SimpleNamespace(values=()),
+        "EmptyStr": SimpleNamespace(values="   "),
+        "ZeroList": SimpleNamespace(values=[0]),
+        "PrimaryEmpty": SimpleNamespace(values=[]),
+        "SecondaryValid": SimpleNamespace(values=[400]),
+        "PrimaryEmptyStr": SimpleNamespace(values=""),
+        "SecondaryLens": SimpleNamespace(values="FE 35mm F1.4 GM"),
+    }
+    assert _get_tag_val(tags, "EmptyList") is None
+    assert _get_tag_val(tags, "EmptyTuple") is None
+    assert _get_tag_val(tags, "EmptyStr") is None
+    assert _get_tag_val(tags, "ZeroList") == 0
+    assert _get_tag_val(tags, ["PrimaryEmpty", "SecondaryValid"]) == 400
+    assert _get_tag_val(tags, ["PrimaryEmptyStr", "SecondaryLens"]) == "FE 35mm F1.4 GM"
+
+    # 2. End-to-end real JPEG with malformed EXIF IFD entries:
+    #    - EXIF FNumber (0x829D): count=0 -> ExifRead produces values=[]
+    #    - EXIF FocalLengthIn35mmFilm (0xA405): count=1500 (>=1000) -> ExifRead produces values=[]
+    #    - EXIF ISOSpeedRatings (0x8827): count=0 -> values=[], falls back to EXIF ISOSpeed (0x8833)=400
+    #    - Valid FocalLength (50/1), ExposureTime (1/250), DateTimeOriginal, Image Model ("ILCE-7M4")
+    model_bytes = b"ILCE-7M4\x00"       # 9 bytes
+    date_bytes = b"2026:07:15 10:20:30\x00"  # 20 bytes
+
+    # Little-endian TIFF layout:
+    # Header (8): offset 0..8
+    # IFD0 (2 entries = 2 + 24 + 4 = 30): offset 8..38
+    # Model string (9): offset 38..47 (pad 1 byte -> 48)
+    # ExifIFD (7 entries = 2 + 84 + 4 = 90): offset 48..138
+    # DateTimeOriginal (20): offset 138..158
+    # FocalLength rational 50/1 (8): offset 158..166
+    # ExposureTime rational 1/250 (8): offset 166..174
+    tiff = bytearray()
+    tiff += b"II" + struct.pack("<HI", 42, 8)
+    tiff += struct.pack("<H", 2)
+    tiff += struct.pack("<HHII", 0x0110, 2, len(model_bytes), 38)  # Image Model
+    tiff += struct.pack("<HHII", 0x8769, 4, 1, 48)                 # ExifOffset
+    tiff += struct.pack("<I", 0)
+    assert len(tiff) == 38
+    tiff += model_bytes + b"\x00"
+    assert len(tiff) == 48
+
+    tiff += struct.pack("<H", 7)
+    tiff += struct.pack("<HHII", 0x829D, 5, 0, 0)       # FNumber count=0 -> values=[]
+    tiff += struct.pack("<HHII", 0x8827, 3, 0, 0)       # ISOSpeedRatings count=0 -> values=[]
+    tiff += struct.pack("<HHII", 0x8833, 4, 1, 400)     # ISOSpeed=400 (fallback key)
+    tiff += struct.pack("<HHII", 0x9003, 2, len(date_bytes), 138)  # DateTimeOriginal
+    tiff += struct.pack("<HHII", 0x920A, 5, 1, 158)     # FocalLength=50/1
+    tiff += struct.pack("<HHII", 0x829A, 5, 1, 166)     # ExposureTime=1/250
+    tiff += struct.pack("<HHII", 0xA405, 3, 1500, 174)  # FocalLengthIn35mmFilm count=1500 -> values=[]
+    tiff += struct.pack("<I", 0)
+    assert len(tiff) == 138
+    tiff += date_bytes
+    assert len(tiff) == 158
+    tiff += struct.pack("<II", 50, 1)
+    tiff += struct.pack("<II", 1, 250)
+
+    jpeg_buf = io.BytesIO()
+    Image.new("RGB", (32, 24), color="blue").save(jpeg_buf, format="JPEG")
+    raw_jpeg = jpeg_buf.getvalue()
+    app1_payload = b"Exif\x00\x00" + bytes(tiff)
+    app1_segment = b"\xff\xe1" + struct.pack(">H", len(app1_payload) + 2) + app1_payload
+    crafted_path = tmp_path / "malformed_exif_empty_values.jpg"
+    crafted_path.write_bytes(raw_jpeg[:2] + app1_segment + raw_jpeg[2:])
+
+    meta = extract_metadata(str(crafted_path))
+    assert meta["width"] == 32
+    assert meta["height"] == 24
+    assert meta["camera_model"] == "ILCE-7M4"
+    assert meta["f_number"] is None
+    assert meta["focal_length"] == 50.0
+    assert meta["focal_length_35mm"] == 50.0
+    assert meta["crop_factor"] == 1.0
+    assert meta["sensor_format"] == "Full Frame"
+    assert meta["shutter_speed"] == "1/250"
+    assert meta["iso"] == 400
+    assert meta["capture_date"] == datetime.datetime(2026, 7, 15, 10, 20, 30)
+
+    # 3. Early tag (Image Model) empty list & corrupted Ratio(n, 0) / tuple values must not abort parsing
+    from exifread.utils import Ratio
+    from utils.image import _extract_tags_dict
+
+    corrupted_tags = {
+        "Image Model": SimpleNamespace(values=[]),
+        "EXIF LensModel": SimpleNamespace(values=[]),
+        "EXIF FNumber": SimpleNamespace(values=[Ratio(28, 10)]),
+        "EXIF FocalLength": SimpleNamespace(values=[Ratio(35, 1)]),
+        "EXIF FocalLengthIn35mmFilm": SimpleNamespace(values=[Ratio(35, 0)]),
+        "EXIF ExposureTime": SimpleNamespace(values=[Ratio(1, 125)]),
+        "EXIF ISOSpeedRatings": SimpleNamespace(values=[(800,)]),
+        "EXIF DateTimeOriginal": SimpleNamespace(values="2026:08:01 09:15:00"),
+    }
+    parsed = _extract_tags_dict(corrupted_tags)
+    assert "camera_model" not in parsed
+    assert "lens_model" not in parsed
+    assert parsed["f_number"] == 2.8
+    assert parsed["focal_length"] == 35.0
+    assert "focal_length_35mm" not in parsed
+    assert parsed["shutter_speed"] == "1/125"
+    assert "iso" not in parsed
+    assert parsed["capture_date"] == datetime.datetime(2026, 8, 1, 9, 15, 0)
+
+
 def test_start_indexing_empty_payload(client):
     """
     Verifies /api/index/start returns 400 Bad Request if folder_paths is empty.
