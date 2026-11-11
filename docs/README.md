@@ -8,10 +8,10 @@
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
 - **Active 도메인**: [`01_indexing_storage`](./features/01_indexing_storage/README.md)
-- **현재 단계 (Stage)**: `🩹 Debugging (DEFECT-01~08 해결 완료, P1 결함 DEFECT-09 등 3건 잔여 디버깅 진행 중)`
-- **직전 완료 작업**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) 도메인 DEFECT-08 해결 완료 (`backend/app/api/photos.py`의 `get_photo_thumbnail`·`get_photo_original`·`export_photos` 내 동기 DB 조회·파일시스템 `os.stat`/`isdir`/`exists` 검증을 `await asyncio.to_thread(...)` 내부의 독립 `database.SessionLocal()` 스코프로 격리해 평문 값만 반환하도록 개편하고, `get_decode_semaphore()`를 이벤트 루프별 `WeakKeyDictionary`로 분리하며 비-RAW `FileResponse` `stat_result`·`S_ISREG` 및 `except HTTPException: raise` 가드를 추가해 이벤트 루프 동결·세션 스레드 경합·404/422 500 변질을 해소, 신규 회귀 테스트 `TC-IDX-14` 3건 및 백엔드 142종 전수 통과)
+- **현재 단계 (Stage)**: `🩹 Debugging (DEFECT-01~09 해결 완료, P1 결함 DEFECT-10 등 2건 잔여 디버깅 진행 중)`
+- **직전 완료 작업**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) 도메인 DEFECT-09 해결 완료 (`backend/app/services/indexing_state.py`에 `RLock` 기반 `_ThreadSafeAsyncEvent(asyncio.Event)`를 도입해 sync FastAPI 워커 스레드의 `try_start_indexing()` 호출 후 `_pause_loop` 영구 `None` 고착·크로스 스레드 `call_soon_threadsafe` 누락·다중 루프 대기자 고아화·`cancel->start->pause` 펄스 유실·닫힌 루프 `RuntimeError`를 일괄 해소하고, 원자적 `wait_if_paused(run_id)`·`initialize_background_run` 선점 일시정지 보존·`finalize_run("idle")` 이벤트 복구·`indexing_service.py` 스캔/좀비 정리 전 대기 가드·`api/indexing.py` 제어 라우트 원자적 `bool` 검사를 연동, 신규 회귀 테스트 `TC-IDX-15` 4종 및 백엔드 146종 전수 통과)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"01_indexing_storage 도메인의 DEFECT-09 티켓 해결해줘"` *(`IndexingStateManager._pause_loop` 영구 `None` 고착 및 크로스 스레드 `call_soon_threadsafe` 누락 해소)*
+  > `"01_indexing_storage 도메인의 DEFECT-10 티켓 해결해줘"` *(`ActionBar.tsx` 사진 내보내기 실패 시 "0장 완료" 허위 성공 UI 및 선택 해제 해소)*
 
 ---
 
@@ -20,7 +20,7 @@
 | 도메인 (Bounded Context) | 생명주기 상태 | 구현 진척도 (Active Step 1~4) | QA 인수 통과율 | 미해결 티켓 (`🚨D` / `🧐R`) | 최근 작업 요약 |
 | :--- | :--- :---: | :---: | :---: | :---: | :--- |
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `5/5 (100%)` | `0 / 0` | DEFECT-01~04 전수 해결 완료 (손상 인덱스 valid=False, 실패 시 거짓 완료 차단, 1종 조기완료 차단, 중복 스레드/락 삭제 가드), Sign-Off 완료 |
-| 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `11/17 (65%)` | `3 / 0` | DEFECT-08 해결 완료(비동기 미디어/내보내기 DB·파일 I/O `to_thread` 및 `SessionLocal` 격리·세마포어 루프 분리, TC-IDX-14 PASS), DEFECT-09~11 3건 잔여 |
+| 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `12/17 (71%)` | `2 / 0` | DEFECT-09 해결 완료(_ThreadSafeAsyncEvent 기반 크로스 스레드/다중 루프 격리·원자적 wait_if_paused 도입, TC-IDX-15 PASS), DEFECT-10~11 2건 잔여 |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 📐 Planning | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 거리 임계값 + RRF 랭킹 + 35mm/점수 필터 + 스마트 앨범 Step 1~4 대기 |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `13/13 (100%)` | `0 / 2` | `DEFECT-02~03` 및 `REFACTOR-04~07` 해결 완료, `REFACTOR` 2건 대기 |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 📐 Planning | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 2` | 통계 차트 클릭 갤러리 드릴다운(`Click-to-Filter`) Step 3~4 대기 |
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-11]` `[systematic-debugger]` [`01_indexing_storage`]**: DEFECT-09 결함 해결 및 원자적 커밋 완료 (`b0804df` / `backend/app/services/indexing_state.py`에 `RLock` 기반 `_ThreadSafeAsyncEvent(asyncio.Event)`를 도입하여 sync FastAPI 워커 스레드의 `try_start_indexing()` 선행 호출 시 `_pause_loop` 영구 `None` 고착·크로스 스레드 `call_soon_threadsafe` 누락·다중 루프(`loop_1` vs `TestClient` 포탈 루프) 간 대기자 고아화·`cancel->start->pause` 기상 펄스 유실·닫힌 루프 `RuntimeError`를 일괄 해소하고, 원자적 `wait_if_paused(run_id)`·`initialize_background_run` 선점 일시정지 보존·`finalize_run("idle")` 이벤트 복구 및 `backend/app/services/indexing_service.py` 스캔/좀비 정리 전 대기 가드·`backend/app/api/indexing.py` 제어 라우트 원자적 `bool` 검사를 연동, 신규 회귀 테스트 `TC-IDX-15` 4종 및 백엔드 146종(`146 passed`) 전수 통과, `verification.md`/`README.md` 동기화).
 
 - **`[2026-11-11]` `[systematic-debugger]` [`01_indexing_storage`]**: DEFECT-08 결함 해결 및 원자적 커밋 완료 (`01eec79` / `backend/app/api/photos.py`의 비동기 미디어/내보내기 라우트 `get_photo_thumbnail`, `get_photo_original`, `export_photos`에서 이벤트 루프를 블로킹하던 동기 DB 조회 및 파일시스템 `exists`/`isdir`/`stat` 호출을 `_fetch_photo_media_record_sync`, `_read_cached_thumbnail_sync`, `_stat_regular_file_sync`, `_decode_raw_original`, `_prepare_export_items_sync`로 분리해 `await asyncio.to_thread(...)` 내부의 독립 `database.SessionLocal()` 스코프로 오프로딩하고 평문 값(tuple/dict)만 반환하도록 수정하여 FastAPI 이벤트 루프 동결 및 `Depends(get_db)` 스레드 공유/커넥션 고갈·`from database import SessionLocal` 테스트 격리 누락을 일괄 해소, `get_decode_semaphore()`를 `WeakKeyDictionary` 기반 이벤트 루프별 격리로 개선하고 `except HTTPException: raise`로 404/422 응답 계약 복원, 신규 회귀 테스트 `TC-IDX-14` 3종 및 백엔드 142종(`142 passed`) 전수 통과, `verification.md`/`README.md` 동기화).
 

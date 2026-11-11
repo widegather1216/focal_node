@@ -1,8 +1,8 @@
 # 🧪 [01_indexing_storage] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-01~08 해결 완료 / DEFECT 3건 잔여 디버깅 진행 중)`
+- **검증 상태**: `🩹 Debugging (DEFECT-01~09 해결 완료 / DEFECT 2건 잔여 디버깅 진행 중)`
 - **인수 조건 통과율**: `1 / 4 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 3건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 2건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -57,7 +57,7 @@
 | **Boundary**| `TC-IDX-12` | macOS NFD/NFC 한글 폴더 사진 오삭제 방지 | 한글 폴더 NFD/NFC 동기화 | 좀비 오판 차단 및 사진 보존 | `PASS (Fixed in DEFECT-06)` |
 | **Negative**| `TC-IDX-13` | ExifRead 빈 리스트(`values=[]`) 파싱 안정성 | 손상/초과 IFD 태그 파싱 | IndexError 방지 및 나머지 EXIF 보존 | `PASS (Fixed in DEFECT-07)` |
 | **Boundary**| `TC-IDX-14` | 비동기 미디어 라우트 내 동기 DB I/O 격리 | 썸네일/원본/내보내기 동시 요청 | 메인 비동기 이벤트 루프 동결 방지 | `PASS (Fixed in DEFECT-08)` |
-| **Boundary**| `TC-IDX-15` | IndexingStateManager 크로스 스레드 루프 바인딩 | 백그라운드 스레드 pause/resume | call_soon_threadsafe 안전 전달 | `FAIL (DEFECT-09)` |
+| **Boundary**| `TC-IDX-15` | IndexingStateManager 크로스 스레드 루프 바인딩 | 백그라운드 스레드 pause/resume | call_soon_threadsafe 안전 전달 | `PASS (Fixed in DEFECT-09)` |
 | **Negative**| `TC-IDX-16` | 사진 내보내기 실패 시 에러 보존 및 UI 피드백 | 0장 내보내기 에러 응답 수신 | 허위 녹색 완료 차단 및 실패 안내 | `FAIL (DEFECT-10)` |
 | **Security**| `TC-IDX-17` | 폴더 삭제 시 미등록 상위 경로 재귀 삭제 차단 | DELETE /api/folders?path=/ | 미등록 상위 경로 요청 거부 및 데이터 보호 | `FAIL (DEFECT-11)` |
 
@@ -130,12 +130,12 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_14 -v` (`3 passed`), `./venv/bin/pytest backend/tests/ -v` (`142 passed`)
 
 ### [DEFECT-09] `IndexingStateManager._pause_loop` 영구 `None` 고착으로 인한 크로스 스레드 `call_soon_threadsafe` 누락 및 이벤트 루프 블로킹
-- **현재 상태**: `🟡 OPEN`
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
 - **심각도**: 🟠 P1 High (Concurrency Hang)
-- **위치**: [`backend/app/services/indexing_state.py#L40-L47`](../../../backend/app/services/indexing_state.py#L40-L47), [`L58-L81`](../../../backend/app/services/indexing_state.py#L58-L81)
-- **실증 여부**: `✅ Empirical Probe Reproduced`
-- **근본 원인 분석**: 루프 재바인딩 조건문 `self._pause_loop is not None and self._pause_loop != current_loop` 오류로 인해 최초 `None`일 때 영원히 `None`으로 유지됨. `_set_event_safe`가 `call_soon_threadsafe`를 호출하지 못하고 크로스 스레드에서 직접 `set()`/`clear()`를 호출하여 메인 이벤트 루프 셀프 파이프를 깨우지 못함.
-- **수정 설계 방향**: `if current_loop is not None and (self._pause_loop is None or self._pause_loop != current_loop):`로 조건 수정.
+- **해결 내역**:
+  - **수정 파일**: [`backend/app/services/indexing_state.py`](../../../backend/app/services/indexing_state.py#L15-L530), [`backend/app/services/indexing_service.py`](../../../backend/app/services/indexing_service.py#L38-L48), [`backend/app/services/indexing_service.py#L573-L674`](../../../backend/app/services/indexing_service.py#L573-L674), [`backend/app/api/indexing.py`](../../../backend/app/api/indexing.py#L79-L96), [`backend/tests/test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py#L1456-L1725)
+  - **원인 및 조치**: 2-Way 경쟁 가설 추적 및 2회 Devil's Advocate 검증을 통해, sync FastAPI 라우트(`start_indexing`/`sync_database`) AnyIO 워커 스레드의 `try_start_indexing()` 선행 호출로 `_pause_loop`가 `None`에 영구 고착되는 문제뿐 아니라 다중 이벤트 루프(`loop_1` vs `TestClient` 포탈 루프 `loop_2`) 전환 시 대기자 고아화·`cancel->start->pause` 기상 펄스 유실·스레드 간 stale 읽기·닫힌 루프 `RuntimeError`·시작 전 일시정지 무시 레이스까지 일괄 해소함. `threading.RLock` 기반 `_ThreadSafeAsyncEvent(asyncio.Event)`를 도입해 각 대기자의 `(waiter_loop, waiter_future)`를 직접 추적하고 락 해제 후 루프별 `call_soon_threadsafe`로 안전 기상시키도록 개편함. 또한 원자적 `wait_if_paused(run_id)`와 `initialize_background_run`의 선점 일시정지 보존, `finalize_run("idle")` 이벤트 복구, `run_indexing_background` 스캔/좀비 정리 전 대기 가드, `api/indexing.py` 제어 라우트 원자적 반환(`bool`) 검사를 연동함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_15 -v` (`4 passed`), `./venv/bin/pytest backend/tests/ -v` (`146 passed`)
 
 ### [DEFECT-10] `ActionBar.tsx`의 사진 내보내기 실패 시 "0장 완료" 녹색 체크 허위 표시 및 선택 강제 해제
 - **현재 상태**: `🟡 OPEN`
