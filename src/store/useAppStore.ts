@@ -74,6 +74,7 @@ interface AppState {
 
   selectedPhotoIds: Set<string>;
   togglePhotoSelection: (id: string) => void;
+  deselectPhotoIds: (ids: Iterable<string>) => void;
   clearSelection: () => void;
 
   generatingCritiquePhotoIds: Set<string>;
@@ -192,6 +193,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       nextSet.add(id);
     }
     return { selectedPhotoIds: nextSet };
+  }),
+  deselectPhotoIds: (ids) => set((state) => {
+    const idsToRemove = new Set(ids);
+    if (idsToRemove.size === 0 || state.selectedPhotoIds.size === 0) {
+      return state;
+    }
+    const nextSet = new Set(state.selectedPhotoIds);
+    let hasRemoved = false;
+    idsToRemove.forEach((photoId) => {
+      if (nextSet.delete(photoId)) {
+        hasRemoved = true;
+      }
+    });
+    return hasRemoved ? { selectedPhotoIds: nextSet } : state;
   }),
   clearSelection: () => set({ selectedPhotoIds: new Set() }),
 

@@ -1,9 +1,11 @@
 import { useAppStore } from '../store/useAppStore';
 import { SearchFilters } from '../types/photo';
 import { CritiqueItem, CritiqueSummaryResponse, CritiqueStatus } from '../types/critique';
+import { ExportResult, parseExportSseStream } from '../utils/exportStream';
 
 export type { CritiqueItem, CritiqueSummaryResponse, CritiqueStatus };
 export type { SearchFilters };
+export type { ExportResult };
 
 
 class ApiClient {
@@ -106,51 +108,31 @@ class ApiClient {
     return res.json();
   }
 
-  async exportPhotos(photoIds: string[], destinationFolder: string): Promise<any> {
-    const res = await fetch(`${this.baseUrl}/api/photos/export`, {
+  async exportPhotos(
+    photoIds: string[],
+    destinationFolder: string,
+    signal?: AbortSignal,
+  ): Promise<ExportResult> {
+    const uniquePhotoIds = Array.from(new Set(photoIds));
+    const response = await fetch(`${this.baseUrl}/api/photos/export`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        photo_ids: photoIds,
-        destination_folder: destinationFolder
-      })
+        photo_ids: uniquePhotoIds,
+        destination_folder: destinationFolder,
+      }),
+      signal,
     });
-    
-    if (!res.ok) {
-      const err = await this.parseError(res, "Failed to export photos");
-      throw new Error(err);
-    }
-    if (!res.body) throw new Error("No response body");
 
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder("utf-8");
-    let finalData = null;
-    let buffer = "";
-
-    try {
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split('\n\n');
-        buffer = parts.pop() || "";
-        
-        for (const part of parts) {
-          if (part.startsWith('event: done')) {
-            const dataMatch = part.match(/data: (.*)/);
-            if (dataMatch) {
-              finalData = JSON.parse(dataMatch[1]);
-            }
-          }
-        }
-      }
-    } finally {
-      reader.releaseLock();
+    if (!response.ok) {
+      const errorDetail = await this.parseError(response, 'Failed to export photos');
+      throw new Error(errorDetail);
     }
-    
-    if (!finalData) throw new Error("Export stream ended without final data");
-    return finalData;
+    if (!response.body) {
+      throw new Error('No response body');
+    }
+
+    return parseExportSseStream(response.body);
   }
 
   async fetchFolders(): Promise<any[]> {
