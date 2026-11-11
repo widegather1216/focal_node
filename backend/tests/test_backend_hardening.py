@@ -1128,6 +1128,331 @@ def test_tc_idx_13_exif_empty_tag_values_preserves_remaining_metadata(tmp_path):
     assert parsed["capture_date"] == datetime.datetime(2026, 8, 1, 9, 15, 0)
 
 
+@pytest.mark.asyncio
+async def test_tc_idx_14_async_media_routes_offload_db_and_fs_io(tmp_path, monkeypatch):
+    """
+    TC-IDX-14 (DEFECT-08): Verifies async media/export endpoints in api.photos
+    offload DB queries and filesystem checks to worker threads via asyncio.to_thread,
+    preventing FastAPI event-loop freezes, sharing no SQLAlchemy Sessions across threads,
+    and preserving 404/422 error contracts.
+    """
+    import asyncio
+    import threading
+    import httpx
+    from sqlalchemy import create_engine, event
+    from sqlalchemy.orm import sessionmaker
+    import database
+    from main import app
+    from repositories.photo_repository import PhotoRepository
+
+    db_file = tmp_path / "wal_media.db"
+    wal_engine = create_engine(
+        f"sqlite:///{db_file}",
+        connect_args={"check_same_thread": False, "timeout": 15},
+    )
+
+    @event.listens_for(wal_engine, "connect")
+    def _set_wal(dbapi_conn, _conn_rec):
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA journal_mode=WAL;")
+        cur.execute("PRAGMA foreign_keys=ON;")
+        cur.close()
+
+    models.Base.metadata.create_all(bind=wal_engine)
+    WalSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=wal_engine)
+
+    thumb_dir = tmp_path / "thumbs"
+    thumb_dir.mkdir()
+    photo_dir = tmp_path / "photos"
+    photo_dir.mkdir()
+    export_dir = tmp_path / "export"
+    export_dir.mkdir()
+    subdir_as_file = tmp_path / "not_a_file_dir"
+    subdir_as_file.mkdir()
+
+    jpg_cached = photo_dir / "cached.jpg"
+    Image.new("RGB", (40, 30), color="green").save(str(jpg_cached), format="JPEG")
+    cached_thumb = thumb_dir / "tc14_cached.jpg"
+    Image.new("RGB", (20, 15), color="green").save(str(cached_thumb), format="JPEG")
+
+    jpg_uncached = photo_dir / "uncached.jpg"
+    Image.new("RGB", (60, 45), color="red").save(str(jpg_uncached), format="JPEG")
+
+    raw_file = photo_dir / "sample.arw"
+    raw_file.write_bytes(b"RAW_PLACEHOLDER")
+
+    corrupt_file = photo_dir / "corrupt.jpg"
+    corrupt_file.write_bytes(b"not-a-valid-jpeg")
+
+    with WalSessionLocal() as seed_db:
+        seed_db.add_all([
+            models.Image(
+                id="tc14_cached",
+                parent_dir=str(photo_dir),
+                file_path=str(jpg_cached),
+                file_name="cached.jpg",
+                file_size=jpg_cached.stat().st_size,
+                file_mtime=time.time(),
+                mime_type="image/jpeg",
+                is_favorite=False,
+            ),
+            models.Image(
+                id="tc14_uncached",
+                parent_dir=str(photo_dir),
+                file_path=str(jpg_uncached),
+                file_name="uncached.jpg",
+                file_size=jpg_uncached.stat().st_size,
+                file_mtime=time.time(),
+                mime_type="image/jpeg",
+                is_favorite=False,
+            ),
+            models.Image(
+                id="tc14_raw",
+                parent_dir=str(photo_dir),
+                file_path=str(raw_file),
+                file_name="sample.arw",
+                file_size=raw_file.stat().st_size,
+                file_mtime=time.time(),
+                mime_type="image/x-sony-arw",
+                is_favorite=False,
+            ),
+            models.Image(
+                id="tc14_corrupt",
+                parent_dir=str(photo_dir),
+                file_path=str(corrupt_file),
+                file_name="corrupt.jpg",
+                file_size=corrupt_file.stat().st_size,
+                file_mtime=time.time(),
+                mime_type="image/jpeg",
+                is_favorite=False,
+            ),
+            models.Image(
+                id="tc14_dir_path",
+                parent_dir=str(tmp_path),
+                file_path=str(subdir_as_file),
+                file_name="not_a_file_dir",
+                file_size=0,
+                file_mtime=time.time(),
+                mime_type="image/jpeg",
+                is_favorite=False,
+            ),
+            models.Image(
+                id="tc14_missing_disk",
+                parent_dir=str(photo_dir),
+                file_path=str(photo_dir / "missing.jpg"),
+                file_name="missing.jpg",
+                file_size=10,
+                file_mtime=time.time(),
+                mime_type="image/jpeg",
+                is_favorite=False,
+            ),
+        ])
+        seed_db.commit()
+
+    loop_thread_id = threading.get_ident()
+    session_thread_ids = []
+
+    def tracked_session_factory():
+        session_thread_ids.append(threading.get_ident())
+        return WalSessionLocal()
+
+    monkeypatch.setattr(database, "SessionLocal", tracked_session_factory)
+    monkeypatch.setattr(photo_service, "THUMBNAIL_CACHE_DIR", str(thumb_dir))
+    monkeypatch.setattr(photo_service, "generate_and_cache_thumbnail", generate_and_cache_thumbnail)
+    monkeypatch.setattr(
+        photo_service,
+        "decode_raw_to_pil",
+        lambda path, min_dimension=None: Image.new("RGB", (64, 48), color="blue"),
+    )
+
+    import api.photos as api_photos
+
+    orig_get_by_id = PhotoRepository.get_by_id
+    orig_get_by_ids = PhotoRepository.get_by_ids
+    orig_stat_regular = api_photos._stat_regular_file_sync
+    orig_prepare_export = api_photos._prepare_export_items_sync
+    fs_thread_ids = []
+
+    def slow_get_by_id(self, photo_id):
+        assert threading.get_ident() != loop_thread_id, "DB get_by_id ran on event loop thread!"
+        time.sleep(0.18)
+        return orig_get_by_id(self, photo_id)
+
+    def slow_get_by_ids(self, photo_ids):
+        assert threading.get_ident() != loop_thread_id, "DB get_by_ids ran on event loop thread!"
+        time.sleep(0.18)
+        return orig_get_by_ids(self, photo_ids)
+
+    def slow_stat_regular(path):
+        tid = threading.get_ident()
+        fs_thread_ids.append(tid)
+        assert tid != loop_thread_id, "_stat_regular_file_sync ran on event loop thread!"
+        time.sleep(0.15)
+        return orig_stat_regular(path)
+
+    def wrapped_prepare_export(photo_ids, dest_folder):
+        tid = threading.get_ident()
+        fs_thread_ids.append(tid)
+        assert tid != loop_thread_id, "_prepare_export_items_sync ran on event loop thread!"
+        return orig_prepare_export(photo_ids, dest_folder)
+
+    monkeypatch.setattr(PhotoRepository, "get_by_id", slow_get_by_id)
+    monkeypatch.setattr(PhotoRepository, "get_by_ids", slow_get_by_ids)
+    monkeypatch.setattr(api_photos, "_stat_regular_file_sync", slow_stat_regular)
+    monkeypatch.setattr(api_photos, "_prepare_export_items_sync", wrapped_prepare_export)
+
+    try:
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as async_client:
+            max_loop_lag = 0.0
+            stop_monitor = False
+
+            async def monitor_event_loop():
+                nonlocal max_loop_lag
+                while not stop_monitor:
+                    tick_start = time.perf_counter()
+                    await asyncio.sleep(0.01)
+                    lag = (time.perf_counter() - tick_start) - 0.01
+                    if lag > max_loop_lag:
+                        max_loop_lag = lag
+
+            monitor_task = asyncio.create_task(monitor_event_loop())
+            await asyncio.sleep(0.02)
+
+            # Concurrent requests across thumbnail (cached/uncached), original (RAW/non-RAW), export, and health
+            (
+                thumb_cached_resp,
+                thumb_gen_resp,
+                orig_jpg_resp,
+                orig_raw_resp,
+                export_resp,
+                health_resp,
+            ) = await asyncio.gather(
+                async_client.get("/api/photos/tc14_cached/thumbnail"),
+                async_client.get("/api/photos/tc14_uncached/thumbnail"),
+                async_client.get("/api/photos/tc14_cached/original"),
+                async_client.get("/api/photos/tc14_raw/original"),
+                async_client.post(
+                    "/api/photos/export",
+                    json={"photo_ids": ["tc14_cached"], "destination_folder": str(export_dir)},
+                ),
+                async_client.get("/api/health"),
+            )
+
+            stop_monitor = True
+            await monitor_task
+
+            assert max_loop_lag < 0.08, f"Event loop froze for {max_loop_lag:.3f}s"
+            assert health_resp.status_code == 200
+            assert thumb_cached_resp.status_code == 200
+            assert thumb_gen_resp.status_code == 200 and thumb_gen_resp.content[:2] == b"\xff\xd8"
+            assert (thumb_dir / "tc14_uncached.jpg").exists()
+            assert orig_jpg_resp.status_code == 200 and len(orig_jpg_resp.content) == jpg_cached.stat().st_size
+            assert orig_raw_resp.status_code == 200 and orig_raw_resp.content[:2] == b"\xff\xd8"
+            assert export_resp.status_code == 200
+            assert '"exported_count": 1' in export_resp.text
+            assert (export_dir / "cached.jpg").exists()
+            assert len(session_thread_ids) >= 5
+            assert all(tid != loop_thread_id for tid in session_thread_ids)
+            assert len(fs_thread_ids) >= 2
+            assert all(tid != loop_thread_id for tid in fs_thread_ids)
+
+            # Error contract preservation (404 / 422 / 400 must not degrade into 500)
+            corrupt_thumb_resp = await async_client.get("/api/photos/tc14_corrupt/thumbnail")
+            assert corrupt_thumb_resp.status_code == 422
+
+            dir_orig_resp = await async_client.get("/api/photos/tc14_dir_path/original")
+            assert dir_orig_resp.status_code == 404
+
+            missing_orig_resp = await async_client.get("/api/photos/tc14_missing_disk/original")
+            assert missing_orig_resp.status_code == 404
+
+            bad_export_dir_resp = await async_client.post(
+                "/api/photos/export",
+                json={"photo_ids": ["tc14_cached"], "destination_folder": str(tmp_path / "nonexistent")},
+            )
+            assert bad_export_dir_resp.status_code == 400
+
+            missing_export_ids_resp = await async_client.post(
+                "/api/photos/export",
+                json={"photo_ids": ["does_not_exist"], "destination_folder": str(export_dir)},
+            )
+            assert missing_export_ids_resp.status_code == 404
+    finally:
+        wal_engine.dispose()
+
+
+def test_tc_idx_14_decode_semaphore_loop_isolation():
+    """
+    TC-IDX-14 (DEFECT-08): Verifies get_decode_semaphore() binds per running event loop
+    so contended async decodes across sequential event loops do not raise RuntimeError.
+    """
+    import asyncio
+    from api.photos import get_decode_semaphore
+
+    async def run_contended_batch():
+        sem = get_decode_semaphore()
+
+        async def worker():
+            async with sem:
+                await asyncio.sleep(0.01)
+
+        await asyncio.gather(*[worker() for _ in range(5)])
+        return sem
+
+    sem_loop_1 = asyncio.run(run_contended_batch())
+    sem_loop_2 = asyncio.run(run_contended_batch())
+    assert sem_loop_1 is not sem_loop_2
+
+
+def test_tc_idx_14_conftest_sessionlocal_compatibility(client, db_session, tmp_path, monkeypatch):
+    """
+    TC-IDX-14 (DEFECT-08): Verifies thumbnail, original, and export endpoints work
+    with conftest's default database.SessionLocal monkeypatch (TestingSessionLocal).
+    """
+    photo_dir = tmp_path / "photos"
+    photo_dir.mkdir()
+    thumb_dir = tmp_path / "thumbs"
+    thumb_dir.mkdir()
+    export_dir = tmp_path / "export"
+    export_dir.mkdir()
+
+    photo_file = photo_dir / "sample.jpg"
+    Image.new("RGB", (30, 30), color="navy").save(str(photo_file), format="JPEG")
+    monkeypatch.setattr(photo_service, "THUMBNAIL_CACHE_DIR", str(thumb_dir))
+    monkeypatch.setattr(photo_service, "generate_and_cache_thumbnail", generate_and_cache_thumbnail)
+
+    db_session.add(
+        models.Image(
+            id="tc14_conftest_1",
+            parent_dir=str(photo_dir),
+            file_path=str(photo_file),
+            file_name="sample.jpg",
+            file_size=photo_file.stat().st_size,
+            file_mtime=time.time(),
+            mime_type="image/jpeg",
+            is_favorite=False,
+        )
+    )
+    db_session.commit()
+
+    thumb_resp = client.get("/api/photos/tc14_conftest_1/thumbnail")
+    assert thumb_resp.status_code == 200
+    assert thumb_resp.content[:2] == b"\xff\xd8"
+
+    orig_resp = client.get("/api/photos/tc14_conftest_1/original")
+    assert orig_resp.status_code == 200
+    assert len(orig_resp.content) == photo_file.stat().st_size
+
+    export_resp = client.post(
+        "/api/photos/export",
+        json={"photo_ids": ["tc14_conftest_1"], "destination_folder": str(export_dir)},
+    )
+    assert export_resp.status_code == 200
+    assert '"exported_count": 1' in export_resp.text
+    assert (export_dir / "sample.jpg").exists()
+
+
 def test_start_indexing_empty_payload(client):
     """
     Verifies /api/index/start returns 400 Bad Request if folder_paths is empty.

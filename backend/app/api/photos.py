@@ -1,16 +1,20 @@
 import json
 import os
 import shutil
+import stat
 import asyncio
 import logging
+import threading
+import weakref
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response, StreamingResponse, FileResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
+import database
 import models
 import services.photo as photo_service
-from database import get_db, SessionLocal
+from database import get_db
 import schemas
 from repositories.photo_repository import PhotoRepository
 from utils.image import is_raw_image
@@ -19,13 +23,77 @@ from services.indexing_service import reindex_single_photo_inplace
 logger = logging.getLogger("focal_node.photos_api")
 
 MAX_CONCURRENT_DECODES = 3
-_decode_semaphore: Optional[asyncio.Semaphore] = None
+_decode_semaphores: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = weakref.WeakKeyDictionary()
+_decode_semaphore_lock = threading.Lock()
+
 
 def get_decode_semaphore() -> asyncio.Semaphore:
-    global _decode_semaphore
-    if _decode_semaphore is None:
-        _decode_semaphore = asyncio.Semaphore(MAX_CONCURRENT_DECODES)
-    return _decode_semaphore
+    try:
+        current_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.Semaphore(MAX_CONCURRENT_DECODES)
+
+    with _decode_semaphore_lock:
+        semaphore = _decode_semaphores.get(current_loop)
+        if semaphore is None:
+            semaphore = asyncio.Semaphore(MAX_CONCURRENT_DECODES)
+            _decode_semaphores[current_loop] = semaphore
+        return semaphore
+
+
+def _fetch_photo_media_record_sync(photo_id: str) -> Optional[tuple[str, str, str]]:
+    """Fetches plain (id, file_path, mime_type) inside a short-lived worker-thread session."""
+    with database.SessionLocal() as db:
+        db_image = PhotoRepository(db).get_by_id(photo_id)
+        if not db_image:
+            return None
+        return db_image.id, db_image.file_path, db_image.mime_type
+
+
+def _read_cached_thumbnail_sync(cache_path: str, photo_id: str) -> Optional[bytes]:
+    try:
+        if not os.path.exists(cache_path) or os.path.getsize(cache_path) <= 0:
+            return None
+        with open(cache_path, "rb") as cache_file:
+            thumb_bytes = cache_file.read()
+            return thumb_bytes or None
+    except (FileNotFoundError, OSError) as cache_err:
+        logger.debug("Thumbnail cache read failed for %s: %s, falling back to generation", photo_id, cache_err)
+        return None
+
+
+def _stat_regular_file_sync(file_path: str) -> Optional[os.stat_result]:
+    try:
+        stat_result = os.stat(file_path)
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    if not stat.S_ISREG(stat_result.st_mode):
+        return None
+    return stat_result
+
+
+async def _decode_raw_original(photo_id: str, file_path: str, mime_type: str) -> Response:
+    # Construct transient sessionless model so worker threads never share a SQLAlchemy Session.
+    transient_image = models.Image(id=photo_id, file_path=file_path, mime_type=mime_type)
+    async with get_decode_semaphore():
+        original_bytes, content_type = await asyncio.to_thread(
+            photo_service.get_original_image_bytes,
+            transient_image,
+        )
+    return Response(content=original_bytes, media_type=content_type)
+
+
+def _prepare_export_items_sync(photo_ids: List[str], dest_folder: str) -> list[dict]:
+    """Validates export destination directory and fetches plain file records in a worker thread."""
+    if not os.path.exists(dest_folder) or not os.path.isdir(dest_folder):
+        raise HTTPException(status_code=400, detail="Invalid destination folder")
+
+    with database.SessionLocal() as db:
+        images = PhotoRepository(db).get_by_ids(photo_ids)
+        if not images:
+            raise HTTPException(status_code=404, detail="No photos found to export")
+        return [{"file_path": img.file_path, "file_name": img.file_name} for img in images]
+
 
 def _parse_ai_tags(ai_model) -> tuple[list[str], list[str]]:
     tags_list = models._parse_json_list(ai_model.tags if ai_model and hasattr(ai_model, "tags") else None)
@@ -49,66 +117,59 @@ def get_photos(
     return [img.to_list_response_dict() for img in images]
 
 @router.get("/{id}/thumbnail")
-async def get_photo_thumbnail(id: str, db: Session = Depends(get_db)):
+async def get_photo_thumbnail(id: str):
     """
     Serves cached (or dynamically generated) thumbnail for a photo.
     """
-    photo_repo = PhotoRepository(db)
-    db_image = photo_repo.get_by_id(id)
-    if not db_image:
+    media_record = await asyncio.to_thread(_fetch_photo_media_record_sync, id)
+    if not media_record:
         raise HTTPException(status_code=404, detail="Photo not found")
-        
-    try:
-        cache_path = photo_service.get_thumbnail_path(id)
-        def _is_cache_valid():
-            return os.path.exists(cache_path) and os.path.getsize(cache_path) > 0
+    photo_id, file_path, _ = media_record
 
-        if await asyncio.to_thread(_is_cache_valid):
-            try:
-                def _read_cache():
-                    with open(cache_path, "rb") as f:
-                        return f.read()
-                thumb_bytes = await asyncio.to_thread(_read_cache)
-                if thumb_bytes:
-                    return Response(content=thumb_bytes, media_type="image/jpeg")
-            except (FileNotFoundError, OSError) as e:
-                logger.debug("Thumbnail cache read failed for %s: %s, falling back to generation", id, e)
-                
+    try:
+        cache_path = photo_service.get_thumbnail_path(photo_id)
+        cached_bytes = await asyncio.to_thread(_read_cached_thumbnail_sync, cache_path, photo_id)
+        if cached_bytes:
+            return Response(content=cached_bytes, media_type="image/jpeg")
+
         async with get_decode_semaphore():
             thumb_bytes = await asyncio.to_thread(
-                photo_service.generate_and_cache_thumbnail, 
-                db_image.file_path, 
-                db_image.id
+                photo_service.generate_and_cache_thumbnail,
+                file_path,
+                photo_id,
             )
         return Response(content=thumb_bytes, media_type="image/jpeg")
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate thumbnail: {str(e)}")
+    except HTTPException:
+        raise
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to generate thumbnail: {str(exc)}")
 
 @router.get("/{id}/original")
-async def get_photo_original(id: str, db: Session = Depends(get_db)):
+async def get_photo_original(id: str):
     """
     Serves the original image. For RAW formats, decodes dynamically to sRGB JPEG.
     """
-    photo_repo = PhotoRepository(db)
-    db_image = photo_repo.get_by_id(id)
-    if not db_image:
+    media_record = await asyncio.to_thread(_fetch_photo_media_record_sync, id)
+    if not media_record:
         raise HTTPException(status_code=404, detail="Photo not found")
-        
+    photo_id, file_path, mime_type = media_record
+
     try:
-        if is_raw_image(db_image.file_path):
-            async with get_decode_semaphore():
-                original_bytes, content_type = await asyncio.to_thread(photo_service.get_original_image_bytes, db_image)
-            return Response(content=original_bytes, media_type=content_type)
-        else:
-            if not os.path.exists(db_image.file_path):
-                raise HTTPException(status_code=404, detail="Original file not found on disk")
-            return FileResponse(db_image.file_path, media_type=db_image.mime_type)
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to stream original image: {str(e)}")
+        if is_raw_image(file_path):
+            return await _decode_raw_original(photo_id, file_path, mime_type)
+
+        stat_result = await asyncio.to_thread(_stat_regular_file_sync, file_path)
+        if stat_result is None:
+            raise HTTPException(status_code=404, detail="Original file not found on disk")
+        return FileResponse(file_path, media_type=mime_type, stat_result=stat_result)
+    except HTTPException:
+        raise
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to stream original image: {str(exc)}")
 
 @router.get("/{id}", response_model=schemas.PhotoDetailResponse)
 def get_photo_detail(id: str, db: Session = Depends(get_db)):
@@ -199,16 +260,7 @@ async def export_photos(payload: schemas.ExportRequest):
     Exports selected photos to a destination folder via streaming.
     """
     dest_folder = payload.destination_folder
-    if not os.path.exists(dest_folder) or not os.path.isdir(dest_folder):
-        raise HTTPException(status_code=400, detail="Invalid destination folder")
-
-    with SessionLocal() as db:
-        photo_repo = PhotoRepository(db)
-        images = photo_repo.get_by_ids(payload.photo_ids)
-        if not images:
-            raise HTTPException(status_code=404, detail="No photos found to export")
-        export_items = [{"file_path": img.file_path, "file_name": img.file_name} for img in images]
-
+    export_items = await asyncio.to_thread(_prepare_export_items_sync, payload.photo_ids, dest_folder)
     return StreamingResponse(_stream_export_events(export_items, dest_folder), media_type="text/event-stream")
 
 @router.post("/{id}/reindex", response_model=schemas.PhotoDetailResponse)
