@@ -11,6 +11,7 @@ interface FolderListProps {
   folders: FolderItem[];
   selectedFolder: string | null;
   apiPort: number | null;
+  isIndexing?: boolean;
   onSelectFolder: (path: string | null) => void;
   setActiveTab: (tab: 'gallery' | 'analytics' | 'critique') => void;
   removeFolder: (path: string) => Promise<void>;
@@ -20,6 +21,7 @@ export const FolderList: React.FC<FolderListProps> = ({
   folders,
   selectedFolder,
   apiPort,
+  isIndexing = false,
   onSelectFolder,
   setActiveTab,
   removeFolder
@@ -117,31 +119,42 @@ export const FolderList: React.FC<FolderListProps> = ({
             </motion.div>
             
             <motion.button
+              disabled={isIndexing}
               onClick={async (e) => {
                 e.stopPropagation();
-                if (apiPort && confirm(`폴더 "${folderName}" 및 관련 인덱스를 삭제하시겠습니까?`)) {
+                if (!apiPort || isIndexing) {
+                  return;
+                }
+                if (!confirm(`폴더 "${folderName}" 및 관련 인덱스를 삭제하시겠습니까?`)) {
+                  return;
+                }
+                try {
                   await removeFolder(folder.path);
                   queryClient.invalidateQueries({ queryKey: ['photos'] });
                   queryClient.invalidateQueries({ queryKey: ['analyticsStats'] });
                   if (selectedFolder === folder.path) {
                     onSelectFolder(null);
                   }
+                } catch (err) {
+                  const message = err instanceof Error ? err.message : '폴더 삭제에 실패했습니다.';
+                  alert(`폴더 삭제 실패: ${message}`);
                 }
               }}
-              whileHover={{ scale: 1.1, color: 'var(--accent-focal)' }}
-              whileTap={{ scale: 0.9 }}
+              whileHover={isIndexing ? {} : { scale: 1.1, color: 'var(--accent-focal)' }}
+              whileTap={isIndexing ? {} : { scale: 0.9 }}
               transition={{ type: "spring", stiffness: 500, damping: 15 }}
               style={{
                 background: 'transparent',
                 border: 'none',
                 color: 'var(--text-muted)',
-                cursor: 'pointer',
+                cursor: isIndexing ? 'not-allowed' : 'pointer',
+                opacity: isIndexing ? 0.4 : 1,
                 padding: '3px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
-              title="폴더 제외"
+              title={isIndexing ? '인덱싱 중에는 폴더를 삭제할 수 없습니다' : '폴더 제외'}
             >
               <Trash2 size={13} />
             </motion.button>

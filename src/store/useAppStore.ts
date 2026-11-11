@@ -260,17 +260,28 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   removeFolder: async (path: string) => {
     const port = get().apiPort;
-    if (!port) return;
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/api/folders?path=${encodeURIComponent(path)}`, {
-        method: 'DELETE',
-      });
-      if (response.ok) {
-        set((state) => ({ folders: state.folders.filter(f => f.path !== path) }));
-        get().fetchFolders();
-      }
-    } catch (error) {
-      console.error('Failed to remove folder:', error);
+    if (!port) {
+      throw new Error('Backend port not initialized yet.');
     }
+    const response = await fetch(`http://127.0.0.1:${port}/api/folders?path=${encodeURIComponent(path)}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      let errorDetail = response.statusText || 'Failed to remove folder';
+      try {
+        const errorBody = await response.json();
+        if (errorBody?.detail) {
+          errorDetail = String(errorBody.detail);
+        }
+      } catch {
+        // Non-JSON error response; fall back to HTTP status text.
+      }
+      if (response.status === 404) {
+        await get().fetchFolders();
+      }
+      throw new Error(errorDetail);
+    }
+    set((state) => ({ folders: state.folders.filter(folder => folder.path !== path) }));
+    await get().fetchFolders();
   },
 }));

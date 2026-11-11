@@ -340,6 +340,7 @@ export function Sidebar({ onSelectFolder, selectedFolder }: SidebarProps) {
         folders={folders}
         selectedFolder={selectedFolder}
         apiPort={apiPort}
+        isIndexing={isIndexing}
         onSelectFolder={onSelectFolder}
         setActiveTab={setActiveTab}
         removeFolder={removeFolder}
