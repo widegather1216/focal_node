@@ -1,10 +1,24 @@
 import { useAppStore } from '../store/useAppStore';
-import { SearchFilters } from '../types/photo';
-import { CritiqueItem, CritiqueSummaryResponse, CritiqueStatus } from '../types/critique';
+import { PhotoDetail, SearchFilters, UpdateMetadataResponse } from '../types/photo';
+import {
+  CritiqueCancelResponse,
+  CritiqueDeleteResponse,
+  CritiqueItem,
+  CritiqueResponse,
+  CritiqueStatus,
+  CritiqueSummaryResponse,
+} from '../types/critique';
 import { ExportResult, parseExportSseStream } from '../utils/exportStream';
 
-export type { CritiqueItem, CritiqueSummaryResponse, CritiqueStatus };
-export type { SearchFilters };
+export type {
+  CritiqueCancelResponse,
+  CritiqueDeleteResponse,
+  CritiqueItem,
+  CritiqueResponse,
+  CritiqueStatus,
+  CritiqueSummaryResponse,
+};
+export type { PhotoDetail, SearchFilters, UpdateMetadataResponse };
 export type { ExportResult };
 
 
@@ -86,7 +100,7 @@ class ApiClient {
     return res.json();
   }
 
-  async getPhotoDetail(id: string): Promise<any> {
+  async getPhotoDetail(id: string): Promise<PhotoDetail> {
     const res = await fetch(`${this.baseUrl}/api/photos/${id}`);
     if (!res.ok) {
       const err = await this.parseError(res, "Failed to fetch photo detail");
@@ -95,7 +109,7 @@ class ApiClient {
     return res.json();
   }
 
-  async updatePhotoMetadata(id: string, caption: string, tags: string[]): Promise<any> {
+  async updatePhotoMetadata(id: string, caption: string, tags: string[]): Promise<UpdateMetadataResponse> {
     const res = await fetch(`${this.baseUrl}/api/photos/${id}/metadata`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -212,7 +226,7 @@ class ApiClient {
     return res.json();
   }
 
-  async getPhotoCritique(photoId: string, signal?: AbortSignal): Promise<any> {
+  async getPhotoCritique(photoId: string, signal?: AbortSignal): Promise<CritiqueResponse> {
     const res = await fetch(`${this.baseUrl}/api/chat/critique`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -226,7 +240,7 @@ class ApiClient {
     return res.json();
   }
 
-  async cancelCritique(photoId: string): Promise<any> {
+  async cancelCritique(photoId: string): Promise<CritiqueCancelResponse> {
     const res = await fetch(`${this.baseUrl}/api/chat/critique/cancel/${encodeURIComponent(photoId)}`, {
       method: 'POST'
     });
@@ -247,7 +261,7 @@ class ApiClient {
     return res.json();
   }
 
-  async deleteCritique(photoId: string): Promise<any> {
+  async deleteCritique(photoId: string): Promise<CritiqueDeleteResponse> {
     const res = await fetch(`${this.baseUrl}/api/chat/critique/${encodeURIComponent(photoId)}`, {
       method: 'DELETE'
     });

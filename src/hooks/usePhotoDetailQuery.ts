@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../store/useAppStore';
 import { api } from '../services/api';
-import { PhotoDetail } from './usePhotoDetail';
+import { PhotoDetail } from '../types/photo';
 
 export function usePhotoDetailQuery(photoId: string | null) {
   const { apiPort } = useAppStore();

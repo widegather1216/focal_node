@@ -3,52 +3,20 @@ import { invoke } from '@tauri-apps/api/core';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../store/useAppStore';
 import { api } from '../services/api';
+import { PhotoDetail } from '../types/photo';
+import { getActivePhotoList } from '../utils/activePhotoList';
+import { pollAndRecoverCritique } from './useCritiqueStatusPolling';
 import { usePhotoDetailQuery, useUpdatePhotoMetadataMutation } from './usePhotoDetailQuery';
 import { useToggleFavoriteMutation } from './usePhotosQuery';
 
-export interface PhotoDetail {
-  id: string;
-  file_name: string;
-  file_path: string;
-  file_size: number;
-  mime_type: string;
-  is_favorite: boolean;
-  metadata: {
-    width: number | null;
-    height: number | null;
-    color_space: string;
-    camera_model: string | null;
-    lens_model: string | null;
-    f_number: number | null;
-    focal_length: number | null;
-    focal_length_35mm: number | null;
-    crop_factor: number | null;
-    sensor_format: string | null;
-    shutter_speed: string | null;
-    iso: number | null;
-    capture_date: string | null;
-  };
-  ai_analysis: {
-    caption: string | null;
-    tags: string[];
-    aesthetic_tags?: string[];
-    is_user_edited: boolean;
-    critique?: string | null;
-    critique_en?: string | null;
-    overall_score?: number | null;
-    iaa_score?: number | null;
-    iqa_score?: number | null;
-    ista_score?: number | null;
-    critique_updated_at?: string | null;
-  };
-}
+export type { PhotoDetail };
 
 export function usePhotoDetail() {
-  const { 
-    selectedPhotoId, 
-    setSelectedPhotoId, 
-    setSearchQuery, 
-    searchQuery, 
+  const {
+    selectedPhotoId,
+    setSelectedPhotoId,
+    setSearchQuery,
+    searchQuery,
     searchFilters,
     generatingCritiquePhotoIds,
     addGeneratingCritiquePhotoId,
@@ -63,10 +31,21 @@ export function usePhotoDetail() {
   const [editing, setEditing] = useState(false);
   const [captionEdit, setCaptionEdit] = useState('');
   const [tagsEdit, setTagsEdit] = useState<string[]>([]);
-
   const [critique, setCritique] = useState<string | null>(null);
   const loadingCritique = Boolean(selectedPhotoId && generatingCritiquePhotoIds.has(selectedPhotoId));
   const [reindexing, setReindexing] = useState(false);
+
+  const critiqueAbortControllerRef = useRef<AbortController | null>(null);
+  const clearJobTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearJobCleanupTimer = () => {
+    if (clearJobTimerRef.current !== null) {
+      clearTimeout(clearJobTimerRef.current);
+      clearJobTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => clearJobCleanupTimer, []);
 
   useEffect(() => {
     if (photo) {
@@ -79,59 +58,67 @@ export function usePhotoDetail() {
     }
   }, [photo]);
 
-  const getActivePhotoList = (): any[] => {
-    if (useAppStore.getState().activeTab === 'critique') {
-      const critiqueData = queryClient.getQueryData<any[]>(['critiques']);
-      if (Array.isArray(critiqueData) && critiqueData.length > 0) {
-        return critiqueData.map(c => ({ id: c.photo_id, ...c }));
-      }
-    }
-
-    const queryCache = queryClient.getQueriesData<any>({ queryKey: ['photos'] });
-    for (const [, data] of queryCache) {
-      if (data && data.pages && Array.isArray(data.pages)) {
-        return data.pages.flatMap((page: any) => page);
-      }
-      if (Array.isArray(data)) {
-        return data;
-      }
-    }
-    return [];
-  };
-
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const handleKeyDown = (event: KeyboardEvent) => {
       const { isFullscreenOpen } = useAppStore.getState();
       if (!selectedPhotoId || isFullscreenOpen) return;
 
-      const target = e.target as HTMLElement | null;
-      if (editing || (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable))) {
+      const target = event.target as HTMLElement | null;
+      const isTextInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      if (editing || isTextInput) return;
+
+      if (event.key === 'Escape') {
+        setSelectedPhotoId(null);
         return;
       }
 
-      if (e.key === 'Escape') {
-        setSelectedPhotoId(null);
-      } else if (e.key === 'ArrowLeft') {
-        const photos = getActivePhotoList();
-        if (!photos.length) return;
-        const currentIndex = photos.findIndex((p: any) => p.id === selectedPhotoId);
-        if (currentIndex > 0) {
-          setSelectedPhotoId(photos[currentIndex - 1].id);
-        }
-      } else if (e.key === 'ArrowRight') {
-        const photos = getActivePhotoList();
-        if (!photos.length) return;
-        const currentIndex = photos.findIndex((p: any) => p.id === selectedPhotoId);
-        if (currentIndex !== -1 && currentIndex < photos.length - 1) {
-          setSelectedPhotoId(photos[currentIndex + 1].id);
-        }
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      const activePhotos = getActivePhotoList(queryClient);
+      if (activePhotos.length === 0) return;
+
+      const currentIndex = activePhotos.findIndex((item) => item.id === selectedPhotoId);
+      if (event.key === 'ArrowLeft' && currentIndex > 0) {
+        setSelectedPhotoId(activePhotos[currentIndex - 1].id);
+      } else if (event.key === 'ArrowRight' && currentIndex !== -1 && currentIndex < activePhotos.length - 1) {
+        setSelectedPhotoId(activePhotos[currentIndex + 1].id);
       }
     };
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedPhotoId, setSelectedPhotoId, editing, queryClient]);
+
+  // Re-sync on sleep wake-up (visibility change, window focus, network online)
+  useEffect(() => {
+    const handleWakeOrFocus = async () => {
+      if (document.visibilityState === 'hidden') return;
+      const { activeCritiqueJob, selectedPhotoId: currentSelectedId } = useAppStore.getState();
+      const targetId = activeCritiqueJob?.photoId || currentSelectedId;
+      if (!targetId) return;
+
+      try {
+        const critiqueStatus = await api.getCritiqueStatus(targetId);
+        if (critiqueStatus.status === 'completed' && critiqueStatus.critique) {
+          if (useAppStore.getState().selectedPhotoId === targetId) {
+            setCritique(critiqueStatus.critique);
+          }
+          queryClient.invalidateQueries({ queryKey: ['critiques'] });
+          queryClient.invalidateQueries({ queryKey: ['photoDetail', targetId] });
+        }
+      } catch (error: unknown) {
+        console.debug("[usePhotoDetail] Wake-up critique status sync skipped:", error);
+      }
     };
-  }, [selectedPhotoId, setSelectedPhotoId, editing]);
+
+    window.addEventListener('focus', handleWakeOrFocus);
+    window.addEventListener('online', handleWakeOrFocus);
+    document.addEventListener('visibilitychange', handleWakeOrFocus);
+    return () => {
+      window.removeEventListener('focus', handleWakeOrFocus);
+      window.removeEventListener('online', handleWakeOrFocus);
+      document.removeEventListener('visibilitychange', handleWakeOrFocus);
+    };
+  }, [queryClient]);
 
   const handleSave = async () => {
     if (!selectedPhotoId) return;
@@ -142,8 +129,8 @@ export function usePhotoDetail() {
         tags: tagsEdit,
       });
       setEditing(false);
-    } catch (err) {
-      console.error("Failed to save metadata:", err);
+    } catch (error: unknown) {
+      console.error("Failed to save metadata:", error);
     }
   };
 
@@ -151,79 +138,16 @@ export function usePhotoDetail() {
     if (!photo) return;
     try {
       await invoke('reveal_in_finder', { path: photo.file_path });
-    } catch (err) {
-      console.error("Failed to reveal in finder", err);
+    } catch (error: unknown) {
+      console.error("Failed to reveal in finder", error);
     }
   };
-
-  const critiqueAbortControllerRef = useRef<AbortController | null>(null);
-
-  const pollAndRecoverCritique = async (photoId: string, signal: AbortSignal): Promise<string | null> => {
-    const maxAttempts = 35; // Poll up to ~50 seconds to allow MLX pipeline completion after sleep
-    const intervalMs = 1500;
-
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      if (signal.aborted) {
-        return null;
-      }
-      try {
-        const st = await api.getCritiqueStatus(photoId);
-        if (st.status === 'completed' && st.critique) {
-          return st.critique;
-        }
-        if (st.status === 'cancelled') {
-          return null;
-        }
-        if (st.status === 'error') {
-          throw new Error(st.message || "비평 생성 오류");
-        }
-      } catch (err: any) {
-        if (err.message && err.message.includes("비평 생성 오류")) {
-          throw err;
-        }
-        // Silently tolerate transient network connection drops during OS sleep/wake
-      }
-      await new Promise((resolve) => setTimeout(resolve, intervalMs));
-    }
-    return null;
-  };
-
-  // Re-sync on sleep wake-up (visibility change, window focus, network online)
-  useEffect(() => {
-    const handleWakeOrFocus = async () => {
-      const { activeCritiqueJob, selectedPhotoId: currentSelectedId } = useAppStore.getState();
-      const targetId = activeCritiqueJob?.photoId || currentSelectedId;
-      if (!targetId) return;
-
-      try {
-        const st = await api.getCritiqueStatus(targetId);
-        if (st.status === 'completed' && st.critique) {
-          if (useAppStore.getState().selectedPhotoId === targetId) {
-            setCritique(st.critique);
-          }
-          queryClient.invalidateQueries({ queryKey: ['critiques'] });
-          queryClient.invalidateQueries({ queryKey: ['photoDetail', targetId] });
-        }
-      } catch {
-        // Silently ignore if backend is still initializing/waking up
-      }
-    };
-
-    window.addEventListener('focus', handleWakeOrFocus);
-    window.addEventListener('online', handleWakeOrFocus);
-    document.addEventListener('visibilitychange', handleWakeOrFocus);
-
-    return () => {
-      window.removeEventListener('focus', handleWakeOrFocus);
-      window.removeEventListener('online', handleWakeOrFocus);
-      document.removeEventListener('visibilitychange', handleWakeOrFocus);
-    };
-  }, [queryClient]);
 
   const handleRequestCritique = async () => {
     const currentId = selectedPhotoId;
     if (!currentId || generatingCritiquePhotoIds.has(currentId)) return;
 
+    clearJobCleanupTimer();
     if (critiqueAbortControllerRef.current) {
       critiqueAbortControllerRef.current.abort();
     }
@@ -233,26 +157,20 @@ export function usePhotoDetail() {
     addGeneratingCritiquePhotoId(currentId);
     useAppStore.getState().setActiveCritiqueJob({ photoId: currentId, fileName: photo?.file_name });
     try {
-      const result = await api.getPhotoCritique(currentId, abortController.signal);
-      if (result.status === 'cancelled') {
-        return;
-      }
+      const critiqueResult = await api.getPhotoCritique(currentId, abortController.signal);
+      if (critiqueResult.status === 'cancelled') return;
       if (useAppStore.getState().selectedPhotoId === currentId) {
-        setCritique(result.critique);
+        setCritique(critiqueResult.critique);
       }
       queryClient.invalidateQueries({ queryKey: ['critiques'] });
       queryClient.invalidateQueries({ queryKey: ['photoDetail', currentId] });
-    } catch (err: any) {
-      if (err.name === 'AbortError' || abortController.signal.aborted) {
+    } catch (error: unknown) {
+      if ((error instanceof Error && error.name === 'AbortError') || abortController.signal.aborted) {
         return;
       }
-
-      // Potential socket disconnect caused by system sleep/wake.
-      // Attempt recovery by polling backend status before treating as failure.
       try {
         const recoveredCritique = await pollAndRecoverCritique(currentId, abortController.signal);
         if (abortController.signal.aborted) return;
-
         if (recoveredCritique) {
           if (useAppStore.getState().selectedPhotoId === currentId) {
             setCritique(recoveredCritique);
@@ -261,12 +179,11 @@ export function usePhotoDetail() {
           queryClient.invalidateQueries({ queryKey: ['photoDetail', currentId] });
           return;
         }
-      } catch (recoverErr) {
-        console.warn("Critique recovery attempt error:", recoverErr);
+      } catch (recoverError: unknown) {
+        console.warn("Critique recovery attempt error:", recoverError);
       }
-
       if (useAppStore.getState().selectedPhotoId === currentId) {
-        console.error("Failed to generate critique:", err);
+        console.error("Failed to generate critique:", error);
         setCritique("비평을 생성하는 도중 오류가 발생했습니다.");
       }
     } finally {
@@ -274,19 +191,24 @@ export function usePhotoDetail() {
       if (critiqueAbortControllerRef.current === abortController) {
         critiqueAbortControllerRef.current = null;
       }
-      setTimeout(() => {
-        if (useAppStore.getState().activeCritiqueJob?.photoId === currentId) {
-          useAppStore.getState().setActiveCritiqueJob(null);
+      clearJobCleanupTimer();
+      clearJobTimerRef.current = setTimeout(() => {
+        const latestState = useAppStore.getState();
+        if (
+          latestState.activeCritiqueJob?.photoId === currentId &&
+          !latestState.generatingCritiquePhotoIds.has(currentId)
+        ) {
+          latestState.setActiveCritiqueJob(null);
         }
       }, 3500);
     }
   };
 
-
   const handleCancelCritique = async () => {
     const currentId = selectedPhotoId;
     if (!currentId) return;
 
+    clearJobCleanupTimer();
     if (critiqueAbortControllerRef.current) {
       critiqueAbortControllerRef.current.abort();
       critiqueAbortControllerRef.current = null;
@@ -294,8 +216,8 @@ export function usePhotoDetail() {
 
     try {
       await api.cancelCritique(currentId);
-    } catch (err) {
-      console.warn("Backend cancel critique error:", err);
+    } catch (error: unknown) {
+      console.warn("Backend cancel critique error:", error);
     } finally {
       removeGeneratingCritiquePhotoId(currentId);
       if (useAppStore.getState().activeCritiqueJob?.photoId === currentId) {
@@ -316,8 +238,8 @@ export function usePhotoDetail() {
       }
       queryClient.invalidateQueries({ queryKey: ['critiques'] });
       queryClient.invalidateQueries({ queryKey: ['photoDetail', currentId] });
-    } catch (err) {
-      console.error("Failed to delete critique:", err);
+    } catch (error: unknown) {
+      console.error("Failed to delete critique:", error);
     }
   };
 
@@ -325,11 +247,11 @@ export function usePhotoDetail() {
     if (!selectedPhotoId) return;
     setReindexing(true);
     try {
-      const updatedData = await api.reindexPhoto(selectedPhotoId);
-      setCaptionEdit(updatedData.ai_analysis?.caption || '');
-      setTagsEdit(updatedData.ai_analysis?.tags ? [...updatedData.ai_analysis.tags] : []);
-    } catch (err) {
-      console.error("Failed to reindex photo:", err);
+      const updatedPhoto = await api.reindexPhoto(selectedPhotoId);
+      setCaptionEdit(updatedPhoto.ai_analysis?.caption || '');
+      setTagsEdit(updatedPhoto.ai_analysis?.tags ? [...updatedPhoto.ai_analysis.tags] : []);
+    } catch (error: unknown) {
+      console.error("Failed to reindex photo:", error);
     } finally {
       setReindexing(false);
     }
@@ -339,8 +261,8 @@ export function usePhotoDetail() {
     if (!photo) return;
     try {
       await toggleFavoriteMutation.mutateAsync(photo.id);
-    } catch (err) {
-      console.error("Failed to toggle favorite:", err);
+    } catch (error: unknown) {
+      console.error("Failed to toggle favorite:", error);
     }
   };
 
@@ -350,27 +272,14 @@ export function usePhotoDetail() {
   };
 
   return {
-    selectedPhotoId,
-    setSelectedPhotoId,
-    photo: photo || null,
-    loading,
-    editing,
-    setEditing,
-    captionEdit,
-    setCaptionEdit,
-    tagsEdit,
-    setTagsEdit,
+    selectedPhotoId, setSelectedPhotoId,
+    photo: photo || null, loading,
+    editing, setEditing,
+    captionEdit, setCaptionEdit,
+    tagsEdit, setTagsEdit,
     saving: updateMetadataMutation.isPending,
-    critique,
-    loadingCritique,
-    reindexing,
-    handleSave,
-    handleReveal,
-    handleRequestCritique,
-    handleCancelCritique,
-    handleDeleteCritique,
-    handleReindex,
-    handleToggleFavorite,
-    handleTagClick
+    critique, loadingCritique, reindexing,
+    handleSave, handleReveal, handleRequestCritique, handleCancelCritique,
+    handleDeleteCritique, handleReindex, handleToggleFavorite, handleTagClick
   };
 }

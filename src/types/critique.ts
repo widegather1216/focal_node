@@ -50,3 +50,14 @@ export interface CritiqueResponse {
   engine_used?: string;
   status?: string;
 }
+
+export interface CritiqueCancelResponse {
+  photo_id: string;
+  status: string;
+  message?: string;
+}
+
+export interface CritiqueDeleteResponse {
+  status: string;
+  photo_id: string;
+}

@@ -50,11 +50,15 @@ export const CritiqueView: React.FC = () => {
     setSummaryError(null);
     setIsSummaryExpanded(true);
     try {
-      const res = await api.getCritiqueSummary();
-      setSummaryData(res);
-    } catch (err: any) {
-      console.error("Failed to generate critique summary:", err);
-      setSummaryError(err.message || "종합 요약을 생성하는 도중 오류가 발생했습니다.");
+      const summaryResponse = await api.getCritiqueSummary();
+      setSummaryData(summaryResponse);
+    } catch (error: unknown) {
+      console.error("Failed to generate critique summary:", error);
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : "종합 요약을 생성하는 도중 오류가 발생했습니다.";
+      setSummaryError(errorMessage);
     } finally {
       setIsGeneratingSummary(false);
     }

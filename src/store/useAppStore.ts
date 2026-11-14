@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { api } from '../services/api';
 import { SearchFilters } from '../types/photo';
 
 export type { SearchFilters };
@@ -224,9 +225,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const port = get().apiPort;
     if (port) {
       try {
-        await fetch(`http://127.0.0.1:${port}/api/chat/critique/cancel/${encodeURIComponent(photoId)}`, {
-          method: 'POST'
-        });
+        await api.cancelCritique(photoId);
       } catch (err) {
         console.warn("Failed to send cancel critique request:", err);
       }

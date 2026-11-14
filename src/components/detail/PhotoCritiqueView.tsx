@@ -1,22 +1,21 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { 
-  Wand2, 
-  RefreshCw, 
-  Trash2, 
-  FileText, 
-  Square, 
-  ArrowUpRight, 
-  ChevronDown, 
-  ChevronUp 
+import {
+  Wand2,
+  RefreshCw,
+  Trash2,
+  FileText,
+  Square,
+  ArrowUpRight,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
-import { api } from '../../services/api';
-import { CritiqueStatus } from '../../types/critique';
+import { useCritiqueStatusPolling } from '../../hooks/useCritiqueStatusPolling';
 import { CritiqueProgressWidget } from '../critique/CritiqueProgressWidget';
-import { 
-  CritiqueContentRenderer, 
-  extractScoreboard, 
+import {
+  CritiqueContentRenderer,
+  extractScoreboard,
   parseMarkdownToBlocks,
-  ParsedScores 
+  ParsedScores
 } from '../critique/CritiqueContentRenderer';
 import { ScoreHudStrip } from '../critique/ScoreHudStrip';
 import { useAppStore } from '../../store/useAppStore';
@@ -35,6 +34,34 @@ interface PhotoCritiqueViewProps {
   critiqueEn?: string | null;
 }
 
+function parseCritiqueOverview(
+  critique: string | null,
+  overallScore?: number | null,
+  iaaScore?: number | null,
+  iqaScore?: number | null,
+  istaScore?: number | null
+) {
+  if (!critique) return null;
+  const { scores: extractedScores, remainingText } = extractScoreboard(critique);
+  const hasNormalized =
+    overallScore != null || iaaScore != null || iqaScore != null || istaScore != null;
+
+  const scores: ParsedScores | null = hasNormalized
+    ? {
+        overall: overallScore != null ? Math.round(overallScore) : null,
+        iaa: iaaScore != null ? Math.round(iaaScore) : null,
+        iqa: iqaScore != null ? Math.round(iqaScore) : null,
+        ista: istaScore != null ? Math.round(istaScore) : null,
+      }
+    : extractedScores;
+
+  const blocks = parseMarkdownToBlocks(remainingText);
+  const summaryBlock = blocks.find((b) => b.type === 'executive_summary');
+  const summary = summaryBlock && 'summary' in summaryBlock ? summaryBlock.summary : null;
+  const sectionCount = blocks.filter((b) => b.type === 'section').length;
+  return { scores, summary, sectionCount, remainingText };
+}
+
 export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
   photoId,
   critique,
@@ -49,145 +76,29 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
   critiqueEn
 }) => {
   const { openCritiqueDocument } = useAppStore();
-  const [status, setStatus] = useState<CritiqueStatus | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
+  const status = useCritiqueStatusPolling(photoId, Boolean(loadingCritique && photoId));
 
-  // Status polling for running critique tasks
-  useEffect(() => {
-    if (!loadingCritique || !photoId) {
-      setStatus(null);
-      return;
-    }
-
-    let isMounted = true;
-    let timerId: ReturnType<typeof setTimeout> | null = null;
-
-    const pollStatus = async () => {
-      try {
-        const res = await api.getCritiqueStatus(photoId);
-        if (!isMounted) return;
-
-        if (res) {
-          setStatus(res);
-          if (res.status === 'completed' || res.status === 'error' || res.status === 'cancelled' || res.progress === 100) {
-            return;
-          }
-        }
-      } catch {
-        // Silently ignore transient network errors
-      }
-
-      if (isMounted) {
-        timerId = setTimeout(pollStatus, 1200);
-      }
-    };
-
-    pollStatus();
-
-    const handleWake = () => {
-      if (isMounted) pollStatus();
-    };
-    window.addEventListener('focus', handleWake);
-    window.addEventListener('online', handleWake);
-    document.addEventListener('visibilitychange', handleWake);
-
-    return () => {
-      isMounted = false;
-      if (timerId) clearTimeout(timerId);
-      window.removeEventListener('focus', handleWake);
-      window.removeEventListener('online', handleWake);
-      document.removeEventListener('visibilitychange', handleWake);
-    };
-  }, [loadingCritique, photoId]);
-
-  // Reset accordion collapse state when switching photos
   useEffect(() => {
     setIsExpanded(false);
   }, [photoId]);
 
-  // Structured critique parsing (scores, executive summary, sections)
-  const parsedCritique = useMemo(() => {
-    if (!critique) return null;
-    const { scores: extractedScores, remainingText } = extractScoreboard(critique);
-
-    const hasNormalized =
-      (overallScore !== undefined && overallScore !== null) ||
-      (iaaScore !== undefined && iaaScore !== null) ||
-      (iqaScore !== undefined && iqaScore !== null) ||
-      (istaScore !== undefined && istaScore !== null);
-
-    const scores: ParsedScores | null = hasNormalized
-      ? {
-          overall: overallScore != null ? Math.round(overallScore) : null,
-          iaa: iaaScore != null ? Math.round(iaaScore) : null,
-          iqa: iqaScore != null ? Math.round(iqaScore) : null,
-          ista: istaScore != null ? Math.round(istaScore) : null,
-        }
-      : extractedScores;
-
-    const blocks = parseMarkdownToBlocks(remainingText);
-    const summaryBlock = blocks.find((b) => b.type === 'executive_summary');
-    const summary = summaryBlock && 'summary' in summaryBlock ? summaryBlock.summary : null;
-    const sectionCount = blocks.filter((b) => b.type === 'section').length;
-    return { scores, summary, sectionCount, remainingText };
-  }, [critique, overallScore, iaaScore, iqaScore, istaScore]);
+  const parsedCritique = useMemo(
+    () => parseCritiqueOverview(critique, overallScore, iaaScore, iqaScore, istaScore),
+    [critique, overallScore, iaaScore, iqaScore, istaScore]
+  );
 
   return (
-    <div
-      style={{
-        marginTop: '20px',
-        background: 'var(--bg-card)',
-        padding: '16px',
-        borderRadius: '8px',
-        border: '1px solid var(--border-subtle)'
-      }}
-    >
-      {/* Header Bar */}
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: critique && !loadingCritique ? '12px' : '8px'
-        }}
-      >
-        <h4
-          style={{
-            margin: 0,
-            fontSize: '12px',
-            fontWeight: 600,
-            color: 'var(--text-secondary)',
-            letterSpacing: '0.04em',
-            textTransform: 'uppercase',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px'
-          }}
-        >
+    <div style={styles.container}>
+      <div style={{ ...styles.headerBar, marginBottom: critique && !loadingCritique ? '12px' : '8px' }}>
+        <h4 style={styles.heading}>
           <Wand2 size={14} color="var(--accent-focal)" /> AI 사진 비평
         </h4>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={styles.actionGroup}>
           {loadingCritique ? (
             onCancelCritique && (
-              <button
-                onClick={onCancelCritique}
-                style={{
-                  background: 'rgba(239, 68, 68, 0.15)',
-                  border: '1px solid rgba(239, 68, 68, 0.35)',
-                  color: '#ef4444',
-                  cursor: 'pointer',
-                  fontSize: '11px',
-                  fontWeight: 600,
-                  padding: '3px 8px',
-                  borderRadius: '5px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  transition: 'all 0.15s ease'
-                }}
-                title="진행 중인 비평 생성을 안전하게 중단합니다"
-              >
+              <button onClick={onCancelCritique} style={styles.cancelBtn} title="진행 중인 비평 생성을 안전하게 중단합니다">
                 <Square size={10} fill="#ef4444" />
                 중단
               </button>
@@ -196,18 +107,7 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
             <>
               <button
                 onClick={onRequestCritique}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-muted)',
-                  cursor: 'pointer',
-                  fontSize: '11.5px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  padding: '2px 4px',
-                  transition: 'color 0.15s ease'
-                }}
+                style={styles.reanalyzeBtn}
                 onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--accent-focal)')}
                 onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
                 title="AI 비평 다시 분석"
@@ -223,16 +123,7 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
                       onDeleteCritique();
                     }
                   }}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--text-muted)',
-                    cursor: 'pointer',
-                    padding: '2px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    transition: 'color 0.15s ease'
-                  }}
+                  style={styles.deleteBtn}
                   onMouseEnter={(e) => (e.currentTarget.style.color = '#ef4444')}
                   onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
                   title="비평 삭제"
@@ -242,21 +133,7 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
               )}
             </>
           ) : (
-            <button
-              onClick={onRequestCritique}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--accent-focal)',
-                cursor: 'pointer',
-                fontSize: '12px',
-                fontWeight: 500,
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: 0
-              }}
-            >
+            <button onClick={onRequestCritique} style={styles.generateBtn}>
               <RefreshCw size={11} />
               <span>AI 비평 생성</span>
             </button>
@@ -264,59 +141,23 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
         </div>
       </div>
 
-      {/* Loading Progress State */}
       {loadingCritique && (
         <CritiqueProgressWidget status={status} photoId={photoId || ''} onCancel={onCancelCritique} />
       )}
 
-      {/* Completed Critique Content */}
       {!loadingCritique && critique && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          {/* 1. Score Strip (If score block is present) */}
-          {parsedCritique?.scores && (
-            <ScoreHudStrip scores={parsedCritique.scores} />
-          )}
+        <div style={styles.contentColumn}>
+          {parsedCritique?.scores && <ScoreHudStrip scores={parsedCritique.scores} />}
 
-          {/* 2. Editorial Executive Summary */}
           {parsedCritique?.summary && (
-            <div
-              style={{
-                borderLeft: '2px solid var(--accent-focal)',
-                paddingLeft: '10px',
-                margin: '2px 0'
-              }}
-            >
-              <p
-                style={{
-                  margin: 0,
-                  fontSize: '12.5px',
-                  lineHeight: '1.6',
-                  color: 'var(--text-primary)',
-                  fontStyle: 'italic',
-                  letterSpacing: '-0.01em'
-                }}
-              >
-                "{parsedCritique.summary}"
-              </p>
+            <div style={styles.summaryWrapper}>
+              <p style={styles.summaryText}>"{parsedCritique.summary}"</p>
             </div>
           )}
 
-          {/* 3. Primary CTA: Open Document Report */}
           <button
             onClick={() => photoId && openCritiqueDocument(photoId)}
-            style={{
-              width: '100%',
-              background: 'rgba(225, 29, 72, 0.08)',
-              border: '1px solid rgba(225, 29, 72, 0.25)',
-              borderRadius: '7px',
-              padding: '9px 12px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              cursor: 'pointer',
-              color: 'var(--text-primary)',
-              transition: 'all 0.15s ease'
-            }}
+            style={styles.openDocumentBtn}
             onMouseEnter={(e) => {
               e.currentTarget.style.background = 'rgba(225, 29, 72, 0.14)';
               e.currentTarget.style.borderColor = 'var(--accent-focal)';
@@ -327,35 +168,22 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
             }}
             title="문서 뷰어로 전체 비평 보기"
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={styles.openDocLabel}>
               <FileText size={14} color="var(--accent-focal)" />
               <span style={{ fontSize: '12px', fontWeight: 600 }}>전체 비평 읽기</span>
             </div>
             <ArrowUpRight size={14} color="var(--accent-focal-hover)" />
           </button>
 
-          {/* 4. Detailed Sections Collapsible Accordion */}
           {parsedCritique && parsedCritique.sectionCount > 0 ? (
-            <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '6px' }}>
+            <div style={styles.accordionWrapper}>
               <button
                 onClick={() => setIsExpanded((prev) => !prev)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-muted)',
-                  fontSize: '11px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: '4px 2px',
-                  width: '100%',
-                  transition: 'color 0.15s ease'
-                }}
+                style={styles.accordionBtn}
                 onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-secondary)')}
                 onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-muted)')}
               >
-                <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span style={styles.accordionBtnLeft}>
                   {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
                   <span>{isExpanded ? '세부 분석 내용 접기' : '세부 분석 내용 펼쳐보기'}</span>
                 </span>
@@ -365,7 +193,7 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
               </button>
 
               {isExpanded && (
-                <div style={{ marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={styles.expandedSections}>
                   <CritiqueContentRenderer
                     content={critique}
                     mode="compact"
@@ -381,7 +209,6 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
               )}
             </div>
           ) : !parsedCritique?.scores && !parsedCritique?.summary ? (
-            /* Fallback for unformatted generic critique text */
             <div style={{ marginTop: '4px' }}>
               <CritiqueContentRenderer
                 content={critique}
@@ -397,12 +224,65 @@ export const PhotoCritiqueView: React.FC<PhotoCritiqueViewProps> = ({
         </div>
       )}
 
-      {/* Empty State */}
       {!loadingCritique && !critique && (
-        <p style={{ margin: 0, fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.5' }}>
+        <p style={styles.emptyStateText}>
           'AI 비평 생성'을 누르면 VLM이 구도, 조명, 색감 및 개선점에 대한 전문가 수준의 피드백을 제공합니다.
         </p>
       )}
     </div>
   );
+};
+
+const styles: Record<string, React.CSSProperties> = {
+  container: {
+    marginTop: '20px', background: 'var(--bg-card)', padding: '16px',
+    borderRadius: '8px', border: '1px solid var(--border-subtle)',
+  },
+  headerBar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  heading: {
+    margin: 0, fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)',
+    letterSpacing: '0.04em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px',
+  },
+  actionGroup: { display: 'flex', alignItems: 'center', gap: '8px' },
+  cancelBtn: {
+    background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.35)',
+    color: '#ef4444', cursor: 'pointer', fontSize: '11px', fontWeight: 600,
+    padding: '3px 8px', borderRadius: '5px', display: 'flex', alignItems: 'center', gap: '4px',
+    transition: 'all 0.15s ease',
+  },
+  reanalyzeBtn: {
+    background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
+    fontSize: '11.5px', display: 'flex', alignItems: 'center', gap: '4px', padding: '2px 4px',
+    transition: 'color 0.15s ease',
+  },
+  deleteBtn: {
+    background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer',
+    padding: '2px', display: 'flex', alignItems: 'center', transition: 'color 0.15s ease',
+  },
+  generateBtn: {
+    background: 'none', border: 'none', color: 'var(--accent-focal)', cursor: 'pointer',
+    fontSize: '12px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '4px', padding: 0,
+  },
+  contentColumn: { display: 'flex', flexDirection: 'column', gap: '12px' },
+  summaryWrapper: { borderLeft: '2px solid var(--accent-focal)', paddingLeft: '10px', margin: '2px 0' },
+  summaryText: {
+    margin: 0, fontSize: '12.5px', lineHeight: '1.6', color: 'var(--text-primary)',
+    fontStyle: 'italic', letterSpacing: '-0.01em',
+  },
+  openDocumentBtn: {
+    width: '100%', background: 'rgba(225, 29, 72, 0.08)', border: '1px solid rgba(225, 29, 72, 0.25)',
+    borderRadius: '7px', padding: '9px 12px', display: 'flex', alignItems: 'center',
+    justifyContent: 'space-between', cursor: 'pointer', color: 'var(--text-primary)',
+    transition: 'all 0.15s ease',
+  },
+  openDocLabel: { display: 'flex', alignItems: 'center', gap: '8px' },
+  accordionWrapper: { borderTop: '1px solid var(--border-subtle)', paddingTop: '6px' },
+  accordionBtn: {
+    background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '11px',
+    cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '4px 2px', width: '100%', transition: 'color 0.15s ease',
+  },
+  accordionBtnLeft: { display: 'flex', alignItems: 'center', gap: '5px' },
+  expandedSections: { marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '10px' },
+  emptyStateText: { margin: 0, fontSize: '12px', color: 'var(--text-muted)', lineHeight: '1.5' },
 };
