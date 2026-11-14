@@ -1,6 +1,6 @@
 # 🔍 [02_search_curation] Hybrid Search, K-NN Curation & Smart Albums
 
-- **현재 상태 (Lifecycle)**: `📐 Planning (Baseline 완료 / RRF·임계값 고도화 및 M4 스마트 앨범 Step 1~4 대기)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (Baseline 완료 / REFACTOR-01 1건 대기 / Active Step 1~4 대기)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
 - **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
@@ -33,10 +33,11 @@ SigLIP 2 자연어 시맨틱 검색(코사인 거리 임계값 절삭)과 SQLite
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-10-17 / interactive-feature-planner / 코사인 거리 임계값 + RRF 랭킹 + aesthetic_tags + 35mm 환산/점수 필터 + M4 스마트 앨범 스펙 통합`
+- **직전 완료 작업**: `2026-11-14 / clean-code-auditor / 전 도메인 통합 정적 감사 반영 (REFACTOR-01 라인·로깅·함수 길이 최신화 / 직전 기획: 2026-10-17)`
 - **생성/수정된 핵심 파일**:
+  - `docs/features/02_search_curation/verification.md`: `SearchService.search_photos`(43줄), `search.py` `traceback.print_exc()`, `similar:` UI 연결 감사 내역 최신화
   - `docs/features/02_search_curation/*`: RRF($k=60$) 수식, ChromaDB 거리 임계값(`max_distance=0.88`), `use_35mm_equivalent`, `min_overall_score` 및 `smart_albums` 명세 반영
 - **검증 완료된 테스트 실행 명령어**:
   - `./venv/bin/pytest backend/tests/test_api_search.py`
 - **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - Step 2 구현 시 `VectorRepository.query_similar_by_embedding`에서 `include=["distances"]`로 거리를 조회하여 `d <= max_distance`인 후보만 반환하도록 수정할 것.
+  - `REFACTOR-01` 해결 권장 (`"02_search_curation 도메인의 REFACTOR-01 티켓 해결해줘"`). Step 2 구현 시 `VectorRepository.query_similar_by_embedding`에서 `include=["distances"]`로 거리를 조회하여 `d <= max_distance`인 후보만 반환하도록 수정할 것.

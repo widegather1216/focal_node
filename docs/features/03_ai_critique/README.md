@@ -1,8 +1,8 @@
 # 🤖 [03_ai_critique] On-Demand AI Critique & Editorial Export
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT 전수 해결 완료, REFACTOR 2건 해결 대기)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT 전수 해결 완료, REFACTOR-08 1건 해결 대기)`
 - **구현 진척도**: `[■■■■] 4/4 Steps (Active Iteration Step 1~4 구현 완료)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 2건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -36,6 +36,7 @@
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
 - **Recent Commits**:
+  - `8231646` - `refactor(critique): unify status polling and enforce strict api types`
   - `3d9ddeb` - `test(critique): replace hollow tests with real scoring and chat api tests`
   - `e8a5e0f` - `docs(critique): mark REFACTOR-06 resolved and sync control tower`
   - `e53f9b4` - `refactor(critique): eliminate eager imports, silent errors, and redundant raw decoding`
@@ -54,22 +55,23 @@
   - `a9b398b` - `docs(critique): specify hybrid perceptual anchor pipeline with gemma 4 direct critique`
   - `756e6be` - `refactor(critique): eliminate silent fail blocks and decompose long adapter methods`
   - `1f0151c` - `refactor(critique): decompose monolithic critique components for SRP conformance`
-- **직전 완료 작업**: `2026-11-07 / systematic-debugger / REFACTOR-07 (허수 단위 테스트 실검증 전환 및 /api/chat/* 라우트 커버리지 보강) 해결 및 회귀 검증 완료 (DEFECT 0건·REFACTOR 2건 대기)`
+- **Working Tree State**: 🟢 Clean (No uncommitted changes)
+- **직전 완료 작업**: `2026-11-14 / systematic-debugger / REFACTOR-03 해결 완료 (useCritiqueStatusPolling·activePhotoList 분리, 타이머 증식/레이스·빈 catch·any/fetch 우회·['critiques'] 키 불일치 해소 및 300줄 이하 경량화, REFACTOR-08 1건 대기)`
 - **해결 완료 및 잔여 티켓 현황**:
-  1. **✅ `DEFECT-02~03` & `REFACTOR-04~07` 해결 완료 (`TC-CRT-10~13 PASS`, `13/13 100%`)**:
+  1. **✅ `DEFECT-02~03` & `REFACTOR-03~07` 해결 완료 (`TC-CRT-10~13 PASS`, `13/13 100%`)**:
      - `DEFECT-02`: `_acquire_model_for_request` 취소 가드로 28GB 디스크 재적재 및 로딩 중 취소 후 메모리 상주 원천 차단, 최외곽 `finally` 언로드 및 `_on_unload()` MPS 텐서 해제
      - `DEFECT-03`: `_load_model_locked()`에서 `self.model.eval()` 명시 호출, `_generate_with_language_model` 헬퍼로 `InternVLChatModel.chat()`의 `return_dict` 시그니처 충돌을 우회하고 `self.model.language_model.generate(...)` 직접 호출 및 `<think>`/종료 토큰 정제, VQA 추론 실패 시 예외 전파(`raise`)
+     - `REFACTOR-03`: `useCritiqueStatusPolling`·`activePhotoList` 분리로 3중 Polling/`focus` 타이머 증식 및 3.5s/4s 토스트 레이스 차단, `['critiques']` 접두어 조회 및 `usePhotoDetail`↔`usePhotoDetailQuery` 순환 참조 해소, `useAppStore.cancelActiveCritique` `api.cancelCritique` 일원화, `api.ts` 비평/상세 타입 구체화, 빈 `catch` 3곳 제거 및 `PhotoCritiqueView`(288줄)·`usePhotoDetail`(285줄) 경량화
      - `REFACTOR-04`: `CritiqueDocumentModal.tsx` Rules of Hooks 크래시 해소, 전역 키 가드, PDF XSS 이스케이프 및 다크 잉크 컬러 오버라이드
      - `REFACTOR-05`: `AIAnalysis.to_dict()` 11개 필드 보존 반환, `critique_status_manager.clear()` 좀비 상태 차단, `ChatService._cancel_task_threadsafe`, `PhotoRepository` 캡슐화
      - `REFACTOR-06`: `unipercept_utils`/`adapter`의 `torch`/`torchvision`/`transformers` Eager Import 제거(`_LazyTorchProxy`, `patch_transformers_tied_weights()`, Rule 2.5), `config.CONFIG_DIR` 격리(Rule 2.6), Gemma 추론 및 VQA 예외 삼킴 제거로 DB 오염 차단 및 `status="error"`/자율 폴백 보장, `load_pil_image`에 `min_dimension=1024` 및 `MAX_CONCURRENT_DECODES=3` 세마포어(Rule 2.3), `GemmaAdapter` CPU RAW 디코딩 `GPU_LOCK` 외부 분리(Rule 2.4), 1회 1024px 디코딩 공유, `task.add_done_callback` 누수 방지, `CritiqueStatusManager` 100개 상한 정책 적용
      - `REFACTOR-07`: `test_ensemble_math.py`에서 `services.scoring` 실제 4대 광학 가중치/보너스/융합 실검증 전환, `test_unipercept.py`의 `app.services.*` 임포트 통일 및 `TC-CRT-12/13` 실제 어댑터 파이프라인/VQA 실패 시 Gemma 자율 폴백 실실행 검증, `test_critique_repository_and_api.py`에 `POST /api/chat/critique`, `GET /api/chat/critique/status/{id}`, `POST /api/chat/critique-summary` 3대 엔드포인트 커버리지 보강 (132 passed)
-  2. **🟡 Should Fix 리팩토링 (`REFACTOR-03`, `REFACTOR-08`)**:
-     - `REFACTOR-03`: 프론트엔드 3중 비평 Polling 타이머 증식·빈 `catch`·`ApiClient` 우회 및 캐시 키 불일치 수정
-     - `REFACTOR-08`: ADR-05 이전 레거시 사문화 코드(~560줄)·장문 함수 정리 및 프로그레스 라벨/`ScoringGuideModal` 포털·진입점 보강
+  2. **🟡 Should Fix 리팩토링 (`REFACTOR-08` 1건 대기)**:
+     - `REFACTOR-08`: ADR-05 이전 레거시 코드(~560줄)·비대 파일(`unipercept_adapter.py` 1,212줄, `mlx_adapters.py` 758줄, `critiqueExporter.ts` 710줄 등) 경량화, Headless MPS `empty_cache` Segfault 가드/테스트 스텁 보강 및 프로그레스/`ScoringGuideModal` 개선
 - **검증 완료된 테스트 실행 명령어**:
   - `npx tsc --noEmit` (`PASS`)
   - `npm run build` (`PASS`)
-  - `./venv/bin/pytest backend/tests/ -v` (`132 passed`)
+  - `./venv/bin/pytest backend/tests/test_critique_repository_and_api.py backend/tests/test_critique_cancellation.py -q` (샌드박스 비-MPS no-op 호환, `24 passed`)
 - **다음 세션 포커스 및 추천 실행 프롬프트**:
-  - `REFACTOR-07`이 해결되어 Must Fix 결함이 모두 해소되었으므로, 다음 우선 순위인 `REFACTOR-03`(프론트엔드 비평 Polling 타이머 증식·빈 `catch`·캐시 키 불일치 교정)을 해결합니다 (`systematic-debugger`).
-  - 👉 추천 프롬프트: `"03_ai_critique 도메인의 REFACTOR-03 티켓 해결해줘"`
+  - `REFACTOR-03` 해결 완료로 마지막 잔여 티켓 `REFACTOR-08`만 해결하면 `03_ai_critique` 도메인을 `🟢 Sign-Off`로 전환할 수 있습니다 (`systematic-debugger`).
+  - 👉 추천 프롬프트: `"03_ai_critique 도메인의 REFACTOR-08 티켓 해결해줘"`

@@ -1,8 +1,8 @@
 # 💾 [01_indexing_storage] Indexing Pipeline, Storage & RAW Media
 
-- **현재 상태 (Lifecycle)**: `📐 Planning (DEFECT-01~11 및 REFACTOR-01 전수 해결 완료 / Active Iteration Step 1 진행 대기)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-01~11 및 REFACTOR-01 해결 완료 / REFACTOR-02 1건 대기)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -35,7 +35,7 @@
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-11-11 / systematic-debugger / DEFECT-11 해결 및 커밋 완료 (9b7f06d, 8434790 / TC-IDX-17 PASS)`
+- **직전 완료 작업**: `2026-11-14 / clean-code-auditor / 전 도메인 통합 정적 감사 반영 및 REFACTOR-02 신규 발권 (직전 해결: 2026-11-11 DEFECT-11 / TC-IDX-17 PASS)`
 - **Recent Commits (2026-11-11 23:01)**:
   - `8434790` - `fix(ui): surface folder removal errors and guard active indexing`
   - `9b7f06d` - `fix(folders): enforce registered path match on folder deletion`
@@ -60,8 +60,8 @@
   - `DEFECT-03`: `IndexingStateManager`에 원자적 상태 선점 메서드 `try_start_indexing()`을 도입하여 락 내부에서 즉시 `"processing"`을 선점하고 중복 요청을 400 거부하도록 조치. 경로/DB 작업 예외 발생 시 `reset_status()` 안전 롤백 및 `run_indexing_background` startup 시 `initialize_background_run()`으로 상태가 순간적으로 `idle`로 풀리는 레이스를 원천 차단하여 중복 인덱서 실행 및 ChromaDB 벡터 영구 소실 해소.
   - `DEFECT-02`: `VectorRepository.delete`에서 ChromaDB `collection.delete` 실패 시 예외를 삼키던 결함을 제거하고 `logger.error` 후 `raise`로 재전파. `CompensatingTransactionManager.delete_and_commit`이 예외를 감지하여 SQLite `commit`을 방지하고 `rollback`을 수행함으로써 SQLite만 삭제되고 ChromaDB에 좀비 벡터가 영구 잔류하는 정합성 붕괴 완전 해소.
   - `DEFECT-01`: ChromaDB `get(include=["embeddings"])` 반환 `numpy.ndarray`에 대한 직접 불리언 평가 제거, Guard Clause 및 `.tolist()` 변환으로 100% `ValueError` 크래시 방지 및 단일 사진 재인덱싱/유사도 검색 안정화.
-- **잔여 우선순위 결함 (Open DEFECT Logs)**:
-  - 없음 (`0건` — Baseline `DEFECT-01~11` 및 `REFACTOR-01` 전수 해결 완료)
+- **잔여 우선순위 리팩토링 (Open REFACTOR Logs)**:
+  - `REFACTOR-02`: `indexing_service.py`(819줄) 책임별 모듈 분리, `ActionBar.tsx`(357줄)·`Sidebar.tsx`(359줄) 300줄 이하 경량화 및 `exportStream.ts` 빈 `catch`/`IndexingProgressCard.tsx` `any` 정리
 - **검증 완료된 테스트 실행 명령어**:
   - `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_17 -v` (`2 passed`)
   - `./venv/bin/pytest backend/tests/test_api_folders.py -v` (`5 passed`)
@@ -69,4 +69,4 @@
   - `npx tsc --noEmit && npm run build` (`PASS`)
   - `python3 -B ~/.gemini/config/skills/interactive-feature-planner/scripts/check_wiki_health.py docs` (`exit 0`)
 - **다음 세션 포커스 및 추천 프롬프트**:
-  - `Active Iteration` Step 1 착수: `"01_indexing_storage 도메인 Step 1 개발 진행해줘"` (`is_offline` 컬럼/마이그레이션 및 `phase` 상태 계약 구현)
+  - `REFACTOR-02` 해결 후 `Active Iteration` Step 1 착수 권장: `"01_indexing_storage 도메인의 REFACTOR-02 티켓 해결해줘"`

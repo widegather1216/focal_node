@@ -1,6 +1,6 @@
 # 🧪 [04_studio_ui_analytics] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Open Issues (Baseline AC 검증 완료 / 차트 드릴다운 AC 1건 대기 / REFACTOR 2건 대기)`
+- **검증 상태**: `🩹 Debugging (Baseline AC 완료 / REFACTOR 2건 대기 / 차트 드릴다운 AC 1건 대기)`
 - **인수 조건 통과율**: `2 / 3 (Baseline 100%)`
 - **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 2건`
 
@@ -48,30 +48,30 @@
 
 ## 🧐 4. 코드 품질 감사 리포트 (Audit & Refactoring Logs)
 
-### [REFACTOR-01] `useAppStore.ts` 내 직접 `fetch()` 호출 `api.ts` 일원화 및 미사용 훅 정리
+### [REFACTOR-01] `useAppStore.ts` 내 직접 `fetch()` 호출 `api.ts` 일원화, 빈 `catch`/Dead Code 정리 및 `FullscreenViewer.tsx`(433줄) 경량화
 - **심각도**: 🟡 Should Fix (권장 조치)
-- **위치**: `src/store/useAppStore.ts#L165,L190,L202`, `src/hooks/usePhotosQuery.ts#L5-L27`
-- **위반 규칙**: 단방향 레이어 의존성 (`Store ➔ ApiClient`) & Dead Code 제거
+- **위치**: `src/store/useAppStore.ts#L223-L286`, `src/hooks/usePhotosQuery.ts#L5-L27`, `src/components/FullscreenViewer.tsx#L1-L433`, `src/hooks/useFullscreenControls.ts#L17-L35`
+- **위반 규칙**: 단방향 레이어 의존성 (`Store ➔ ApiClient`), Rule 4.1 (단일 UI 파일 <= 300줄, 중복 제거), Rule 4.3 (빈 `catch` 금지) & Dead Code 제거
 - **발견된 문제**:
-  - `useAppStore.ts`의 `cancelActiveCritique`, `fetchFolders`, `removeFolder` 액션이 `src/services/api.ts`를 거치지 않고 `fetch('http://127.0.0.1:${port}/...')`를 직접 호출함.
-  - `src/hooks/usePhotosQuery.ts`의 `usePhotosQuery` 함수(`L5-L27`)가 어디에서도 호출되지 않는 Dead Code로 남아 있음.
+  - `useAppStore.ts`의 `cancelActiveCritique#L227`, `fetchFolders#L252`, `removeFolder#L266` 액션이 `src/services/api.ts`를 거치지 않고 `fetch()`를 직접 호출하며, `L276`에 주석만 있는 빈 `catch`가 존재함.
+  - `src/hooks/usePhotosQuery.ts`의 `usePhotosQuery` 함수(`L5-L27`)가 어디에서도 호출되지 않는 Dead Code로 남아 있으며, `FullscreenViewer.tsx`(433줄)가 단일 UI 파일 300줄 상한을 초과함(`useFullscreenControls.ts#L17-L35`의 `getActivePhotoList`도 `usePhotoDetail.ts`와 중복되며 `['critiques']` 키 불일치를 공유함).
 - **권장 개선안 (Suggested Diff)**:
   ```text
-  - useAppStore.ts의 직접 fetch 호출을 api.cancelPhotoCritique, api.getFolders, api.removeFolder 호출로 일원화
-  - src/hooks/usePhotosQuery.ts에서 미사용 usePhotosQuery 함수 제거
+  - useAppStore.ts의 직접 fetch 호출을 api.cancelCritique, api.fetchFolders, api.removeFolder로 일원화하고 L276 catch 로깅 보강
+  - usePhotosQuery.ts 미사용 usePhotosQuery 제거, FullscreenViewer.tsx 툴바/네비게이션 분리(<=300줄) 및 getActivePhotoList 공통 유틸 통합
   ```
 - **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
  
-### [REFACTOR-02] API 클라이언트(`api.ts`) 및 Analytics/Fullscreen 컴포넌트 내 `any` 타입 구체화
+### [REFACTOR-02] API 클라이언트(`api.ts`, 368줄) 및 Analytics/Fullscreen/Gallery 훅·컴포넌트 내 `any` 타입 구체화
 - **심각도**: 🟡 Should Fix (권장 조치)
-- **위치**: `src/services/api.ts#L33,L46,L156,L258`, `src/components/analytics/AnalyticsKpiGrid.tsx#L8-L10`, `src/components/analytics/ExifBarCharts.tsx#L6-L8`, `src/components/analytics/GearDonutCharts.tsx#L6-L7`, `src/components/fullscreen/FullscreenMetadataOverlay.tsx#L6`, `src/hooks/usePhotoDetail.ts#L77,L88`
+- **위치**: `src/services/api.ts#L29-L358`, `src/hooks/useFullscreenControls.ts#L17,L25,L28,L40,L51`, `src/hooks/usePhotoDetail.ts#L82,L90,L93,L117,L124,L180,L245`, `src/components/analytics/AnalyticsKpiGrid.tsx#L8-L10`, `src/components/analytics/ExifBarCharts.tsx#L6-L9`, `src/components/analytics/GearDonutCharts.tsx#L6-L9`, `src/components/fullscreen/FullscreenMetadataOverlay.tsx#L6`, `src/components/PhotoGallery.tsx#L101,L105`
 - **위반 규칙**: Type Safety & Defensive Coding (무분별한 `any` 지양 및 명시적 모델 인터페이스 바인딩)
 - **발견된 문제**:
-  - `api.ts`의 주요 API 응답 반환 타입이 `Promise<any[]>` 또는 `Promise<any>`로 정의되어 있어 하위 컴포넌트 및 커스텀 훅(`usePhotosQuery`, `usePhotoDetail`, `AnalyticsKpiGrid`)으로 `any` 타입 누수가 전파됨.
-  - `FullscreenMetadataOverlay.tsx`의 props 인터페이스가 `photo: any`로 단언되어 메타데이터 프로퍼티 접근 시 컴파일 타임 검증이 무력화됨.
+  - `api.ts`(368줄)의 17개 메서드가 `Promise<any>` / `Promise<any[]>`로 정의되어 있어 하위 훅(`usePhotosQuery`, `usePhotoDetail`, `useFullscreenControls`)과 컴포넌트(`AnalyticsKpiGrid`, `PhotoGallery`) 전반으로 `any` 타입 누수가 전파됨.
+  - `FullscreenMetadataOverlay.tsx#L6`의 props가 `photo: any`로, `ExifBarCharts`/`GearDonutCharts`의 차트 데이터/툴팁 props가 `any[]`/`React.ComponentType<any>`로 단언되어 컴파일 타임 검증이 무력화됨.
 - **권장 개선안 (Suggested Diff)**:
   ```text
-  - api.ts 메서드 반환형을 PhotoListResponse[], FolderResponse[], CritiqueItem[] 등 구체적 인터페이스로 지정
-  - Analytics 컴포넌트 및 FullscreenMetadataOverlay의 props를 PhotoDetail/GearStats 인터페이스로 엄격하게 바인딩
+  - api.ts 메서드 반환형을 PhotoSummary[], PhotoDetail, FolderResponse[], GearStats 등 구체적 인터페이스로 지정
+  - Analytics/Fullscreen/Gallery 컴포넌트 및 훅의 props·캐시 제네릭을 PhotoDetail/GearStatItem/InfiniteData<PhotoSummary[]>로 엄격 바인딩
   ```
 - **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)

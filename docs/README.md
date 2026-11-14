@@ -1,17 +1,17 @@
 # 🧭 Focal Node: Master Control Tower (Living Wiki Hub)
 
 > 외부 클라우드 전송 없이 Mac Native(Apple MLX & PyTorch MPS)로 구동되는 **프라이버시 보호 로컬 사진 관리 및 AI 시맨틱 검색/비평 데스크탑 플랫폼**입니다.
-> **최종 업데이트**: 2026-11-11 (by `systematic-debugger`)
+> **최종 업데이트**: 2026-11-14 (by `systematic-debugger`)
 
 ---
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
-- **Active 도메인**: [`01_indexing_storage`](./features/01_indexing_storage/README.md)
-- **현재 단계 (Stage)**: `📐 Planning (DEFECT-01~11 및 REFACTOR-01 전수 해결 완료, Active Iteration Step 1 진행 대기)`
-- **직전 완료 작업**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) 도메인 DEFECT-11 해결 및 원자적 커밋 완료 (`9b7f06d`, `8434790` / `backend/app/api/folders.py` 및 `backend/app/services/indexing_service.py`에 빈/상대/널바이트 경로 `400` 차단, 리프 심볼릭 링크 비확장 정규화 `_resolve_path_without_leaf_symlink`·`_normalize_folder_deletion_path`, 등록 `IndexedFolder` 정확 일치 검증 `FolderNotRegisteredError` -> `404`, 활성 인덱싱 충돌 `FolderDeletionConflictError` -> `409`, DB/ChromaDB 오류 롤백·전파 `500`, 교차 파일 심볼릭 링크 및 형제 접두어 보호를 구현하고, `src/store/useAppStore.ts`·`src/components/sidebar/FolderList.tsx`·`src/components/Sidebar.tsx` 에러 전파/UI 가드를 연동, 신규 회귀 테스트 `TC-IDX-17` 2종·`test_api_folders.py` 5종 포함 백엔드 151종 및 `tsc && vite build` 전수 통과)
+- **Active 도메인**: [`03_ai_critique`](./features/03_ai_critique/README.md) *(구현 4/4 완료, 마지막 잔여 `REFACTOR-08` 해결 시 즉시 `🟢 Sign-Off`)*
+- **현재 단계 (Stage)**: `🩹 Debugging (REFACTOR-03 해결 완료 / 전 도메인 REFACTOR 5건 잔여)`
+- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 `REFACTOR-03` 해결 (`useCritiqueStatusPolling.ts`·`activePhotoList.ts` 분리로 3중 Polling·`focus` 타이머 증식·3.5s/4s 토스트 레이스·`['critiques']` 캐시 키 불일치·`usePhotoDetail`↔`usePhotoDetailQuery` 순환 참조·`useAppStore.cancelActiveCritique` `fetch` 우회·`api.ts` `Promise<any>`·빈 `catch` 3곳 해소 및 `PhotoCritiqueView` 288줄·`usePhotoDetail` 285줄 경량화, `npx tsc --noEmit && npm run build` PASS 및 비평 API/취소 테스트 24종 PASS)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"01_indexing_storage 도메인 Step 1 개발 진행해줘"` *(`is_offline` 컬럼/마이그레이션 및 `phase` 상태 계약 구현)*
+  > `"03_ai_critique 도메인의 REFACTOR-08 티켓 해결해줘"` *(`1 티켓 = 1 격리 세션`으로 `systematic-debugger` 순차 해결)*
 
 ---
 
@@ -20,10 +20,10 @@
 | 도메인 (Bounded Context) | 생명주기 상태 | 구현 진척도 (Active Step 1~4) | QA 인수 통과율 | 미해결 티켓 (`🚨D` / `🧐R`) | 최근 작업 요약 |
 | :--- | :--- :---: | :---: | :---: | :---: | :--- |
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `5/5 (100%)` | `0 / 0` | DEFECT-01~04 전수 해결 완료 (손상 인덱스 valid=False, 실패 시 거짓 완료 차단, 1종 조기완료 차단, 중복 스레드/락 삭제 가드), Sign-Off 완료 |
-| 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 📐 Planning | `[□□□□] 0/4` | `14/17 (82%)` | `0 / 0` | DEFECT-01~11 전수 해결 완료(등록 폴더 정확 일치 검증·심볼릭 링크 경계 방어·활성 인덱싱 409·UI 가드, TC-IDX-17 PASS), Active Step 1 대기 |
-| 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 📐 Planning | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 거리 임계값 + RRF 랭킹 + 35mm/점수 필터 + 스마트 앨범 Step 1~4 대기 |
-| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `13/13 (100%)` | `0 / 2` | `DEFECT-02~03` 및 `REFACTOR-04~07` 해결 완료, `REFACTOR` 2건 대기 |
-| 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 📐 Planning | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 2` | 통계 차트 클릭 갤러리 드릴다운(`Click-to-Filter`) Step 3~4 대기 |
+| 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `14/17 (82%)` | `0 / 1` | DEFECT-01~11 전수 해결 완료, 통합 감사 `REFACTOR-02` 신규 발권(`indexing_service.py` 819줄/`ActionBar`/`Sidebar` 경량화), Active Step 1 대기 |
+| 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 통합 감사 `REFACTOR-01` 최신화(SigLIP 폴백/`search.py` 로깅/`similar:` 버튼), RRF·스마트 앨범 Step 1~4 대기 |
+| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `13/13 (100%)` | `0 / 1` | `DEFECT-02~03`·`REFACTOR-03~07` 해결 완료, `REFACTOR-08`(Headless MPS 가드·비대 파일 경량화 포함) 1건 대기 |
+| 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 🩹 Debugging | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 2` | 통합 감사 `REFACTOR-01`/`02` 최신화(`FullscreenViewer` 433줄·직접 `fetch`·`any` 타입 구체화), 차트 드릴다운 Step 3~4 대기 |
 
 *(※ 상태 범례: `📐 Planning` | `🛠️ Implementing` | `🧐 Auditing` | `🧪 QA Testing` | `🩹 Debugging` | `🟢 Sign-Off`)*
 *(※ 미해결 티켓: `🚨D` = Open `DEFECT-xx` 개수, `🧐R` = Open `REFACTOR-xx` 개수)*
@@ -31,6 +31,10 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-14]` `[systematic-debugger]` [`03_ai_critique`]**: `REFACTOR-03` 리팩토링 티켓 해결 완료 (`8231646` / `src/hooks/useCritiqueStatusPolling.ts` 및 `src/utils/activePhotoList.ts` 신설로 3중 Polling·`focus`/`visibilitychange` 타이머 증식·3.5s/4s 토스트 재분석 레이스 차단, `['critiques']` 접두어 매칭 복원 및 `usePhotoDetail`↔`usePhotoDetailQuery` 순환 참조·`PhotoDetail` 이동, `useAppStore.cancelActiveCritique` `api.cancelCritique` 일원화, `api.ts` 비평/상세 `Promise<any>` 제거, 빈 `catch` 3곳 제거 및 `PhotoCritiqueView` 288줄·`usePhotoDetail` 285줄 경량화, `tsc && vite build` PASS 및 백엔드 비평 API/취소 24종 PASS, 위키 동기화).
+
+- **`[2026-11-14]` `[clean-code-auditor]` `[ALL]`**: 전 도메인(`00~04`) 통합 클린 코드 감사 및 4단계 프로젝트 재정비 마스터 플랜 반영 (`npx tsc --noEmit` PASS, 전체 파일·함수 길이/타입(`any`)/직접 `fetch`/빈 `catch`/로깅/Headless MPS Segfault 방어 전수 스캔 완료; `01_indexing_storage` `REFACTOR-02` 신규 발권 및 `02`/`03`/`04` 기존 `REFACTOR` 5건 최신화·재정렬 총 `REFACTOR 6건` 대기, `check_wiki_health.py` 무결성 검증).
 
 - **`[2026-11-11]` `[systematic-debugger]` [`01_indexing_storage`]**: DEFECT-11 결함 해결 및 원자적 커밋 완료 (`9b7f06d`, `8434790` / `backend/app/api/folders.py` 및 `backend/app/services/indexing_service.py`에 빈/상대/널바이트 경로 `400` 차단, `_resolve_path_without_leaf_symlink`·`_normalize_folder_deletion_path` 리프 심볼릭 링크 비확장 NFC 정규화, 등록된 `IndexedFolder` 정확 일치 검증 `FolderNotRegisteredError` -> `404`, 활성 인덱싱 충돌 `FolderDeletionConflictError` -> `409`, 예외 삼킴 제거 및 롤백 전파 `500`, 교차 파일 심볼릭 링크 및 형제 접두어 폴더 보존을 구현하고, `src/store/useAppStore.ts`(`removeFolder` 에러 전파·404 동기화)·`src/components/sidebar/FolderList.tsx`(`isIndexing` 삭제 비활성화·실패 알림 및 선택 유지)·`src/components/Sidebar.tsx`를 연동, 신규 회귀 테스트 `TC-IDX-17` 2종·`test_api_folders.py` 5종 포함 백엔드 151종(`151 passed`)·`tsc && vite build` 전수 통과, `verification.md`/`README.md` 동기화).
 

@@ -1,8 +1,8 @@
 # 🧪 [03_ai_critique] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT 전수 해결 완료, REFACTOR 2건 해결 대기)`
+- **검증 상태**: `🩹 Debugging (DEFECT 전수 해결 완료, REFACTOR-08 1건 대기)`
 - **인수 조건 통과율**: `13 / 13 (100%)`
-- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 2건`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건`
 
 ---
 
@@ -98,18 +98,11 @@
 - **현재 상태**: 🟢 RESOLVED — `chat_service.py`, `mlx_adapters.py`, `unipercept_adapter.py`의 빈 `except: pass` 로깅 보강 및 프롬프트/VQA 헬퍼 분리 완료
 
 ### [REFACTOR-03] 프론트엔드 비평 Polling 타이머 증식·빈 `catch` 제거, `ApiClient` 우회/타입(`any`) 및 캐시 키 버그 교정
-- **심각도**: 🟡 Should Fix (권장 조치)
-- **위치**: `src/components/detail/PhotoCritiqueView.tsx#L56-L101`, `src/components/critique/GlobalCritiqueToast.tsx#L21-L80`, `src/hooks/usePhotoDetail.ts#L82-L99, #L161-L221, #L245, #L277-L281`, `src/store/useAppStore.ts#L161-L178`, `src/services/api.ts#L233-L277`, `src/components/CritiqueView.tsx#L55`
-- **위반 규칙**: Rule 4.3 (빈 `catch` 금지), Rule 4.2 (`res`/`data`/`st` 네이밍), `00_core_foundation` 단방향 `ApiClient` 경유 규칙, 타이머 동시성 안전성
-- **발견된 문제**:
-  - `PhotoCritiqueView`·`GlobalCritiqueToast`·`usePhotoDetail` 3곳에 비평 상태 Polling이 중복되며, `focus`/`visibilitychange` 시 기존 `clearTimeout` 없이 `pollStatus()`를 재호출하여 재귀 `setTimeout` 체인이 중복 증식됨 (`3.5s` 자동 닫힘 타이머도 재분석 시 레이스 유발).
-  - 빈 `catch {}` 예외 묵인, `useAppStore.cancelActiveCritique`의 `fetch` 직접 호출(`ApiClient` 우회), `api.ts`의 `Promise<any>`, `usePhotoDetail#L84`의 `getQueryData(['critiques'])` 키 불일치(`['critiques', sortBy]` 미매칭으로 아카이브 좌우 키 이동 불능)가 존재함.
-- **권장 개선안 (Suggested Diff)**:
-  ```text
-  - 공통 `useCritiqueStatusPolling` 훅으로 일원화하고 `clearTimeout(timerId)` 선행 후 단일 타이머 체인 유지, 빈 catch에 `console.debug` 추가
-  - `useAppStore.cancelActiveCritique`에서 `api.cancelCritique` 호출, `api.ts` 반환 타입을 `CritiqueResponse` 등으로 명시, `getQueriesData<CritiqueItem[]>({ queryKey: ['critiques'] })` 적용
-  ```
-- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`useCritiqueStatusPolling.ts`](../../../src/hooks/useCritiqueStatusPolling.ts), [`activePhotoList.ts`](../../../src/utils/activePhotoList.ts), [`PhotoCritiqueView.tsx`](../../../src/components/detail/PhotoCritiqueView.tsx), [`GlobalCritiqueToast.tsx`](../../../src/components/critique/GlobalCritiqueToast.tsx), [`usePhotoDetail.ts`](../../../src/hooks/usePhotoDetail.ts), [`usePhotoDetailQuery.ts`](../../../src/hooks/usePhotoDetailQuery.ts), [`useAppStore.ts`](../../../src/store/useAppStore.ts#L223-L239), [`api.ts`](../../../src/services/api.ts), [`photo.ts`](../../../src/types/photo.ts#L56-L97), [`critique.ts`](../../../src/types/critique.ts#L54-L63), [`CritiqueView.tsx`](../../../src/components/CritiqueView.tsx#L52-L64)
+  - **원인 및 조치**: ① `useCritiqueStatusPolling` 훅을 신설해 `PhotoCritiqueView`(288줄)와 `GlobalCritiqueToast`(212줄)의 중복 Polling을 일원화하고 `inFlight`·`clearScheduledTimer`·`document.visibilityState === 'hidden'` 가드로 `focus`/`visibilitychange` 타이머 증식을 차단함, ② `clearJobTimerRef`/`dismissTimerRef` 및 `generatingCritiquePhotoIds` 확인으로 3.5s/4s 토스트 자동 닫힘 재분석 레이스를 차단함, ③ `activePhotoList.ts`의 `getActivePhotoList`로 `queryKey: ['critiques']` 접두어·최신 `dataUpdatedAt` 조회를 적용하고 `usePhotoDetail`↔`usePhotoDetailQuery` 순환 참조 및 `PhotoDetail`·`api.ts` 비평 `Promise<any>`·`useAppStore.cancelActiveCritique` 직접 `fetch`·빈 `catch` 3곳을 모두 해소함(`usePhotoDetail.ts` 285줄·`PhotoCritiqueView.tsx` 288줄 경량화).
+  - **회귀 테스트 결과**: `npx tsc --noEmit && npm run build` (`PASS`), `./venv/bin/pytest backend/tests/test_critique_repository_and_api.py backend/tests/test_critique_cancellation.py -q` (샌드박스 비-MPS no-op 호환, `24 passed`)
 
 ### [REFACTOR-04] `CritiqueDocumentModal` Hooks 순서 위반 런타임 크래시·전역 키 가로채기 및 PDF XSS/인라인 색상 역전 교정
 - **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
@@ -139,16 +132,17 @@
   - **원인 및 조치**: ① `test_ensemble_math.py`에서 자체 로컬 함수를 전면 제거하고 실제 프로덕션 모듈인 `services.scoring`의 4대 광학 가중치 모드(`resolve_perceptual_weights`), 미학 보너스 공식(`calculate_aesthetic_bonus`), 융합/클램핑(`calculate_overall_vr_score`)을 100% 실검증하도록 개편, ② `test_unipercept.py`의 `app.services.*` 임포트를 `services.*`로 일원화하고, `TC-CRT-12`를 실제 `GemmaAdapter.generate_perceptual_critique` 메서드 및 토크나이저/생성기 파이프라인 실실행으로 개편, `TC-CRT-13`은 상위 파이프라인 통째 모킹을 걷어내고 `UniPerceptAdapter.generate_full_ensemble_critique` 실행 중 VQA 실패 시 예외 전파 및 `_execute_gemma_critique_pipeline` 자동 폴백 흐름을 실검증, ③ `test_critique_repository_and_api.py`에 `POST /api/chat/critique`(200/404), `GET /api/chat/critique/status/{id}`, `POST /api/chat/critique-summary`(200/400) 3대 엔드포인트의 통합 호출 및 응답 스키마 실검증 추가.
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/ -v` (`132 passed`), `npx tsc --noEmit && npm run build` (`PASS`)
 
-### [REFACTOR-08] ADR-05 이전 레거시 사문화 코드(~560줄)·장문 함수 정리 및 프로그레스 라벨/`ScoringGuideModal` 포털·진입점 보강
+### [REFACTOR-08] ADR-05 레거시 코드·비대 파일 경량화, Headless MPS Segfault 방어 및 프로그레스/`ScoringGuideModal` 보강
 - **심각도**: 🟡 Should Fix (권장 조치)
-- **위치**: `backend/app/services/chat_service.py#L246-L254, #L308`, `backend/app/services/mlx_adapters.py#L516-L650`, `backend/app/services/unipercept_adapter.py#L301, #L449-L505, #L575-L892`, `backend/app/services/ai_parser.py#L58-L78, #L119-L160, #L222-L257`, `backend/app/database.py#L41-L206`, `src/components/critique/CritiqueProgressWidget.tsx#L8-L19`, `src/components/critique/ScoringGuideModal.tsx#L166-L185`, `src/components/critique/ScoreHudStrip.tsx`, `src/components/critique/CritiqueDocumentArticle.tsx#L73-L146`, `src/utils/critiqueExporter.ts#L309-L646`, `src/hooks/usePhotoDetail.ts#L9-L44`
-- **위반 규칙**: Rule 4.1 (함수 <= 30줄, UI 파일 <= 300줄), Rule 4.2 (모호한 변수명 정리), Audit Matrix #1, #5 & #6 (사문화 코드 제거, 순환 참조 해소, ADR-04/05 UI 스펙 정합성)
+- **위치**: `backend/app/services/unipercept_adapter.py` (1,212줄), `backend/app/services/mlx_adapters.py` (758줄), `backend/app/services/chat_service.py` (472줄), `backend/app/services/ai_parser.py` (379줄), `backend/app/services/base_model.py#L84-L88`, `backend/app/database.py#L41-L206`, `backend/tests/conftest.py`, `src/utils/critiqueExporter.ts` (710줄), `src/components/critique/CritiqueDocumentModal.tsx` (481줄), `src/components/critique/ScoringGuideModal.tsx` (408줄), `src/utils/critiqueParser.tsx` (353줄), `src/components/critique/CritiqueDocumentToolbar.tsx` (319줄), `src/components/critique/CritiqueCard.tsx` (303줄), `src/components/critique/CritiqueProgressWidget.tsx#L8-L19`, `src/components/critique/ScoreHudStrip.tsx`, `src/hooks/usePhotoDetail.ts#L9-L44`
+- **위반 규칙**: Rule 4.1 (함수 <= 30줄, UI 파일 <= 300줄), Rule 4.2, Audit Matrix #1/#4/#5/#6 (사문화 코드 제거, 순환 참조 해소, 비-MPS 안전 가드)
 - **발견된 문제**:
-  - `chat_service.py#L248`의 프로덕션 `MagicMock` 분기 코드와 폐기된 2단계 번역/3-Way VQA/정규식 파서(~560줄)가 잔존하며, `database.py` 백필 함수·`critiqueExporter.ts`(658줄)·`CritiqueDocumentModal.tsx`(449줄) 장문 함수 및 `usePhotoDetail`<->`usePhotoDetailQuery` 순환 참조가 존재함.
-  - 진행률이 `15% -> 10%`로 역행하며 구형 `[1/6]` 및 `'한국어 번역'`(`CritiqueProgressWidget`) 라벨이 노출되고, 상세 패널/문서 모달에서 `hideScoreboard`로 `[?] 점수 산출 가이드` 버튼이 사라지며 `CritiqueCard` 내부에서 `createPortal` 누락으로 `ScoringGuideModal`이 클리핑됨.
+  - `chat_service.py`의 프로덕션 `MagicMock` 분기와 ADR-05 이전 폐기된 2단계 번역/3-Way VQA/정규식 파서(`~560줄`)가 잔존하며 `unipercept_adapter.py`(1,212줄)·`mlx_adapters.py`(758줄)·`critiqueExporter.ts`(710줄)·`CritiqueDocumentModal.tsx`(481줄)·`ScoringGuideModal.tsx`(408줄) 등이 비대함 (`usePhotoDetail`<->`usePhotoDetailQuery` 순환 참조 포함).
+  - `base_model.py#L84-L88`, `chat_service.py#L99-L102`, `unipercept_adapter.py#L102,L178,L224,L334,L680`에서 `torch.backends.mps.is_available()` 확인 없이 `torch.mps.empty_cache()`/`synchronize()`를 호출해 Headless/비-MPS 환경(`is_built=True, is_available=False`)에서 C++ Segmentation Fault가 발생함(실증됨). 또한 `conftest.py`에 헤드리스 `mlx_vlm` 스텁이 없어 Metal 미지원 세션에서 2건 실패함.
+  - 진행률 역행(`15% -> 10%`)·구형 `[1/6]`/`'한국어 번역'` 라벨, 상세 패널/문서 모달 `[?] 점수 산출 가이드` 버튼 누락 및 `ScoringGuideModal` `createPortal` 누락이 존재함.
 - **권장 개선안 (Suggested Diff)**:
   ```text
-  - `conftest.py` 픽스처 갱신 후 `MagicMock` 분기 및 레거시 번역/3-Way VQA 코드를 제거하고, `PhotoDetail` 타입 분리·인쇄 템플릿(`critiquePrintTemplate.ts`)/문서 액션 훅 분리로 파일/함수 크기 축소
-  - 진행률을 단조 증가(`[1/3]~[3/3]`)로 교정하고 `CritiqueProgressWidget` 단계명을 `[시각 채점 / 지각 앵커 / 심층 비평 / 평론 완성]`으로 동기화, `ScoringGuideModal`에 `createPortal(..., document.body)` 및 `ScoreHudStrip`/문서 마스트헤드 `[?]` 버튼 연결
+  - 레거시 번역/3-Way VQA 제거, `PhotoDetail` 타입·`critiquePrintTemplate.ts` 분리로 300줄 이하 경량화 및 프로그레스/포털 동기화
+  - MPS 캐시 정리에 `torch.backends.mps.is_available()` 가드 헬퍼 적용(모킹 호환 포함) 및 `conftest.py` 헤드리스 `mlx_vlm` 스텁 보강
   ```
 - **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)

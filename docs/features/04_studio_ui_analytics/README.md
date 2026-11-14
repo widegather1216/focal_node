@@ -1,6 +1,6 @@
 # 📊 [04_studio_ui_analytics] Studio UI, Design System & Gear Analytics
 
-- **현재 상태 (Lifecycle)**: `📐 Planning (Baseline 완료 / 통계 차트 드릴다운 Step 1~4 대기 / REFACTOR 2건 대기)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (Baseline 완료 / REFACTOR 2건 대기 / 통계 차트 드릴다운 Step 3~4 대기)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
 - **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 2건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
@@ -35,10 +35,11 @@
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-10-17 / interactive-feature-planner / 장비 통계 차트 클릭 갤러리 드릴다운(Click-to-Filter) 및 35mm 환산 필터 연동 스펙 수립`
+- **직전 완료 작업**: `2026-11-14 / clean-code-auditor / 전 도메인 통합 정적 감사 반영 (REFACTOR-01, 02 최신 라인·FullscreenViewer 433줄·any/fetch 전수 스캔 / 직전 기획: 2026-10-17)`
 - **생성/수정된 핵심 파일**:
+  - `docs/features/04_studio_ui_analytics/verification.md`: `useAppStore.ts` 직접 `fetch()`/`FullscreenViewer.tsx`(433줄) 및 `api.ts`(17건 `any`)/`useFullscreenControls.ts` 감사 내역 최신화
   - `docs/features/04_studio_ui_analytics/*`: `applyAnalyticsDrilldown` 상태 전이 계약 및 `GearDonutCharts`/`ExifBarCharts` 인터랙티브 드릴다운 명세 반영
 - **검증 완료된 테스트 실행 명령어**:
   - `./venv/bin/pytest backend/tests/test_api_analytics.py && npx tsc --noEmit`
 - **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - `ExifBarCharts.tsx`에서 화각 막대(`"35mm"`) 클릭 시 숫자(`35`)를 파싱하여 `focal_length_min: 35, focal_length_max: 35, use_35mm_equivalent: is35mmMode`로 전달할 것.
+  - `REFACTOR-01`, `REFACTOR-02` 해결 권장 (`"04_studio_ui_analytics 도메인의 REFACTOR-01 티켓 해결해줘"`). 이후 Active Step 3~4 구현 시 `ExifBarCharts.tsx`에서 화각 막대(`"35mm"`) 클릭 시 숫자(`35`)를 파싱하여 `focal_length_min: 35, focal_length_max: 35, use_35mm_equivalent: is35mmMode`로 전달할 것.

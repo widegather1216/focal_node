@@ -1,6 +1,6 @@
 # 🧪 [02_search_curation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Open Issues (Baseline AC 검증 완료 / RRF·스마트앨범 AC 2건 대기 / REFACTOR 1건 대기)`
+- **검증 상태**: `🩹 Debugging (Baseline 완료 / REFACTOR-01 1건 대기 / RRF·스마트앨범 AC 2건 대기)`
 - **인수 조건 통과율**: `1 / 3 (Baseline 100%)`
 - **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건`
 
@@ -52,16 +52,17 @@
 
 ## 🧐 4. 코드 품질 감사 리포트 (Audit & Refactoring Logs)
 
-### [REFACTOR-01] `SearchService` 모델 미설치 시 SQLite 폴백 방어 및 상세 패널 유사 사진(`similar:`) 버튼 연결
+### [REFACTOR-01] `SearchService` 모델 미설치 시 SQLite 폴백 방어, `search.py` 표준 로깅 전환 및 상세 패널 유사 사진(`similar:`) 버튼 연결
 - **심각도**: 🟡 Should Fix (권장 조치)
-- **위치**: `backend/app/services/search_service.py#L28-L37`, `src/components/detail/PhotoExifView.tsx`
-- **위반 규칙**: Graceful Fallback & UI Feature Wiring
+- **위치**: `backend/app/services/search_service.py#L16-L58`, `backend/app/api/search.py#L23-L25, #L43-L45`, `src/components/detail/PhotoExifView.tsx`, `src/components/DetailPanel.tsx`
+- **위반 규칙**: Graceful Fallback, Rule 4.1 (`search_photos` 43줄 > 30줄), Rule 4.3 (표준 로깅) & UI Feature Wiring
 - **발견된 문제**:
-  - `SearchService.search_photos`에서 `get_siglip_adapter().get_text_embedding()` 호출 시 예외 방어가 없어, 모델 미설치 상태에서 검색 시 SQLite 텍스트/EXIF 매칭 결과까지 함께 500 에러로 실패함.
+  - `SearchService.search_photos`(43줄)에서 `get_siglip_adapter().get_text_embedding()` 호출 시 예외 방어가 없어, SigLIP 2 모델 미설치/로딩 실패 상태에서 검색 시 SQLite 텍스트/EXIF 매칭 결과까지 함께 500 에러로 실패함.
+  - `backend/app/api/search.py#L24,L44`에서 표준 로거 대신 `traceback.print_exc()`를 직접 출력함.
   - 백엔드 `POST /api/search/similar` 및 `src/services/api.ts`의 `similar:{photoId}` 라우팅이 구현되어 있으나, 우측 상세 패널 UI에 이를 호출하는 버튼이 누락되어 있음.
 - **권장 개선안 (Suggested Diff)**:
   ```text
-  - search_service.py에서 SigLIP 2 임베딩 추출 실패 시 경고 로깅 후 text_search_ids + EXIF 필터 결과만 반환하도록 try/except 폴백 적용
-  - PhotoExifView.tsx 또는 DetailPanel.tsx 헤더에 setSearchQuery(`similar:${photo.id}`) 트리거 버튼 추가
+  - search_service.py에서 쿼리 임베딩·검색 단계를 헬퍼로 분리하고 SigLIP 2 실패 시 경고 로깅 후 text_search_ids + EXIF 결과만 반환하도록 폴백 적용
+  - search.py의 traceback.print_exc()를 logger.exception(...)으로 대체하고 PhotoExifView.tsx/DetailPanel.tsx에 setSearchQuery(`similar:${photo.id}`) 버튼 연결
   ```
 - **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)

@@ -40,13 +40,15 @@ backend/app/
 │   └── unipercept_utils.py            # [기존] UniPercept 단일 패치(448x448) 이미지 전처리 및 점수 토큰 매핑 유틸리티
 
 src/
-├── types/critique.ts                  # [기존] CritiqueItem(overall_score, iaa_score, iqa_score, ista_score, critique_en 포함)
+├── types/critique.ts                  # [기존] CritiqueItem(4종 점수, critique_en), CritiqueResponse/Cancel/Delete 응답 타입
 ├── utils/
+│   ├── activePhotoList.ts             # [신규] 활성 탭(비평 ['critiques'] prefix / 갤러리) 기반 사진 목록 캐시 추출 유틸
 │   ├── critiqueParser.tsx             # [기존] 마크다운 AST 파서, 6-Way 스코어보드 추출 및 인라인 스타일 렌더 유틸
 │   └── critiqueExporter.ts            # [기존] Markdown 직렬화, A4 인쇄 HTML 템플릿 및 html2canvas/jsPDF 엔진
 ├── hooks/
-│   ├── usePhotoDetail.ts              # [기존] 상세 패널 상태, 비평 Polling/취소/삭제 및 재분석 제어 훅
-│   ├── usePhotoDetailQuery.ts         # [기존] 단일 사진 상세 정보 TanStack Query 훅
+│   ├── useCritiqueStatusPolling.ts    # [신규] 단일 타이머 체인·inFlight/visibility 가드 통합 비평 상태 Polling & 복구 훅
+│   ├── usePhotoDetail.ts              # [기존] 상세 패널 상태, 비평 요청/취소/삭제 및 재분석 제어 훅 (285줄 경량화)
+│   ├── usePhotoDetailQuery.ts         # [기존] 단일 사진 상세 정보 TanStack Query 훅 (순환 참조 해소)
 │   └── useModalZoomPan.ts             # [기존] 모달 캔버스 휠 확대/축소 및 드래그 패닝 제어 훅
 └── components/
     ├── CritiqueView.tsx               # [기존] 전체 비평 아카이브 대시보드 탭 (헤더 분리 후 223줄 경량화)

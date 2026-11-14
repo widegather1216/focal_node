@@ -1,8 +1,8 @@
 # 🧪 [01_indexing_storage] Verification & Ticket Logs
 
-- **검증 상태**: `📐 Planning (DEFECT-01~11 및 REFACTOR-01 전수 해결 완료 / Active Iteration Step 1 진행 대기)`
+- **검증 상태**: `🩹 Debugging (DEFECT-01~11 및 REFACTOR-01 해결 완료 / REFACTOR-02 1건 대기)`
 - **인수 조건 통과율**: `1 / 4 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건`
 
 ---
 
@@ -66,52 +66,22 @@
 ## 🚨 3. 결함 리포트 (Defect Logs)
 
 ### [DEFECT-01] `VectorRepository.get_embedding_by_id`의 NumPy array 불리언 평가로 인한 100% `ValueError` 크래시
-- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
-- **심각도**: 🔴 P0 Critical (Runtime Crash / 100% Reproducible)
-- **해결 내역**:
-  - **수정 파일**: [`backend/app/repositories/vector_repository.py`](../../../backend/app/repositories/vector_repository.py#L52-L73), [`backend/tests/test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py#L255-L313)
-  - **원인 및 조치**: ChromaDB `collection.get(..., include=["embeddings"])` 반환 `embeddings` 필드가 `numpy.ndarray`일 때 `if target_data.get('embeddings'):` 직접 불리언 평가로 인한 다차원 배열 `ValueError` 크래시를 `embeddings is None or len(embeddings) == 0` 및 Guard Clause 적용 후 `.tolist()` 변환으로 완전 해소.
-  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_07_get_embedding_by_id_ndarray_and_boundary` (`PASS`), `./venv/bin/pytest backend/tests/` (133 passed)
+- **현재 상태**: 🟢 RESOLVED — Guard Clause 및 `.tolist()` 변환으로 ndarray 불리언 크래시 해소 (`TC-IDX-07`) | 회귀: PASS (133 passed)
 
 ### [DEFECT-02] `VectorRepository.delete`의 예외 삼킴으로 인한 보상 트랜잭션 무력화 및 좀비 벡터 영구 잔류
-- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
-- **심각도**: 🔴 P0 Critical (Multi-Store Consistency & Zombie Vectors)
-- **해결 내역**:
-  - **수정 파일**: [`backend/app/repositories/vector_repository.py`](../../../backend/app/repositories/vector_repository.py#L30-L40), [`backend/tests/test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py#L315-L365)
-  - **원인 및 조치**: `VectorRepository.delete`에서 ChromaDB `collection.delete` 청크 삭제 실패 시 예외를 삼키던(`except Exception: print`) 결함을 `logger.error` 로깅 후 `raise`로 재전파하도록 수정. 이로써 `CompensatingTransactionManager.delete_and_commit`이 예외를 감지하여 SQLite `commit`을 중단하고 `rollback`을 수행하도록 보장하여 다중 저장소 정합성 및 좀비 벡터 영구 잔류를 원천 차단.
-  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_08` (`PASS`), `./venv/bin/pytest backend/tests/` (134 passed)
+- **현재 상태**: 🟢 RESOLVED — `collection.delete` 실패 시 `logger.error` 후 `raise` 재전파로 보상 트랜잭션 롤백 보장 (`TC-IDX-08`) | 회귀: PASS (134 passed)
 
 ### [DEFECT-03] `start_indexing` / `sync_database` TOCTOU 동시성 레이스로 인한 중복 인덱서 실행 및 ChromaDB 벡터 영구 소실
-- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
-- **심각도**: 🔴 P0 Critical (Concurrency Race & Data Desync)
-- **해결 내역**:
-  - **수정 파일**: [`backend/app/services/indexing_state.py`](../../../backend/app/services/indexing_state.py#L102-L135), [`backend/app/api/indexing.py`](../../../backend/app/api/indexing.py#L20-L75), [`backend/app/services/indexing_service.py`](../../../backend/app/services/indexing_service.py#L505-L515), [`backend/tests/test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py#L366-L470)
-  - **원인 및 조치**: `start_indexing` 및 `sync_database`에서 상태 검사 후 경로/DB 처리 도중 락 없이 경과하다가 뒤늦게 `status="processing"`을 설정하던 TOCTOU 레이스를 해소하기 위해, `IndexingStateManager`에 원자적 상태 선점 메서드 `try_start_indexing()`을 도입하여 락 내부에서 즉시 `"processing"`을 선점하고 경합 요청을 400 거부하도록 조치. 또한 경로/DB 작업 예외 발생 시 `reset_status()`로 안전 롤백하고, `run_indexing_background` startup 시 `initialize_background_run()`으로 상태가 순간적으로 `idle`로 풀리는 레이스를 원천 차단함.
-  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_09` (`PASS`), `./venv/bin/pytest backend/tests/` (135 passed)
+- **현재 상태**: 🟢 RESOLVED — `IndexingStateManager.try_start_indexing()` 원자적 상태 선점 및 `initialize_background_run()` 적용 (`TC-IDX-09`) | 회귀: PASS (135 passed)
 
 ### [DEFECT-04] `_commit_batch_with_retry` 3회 실패 시 예외 삼킴으로 인한 대규모 사진 유실 및 거짓 정상 완료 위장
-- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
-- **심각도**: 🔴 P0 Critical (Silent Degradation & Cross-Layer Data Loss)
-- **해결 내역**:
-  - **수정 파일**: [`backend/app/services/indexing_service.py`](../../../backend/app/services/indexing_service.py#L435-L643), [`backend/app/services/indexing_state.py`](../../../backend/app/services/indexing_state.py#L86-L257), [`backend/app/api/indexing.py`](../../../backend/app/api/indexing.py#L24-L74), [`src-tauri/src/lib.rs`](../../../src-tauri/src/lib.rs#L275-L341), [`src/store/useAppStore.ts`](../../../src/store/useAppStore.ts#L37-L161), [`src/hooks/useTauriEvents.ts`](../../../src/hooks/useTauriEvents.ts#L6-L159), [`src/hooks/useIndexingStatus.ts`](../../../src/hooks/useIndexingStatus.ts#L6-L141), [`src/components/sidebar/IndexingProgressCard.tsx`](../../../src/components/sidebar/IndexingProgressCard.tsx#L1-L203), [`src/components/Sidebar.tsx`](../../../src/components/Sidebar.tsx#L21-L355), [`backend/tests/test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py#L475-L593)
-  - **원인 및 조치**: 2-Way 추적 및 Devil's Advocate 검증을 통해 `_commit_batch_with_retry` 예외 삼킴과 더불어 `run_indexing_background`/`_finalize_indexing_status`의 `status="idle"` 및 완료 로그 무조건 발행, `run_id` 미격리로 인한 취소/재시작 세대 충돌, 프론트엔드 `'error'` 상태 `'idle'` 치환 마스킹까지 일괄 해소함. `_commit_batch_with_retry`가 세션 롤백 후 3회 실패 시 예외를 재전파하도록 수정하고, `IndexingStateManager`에 단조 증가 `run_id` 세대 격리·원자적 `finalize_run`·`error_message` 저장을 도입하여 실패 시 후속 청크 중단 및 `status="error"` 전이와 함께 `Background indexing completed.`/`Sync completed.` 출력을 차단함. 또한 Tauri `indexing-error` 이벤트 채널, Zustand `reportIndexingError`/`dismissIndexingError`, `useIndexingStatus` `'error'` 분기 및 타이머 정합성 가드, `IndexingProgressCard` 에러 전용 UI를 연동하여 거짓 완료 UI 마스킹을 완전 제거함.
-  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_10` (`PASS`), `./venv/bin/pytest backend/tests/` (136 passed), `npx tsc --noEmit && npm run build` (`PASS`), `cargo check --manifest-path src-tauri/Cargo.toml` (`PASS`)
+- **현재 상태**: 🟢 RESOLVED — 배치 커밋 예외 재전파, `run_id` 세대 격리, `status="error"` 전이 및 Tauri/UI 에러 전용 표시 연동 (`TC-IDX-10`) | 회귀: PASS (136 passed)
 
 ### [DEFECT-05] `index_single_file_sync`의 선행 삭제(Delete-Before-Commit)로 인한 수정 파일 재인덱싱 취소/실패 시 데이터 영구 증발
-- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
-- **심각도**: 🔴 P0 Critical (Data Loss on Interrupted Reindexing)
-- **해결 내역**:
-  - **수정 파일**: [`backend/app/services/indexing_service.py`](../../../backend/app/services/indexing_service.py#L263-L339), [`backend/app/services/photo.py`](../../../backend/app/services/photo.py#L152-L259), [`backend/tests/test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py#L596-L869)
-  - **원인 및 조치**: 2-Way 경쟁 가설 추적 및 Devil's Advocate 검증을 통해 `index_single_file_sync`의 배치 커밋 전 `delete_photo_atomic_sync` 선행 삭제 결함과 `UNIQUE(images.file_path)` 충돌/테스트 FK 캐스케이드/post-commit 재시도 경계를 일괄 해소함. `index_single_file_sync`를 `_find_existing_id_or_skip`·`_resolve_hash_conflict`로 분리해 stat/DB/해시 구간까지 예외 안전화하고 즉시 삭제를 제거하여 top-level `replaces_image_id`만 전달하도록 수정함. `_save_photos_atomic_internal`에서는 동일 미커밋 SQLite 트랜잭션 내 `db.add_all` 직전 `_delete_replaced_rows_in_tx(..., synchronize_session="fetch") + db.flush()`로 자식/부모 행을 선삭제해 커밋 실패 시 `db.rollback()`으로 100% 원복을 보장했고, 커밋 성공 직후에만 `stale_old_ids`에 대해 격리된 `_cleanup_replaced_artifacts`를 실행해 구 벡터/구 썸네일을 정리하며 post-commit 삭제 오류가 `_commit_batch_with_retry` 재시도로 재진입하지 않도록 차단함.
-  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_11 -v` (`PASS`), `./venv/bin/pytest backend/tests/ -v` (`137 passed`)
+- **현재 상태**: 🟢 RESOLVED — 선행 삭제 제거 후 `_save_photos_atomic_internal` 내 미커밋 선삭제+`flush` 및 post-commit 아티팩트 격리 정리 (`TC-IDX-11`) | 회귀: PASS (137 passed)
 
 ### [DEFECT-06] macOS 유니코드 정규화(NFD vs NFC) 불일치로 인한 `_identify_zombie_photo_ids`의 한글 폴더 사진 전량 오삭제
-- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
-- **심각도**: 🔴 P0 Critical (False-Positive Data Purge)
-- **해결 내역**:
-  - **수정 파일**: [`backend/app/services/indexing_service.py`](../../../backend/app/services/indexing_service.py#L133-L213), [`backend/tests/test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py#L872-L1011)
-  - **원인 및 조치**: macOS APFS에서 `os.path.realpath()`/`os.path.normpath()`가 입력 문자열의 유니코드 정규화 형식(NFC vs NFD)을 변환하지 않아 UI/Tauri(NFC) 등록 폴더와 APFS/os.walk(NFD) 이미지 경로 비교가 실패하던 결함을 해소함. `_normalize_path_for_comparison` 및 `_to_folder_prefix_pair` 헬퍼를 추출해 `unicodedata.normalize("NFC", resolved_path).lower()`로 정규화를 일원화하고, `_belongs_to_any_folder`와 `_identify_zombie_photo_ids`가 직접 전달받은 prefix까지 NFC 정규화 후 판정하도록 수정함(물리적 삭제 파일 및 미등록 형제 접두어 폴더 정리는 정상 유지).
-  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_12 -v` (`PASS`), `./venv/bin/pytest backend/tests/ -v` (`138 passed`)
+- **현재 상태**: 🟢 RESOLVED — `_normalize_path_for_comparison`·`_to_folder_prefix_pair`·`_belongs_to_any_folder` NFC 일원화 (`TC-IDX-12`) | 회귀: PASS (138 passed)
 
 ### [DEFECT-07] `_get_tag_val`의 `tag.values == []` 빈 리스트 `IndexError`로 인한 EXIF 메타데이터 파싱 전면 중단
 - **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
@@ -158,9 +128,18 @@
 ## 🧐 4. 코드 품질 감사 리포트 (Audit & Refactoring Logs)
 
 ### [REFACTOR-01] `PhotoMetadata` 프론트엔드 타입 필드 불일치 해소, 라우터 직접 DB 쿼리 캡슐화 및 캐시 예외 로깅
-- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **현재 상태**: 🟢 RESOLVED — `PhotoMetadata` 필드 통일, `PhotoRepository` 캡슐화, 썸네일 캐시 명시적 예외 처리 및 로깅 적용 완료 | 회귀: PASS (99 passed)
+
+### [REFACTOR-02] `indexing_service.py`(819줄) 책임별 모듈 분리, `ActionBar.tsx`·`Sidebar.tsx` 300줄 이하 경량화 및 빈 `catch`/`any` 정리
 - **심각도**: 🟡 Should Fix (권장 조치)
-- **해결 내역**:
-  - **수정 파일**: [`src/types/photo.ts`](file:///Users/kimbeomjun/focal_node/src/types/photo.ts#L15-L35), [`src/components/gallery/PhotoCard.tsx`](file:///Users/kimbeomjun/focal_node/src/components/gallery/PhotoCard.tsx#L32-L40), [`backend/app/repositories/photo_repository.py`](file:///Users/kimbeomjun/focal_node/backend/app/repositories/photo_repository.py#L234-L253), [`backend/app/api/folders.py`](file:///Users/kimbeomjun/focal_node/backend/app/api/folders.py#L13-L17), [`backend/app/api/indexing.py`](file:///Users/kimbeomjun/focal_node/backend/app/api/indexing.py#L36-L56), [`backend/app/services/indexing_service.py`](file:///Users/kimbeomjun/focal_node/backend/app/services/indexing_service.py#L101-L128), [`backend/app/services/photo.py`](file:///Users/kimbeomjun/focal_node/backend/app/services/photo.py#L57-L63), [`backend/app/api/photos.py`](file:///Users/kimbeomjun/focal_node/backend/app/api/photos.py#L66-L75), [`backend/tests/test_api_folders.py`](file:///Users/kimbeomjun/focal_node/backend/tests/test_api_folders.py#L48-L67)
-  - **원인 및 조치**: `PhotoMetadata` 필드 통일, `PhotoRepository` 캡슐화, 썸네일 캐시 명시적 예외 처리 및 로깅 적용 완료.
-  - **회귀 테스트 결과**: `npx tsc --noEmit && npm run build` (PASS), `./venv/bin/pytest backend/tests/` (99 passed)
+- **위치**: `backend/app/services/indexing_service.py#L135-L381, #L601-L797`, `backend/app/api/photos.py#L286-L322`, `src/components/ActionBar.tsx#L1-L357`, `src/components/Sidebar.tsx#L1-L359`, `src/components/sidebar/IndexingProgressCard.tsx#L101,L115,L130`, `src/utils/exportStream.ts#L69`
+- **위반 규칙**: Rule 4.1 (단일 책임 SRP, 함수 <= 30줄, 단일 UI 파일 <= 300줄), Rule 4.3 (빈 `catch` 금지)
+- **발견된 문제**:
+  - `DEFECT-01~11` 하드닝 패치 누적으로 `indexing_service.py`가 819줄(경로/유니코드 정규화, 좀비 정리, 폴더 삭제 검증/실행, 단건 인덱싱, 배치 워커 혼재)로 비대화되었으며, `_commit_batch_with_retry`(36줄)·`run_indexing_background`(48줄) 및 `photos.py`의 `_stream_export_events`(37줄)가 30줄 가이드를 초과함.
+  - 프론트엔드 `ActionBar.tsx`(357줄)와 `Sidebar.tsx`(359줄)가 단일 UI 파일 300줄 상한을 초과하며, `IndexingProgressCard.tsx`의 `catch (e: any)`(`L101, L115, L130`)와 `exportStream.ts#L69`의 주석만 있는 빈 `catch`가 잔존함.
+- **권장 개선안 (Suggested Diff)**:
+  ```text
+  - `indexing_service.py`에서 경로 정규화·좀비 정리·폴더 삭제 도메인 로직(L135-L381)을 `backend/app/services/folder_manager.py`로 분리해 500줄 이하로 경량화하고 장문 함수 헬퍼 추출
+  - `ActionBar.tsx` 내보내기 배너 및 `Sidebar.tsx` 하위 섹션을 분리해 300줄 이하로 축소하고, `exportStream.ts` 빈 `catch`에 `console.debug` 추가 및 `IndexingProgressCard.tsx` 예외 타입 `unknown` 정리
+  ```
+- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
