@@ -27,7 +27,9 @@ backend/app/
 │   ├── indexing.py                    # [기존] 인덱싱 제어(/api/index/start, sync, pause, resume, cancel, status) 라우터
 │   └── photos.py                      # [기존] 사진 목록/상세/썸네일/원본 스트리밍(MAX_CONCURRENT_DECODES=3)/재분석/내보내기
 ├── services/
-│   ├── indexing_service.py            # [수정대상] 2-Pass 스케줄러, SHA-256 Relocation 재연결 및 스마트 오프라인 상태 마킹
+│   ├── indexing_service.py            # [수정대상] 2-Pass 스케줄러, 배치 워커 오케스트레이션 및 하위 호환 위임 래퍼
+│   ├── folder_manager.py              # [기존] 경로/유니코드 정규화, 좀비 정리 및 등록 폴더 검증/삭제 도메인 서비스
+│   ├── photo_reindex.py               # [기존] 단건 사진 In-place EXIF/임베딩/캡션 재추론 및 보상 트랜잭션
 │   ├── indexing_state.py              # [수정대상] 인덱싱 실시간 진행률 및 현재 패스(fast_preview / ai_enrichment) 상태 객체
 │   ├── pipeline.py                    # [수정대상] Pass 1(FastMetadataPipeline) 및 Pass 2(AIEnrichmentPipeline) 단계 분리
 │   ├── taxonomy.py                    # [기존] SigLIP 2 제로샷 시각 태깅용 한국어 시각 개념 택소노미 사전
@@ -41,14 +43,22 @@ backend/app/
 
 src/
 ├── components/
-│   ├── ActionBar.tsx                  # [기존] 다중 선택 사진 일괄 내보내기(SSE 진행률·실패/부분실패 복구 배너) 플로팅 액션바
+│   ├── ActionBar.tsx                  # [기존] 다중 선택 사진 일괄 내보내기 플로팅 액션바 컨테이너
+│   ├── actionbar/
+│   │   └── ExportActionControls.tsx   # [기존] 내보내기 테마/상태 배지 및 기본·복구 액션 버튼
+│   ├── Sidebar.tsx                    # [기존] 좌측 내비게이션·검색·폴더·진행률 사이드바 컨테이너
 │   └── sidebar/
+│       ├── SidebarViewTabs.tsx        # [기존] 브랜드 헤더 및 갤러리/장비분석/AI비평 탭 전환기
+│       ├── SidebarSearchControls.tsx  # [기존] 자연어 검색 입력, 필터 메뉴 및 즐겨찾기 토글
+│       ├── SidebarFolderActions.tsx   # [기존] 사진 폴더 추가 및 DB 동기화 액션 버튼
 │       ├── FolderList.tsx             # [기존] 등록된 로컬 폴더 리스트 및 삭제 제어
 │       └── IndexingProgressCard.tsx   # [수정대상] 2-Pass(프리뷰 스캔 / AI 분석) 진행률·일시정지·취소 위젯
+├── hooks/
+│   ├── useIndexingStatus.ts           # [기존] 인덱싱 진행 상태 Polling 커스텀 훅
+│   └── usePhotoExport.ts              # [기존] SSE 사진 내보내기 실행, AbortController 및 결과 피드백 훅
 ├── services/api.ts                    # [기존] exportPhotos SSE 스트림 클라이언트 및 AbortSignal 지원
 ├── store/useAppStore.ts               # [기존] selectedPhotoIds 원자적 선택/부분 해제(deselectPhotoIds) 상태 관리
-├── utils/exportStream.ts              # [기존] WHATWG SSE 청크 파서, ExportResult 정규화 및 내보내기 결과 판정 순수 유틸리티
-└── hooks/useIndexingStatus.ts         # [기존] 인덱싱 진행 상태 Polling 커스텀 훅
+└── utils/exportStream.ts              # [기존] WHATWG SSE 청크 파서, ExportResult 정규화 및 내보내기 결과 판정 순수 유틸리티
 ```
 
 ---

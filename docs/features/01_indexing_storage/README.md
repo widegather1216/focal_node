@@ -1,8 +1,8 @@
 # 💾 [01_indexing_storage] Indexing Pipeline, Storage & RAW Media
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-01~11 및 REFACTOR-01 해결 완료 / REFACTOR-02 1건 대기)`
+- **현재 상태 (Lifecycle)**: `🛠️ Implementing (DEFECT-01~11 및 REFACTOR-01~02 해결 완료 / Active Step 1 대기)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -17,13 +17,13 @@
 
 ### ✅ Current Baseline (As-Is 기구현 완료)
 - [x] 로컬 폴더 등록/삭제 및 SHA-256 원자적 해싱
-  - 📂 구현: [`indexing.py`](../../../backend/app/api/indexing.py), [`folders.py`](../../../backend/app/api/folders.py), [`indexing_service.py`](../../../backend/app/services/indexing_service.py) | 🧪 테스트: [`test_api_indexing.py`](../../../backend/tests/test_api_indexing.py), [`test_api_folders.py`](../../../backend/tests/test_api_folders.py) (`PASS`)
+  - 📂 구현: [`indexing.py`](../../../backend/app/api/indexing.py), [`folders.py`](../../../backend/app/api/folders.py), [`indexing_service.py`](../../../backend/app/services/indexing_service.py), [`folder_manager.py`](../../../backend/app/services/folder_manager.py) | 🧪 테스트: [`test_api_indexing.py`](../../../backend/tests/test_api_indexing.py), [`test_api_folders.py`](../../../backend/tests/test_api_folders.py) (`PASS`)
 - [x] EXIF 메타데이터 추출 및 360px sRGB JPEG 썸네일 디스크 캐싱
-  - 📂 구현: [`image.py`](../../../backend/app/utils/image.py), [`photo.py`](../../../backend/app/services/photo.py) | 🧪 테스트: [`test_api_photos.py`](../../../backend/tests/test_api_photos.py) (`PASS`)
+  - 📂 구현: [`image.py`](../../../backend/app/utils/image.py), [`photo.py`](../../../backend/app/services/photo.py), [`photo_reindex.py`](../../../backend/app/services/photo_reindex.py) | 🧪 테스트: [`test_api_photos.py`](../../../backend/tests/test_api_photos.py) (`PASS`)
 - [x] SigLIP 2 768차원 임베딩/제로샷 힌트 추출, Gemma 4 캡션/태그 생성 및 ChromaDB + SQLite WAL 보상 트랜잭션
   - 📂 구현: [`pipeline.py`](../../../backend/app/services/pipeline.py), [`taxonomy.py`](../../../backend/app/services/taxonomy.py), [`atomic_transaction.py`](../../../backend/app/repositories/atomic_transaction.py) | 🧪 테스트: [`test_siglip_zero_shot.py`](../../../backend/tests/test_siglip_zero_shot.py) (`PASS`)
 - [x] RAW 원본 인메모리 스트리밍(`MAX_CONCURRENT_DECODES=3`), 단일 사진 재분석(`POST /api/photos/{id}/reindex`) 및 다중 사진 SSE 내보내기
-  - 📂 구현: [`photos.py`](../../../backend/app/api/photos.py), [`exportStream.ts`](../../../src/utils/exportStream.ts), [`api.ts`](../../../src/services/api.ts), [`useAppStore.ts`](../../../src/store/useAppStore.ts), [`ActionBar.tsx`](../../../src/components/ActionBar.tsx) | 🧪 테스트: [`test_api_photos.py`](../../../backend/tests/test_api_photos.py), [`test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py) (`PASS`)
+  - 📂 구현: [`photos.py`](../../../backend/app/api/photos.py), [`exportStream.ts`](../../../src/utils/exportStream.ts), [`usePhotoExport.ts`](../../../src/hooks/usePhotoExport.ts), [`ActionBar.tsx`](../../../src/components/ActionBar.tsx), [`ExportActionControls.tsx`](../../../src/components/actionbar/ExportActionControls.tsx), [`Sidebar.tsx`](../../../src/components/Sidebar.tsx) | 🧪 테스트: [`test_api_photos.py`](../../../backend/tests/test_api_photos.py), [`test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py) (`PASS`)
 
 ### 🚀 Active Iteration: 스마트 오프라인, SHA-256 Relocation & 2-Pass 점진적 인덱싱 `[To-Be]`
 - [ ] **Step 1 [DB & Types]**: `models.py`의 `Image`에 `is_offline: Boolean` 컬럼/마이그레이션 추가, `IndexingStatusResponse`에 `phase: "fast_preview" | "ai_enrichment"` 추가 및 `src/types/photo.ts` 동기화
@@ -35,8 +35,11 @@
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-11-14 / clean-code-auditor / 전 도메인 통합 정적 감사 반영 및 REFACTOR-02 신규 발권 (직전 해결: 2026-11-11 DEFECT-11 / TC-IDX-17 PASS)`
-- **Recent Commits (2026-11-11 23:01)**:
+- **직전 완료 작업**: `2026-11-14 / systematic-debugger / REFACTOR-02 해결 완료 (indexing_service.py SRP 분리·경량화 494줄, ActionBar 62줄·Sidebar 86줄 분할, 빈 catch/any 정리)`
+- **Working Tree State**: 🟢 Clean (No uncommitted changes)
+- **Recent Commits (2026-11-14 23:31)**:
+  - `b6ffc54` - `refactor(ui): decompose ActionBar and Sidebar and sanitize error handling`
+  - `e572898` - `refactor(indexing): decompose indexing_service into folder_manager and photo_reindex`
   - `8434790` - `fix(ui): surface folder removal errors and guard active indexing`
   - `9b7f06d` - `fix(folders): enforce registered path match on folder deletion`
   - `aee3928` - `fix(ui): surface export failures and preserve failed selection`
@@ -60,13 +63,12 @@
   - `DEFECT-03`: `IndexingStateManager`에 원자적 상태 선점 메서드 `try_start_indexing()`을 도입하여 락 내부에서 즉시 `"processing"`을 선점하고 중복 요청을 400 거부하도록 조치. 경로/DB 작업 예외 발생 시 `reset_status()` 안전 롤백 및 `run_indexing_background` startup 시 `initialize_background_run()`으로 상태가 순간적으로 `idle`로 풀리는 레이스를 원천 차단하여 중복 인덱서 실행 및 ChromaDB 벡터 영구 소실 해소.
   - `DEFECT-02`: `VectorRepository.delete`에서 ChromaDB `collection.delete` 실패 시 예외를 삼키던 결함을 제거하고 `logger.error` 후 `raise`로 재전파. `CompensatingTransactionManager.delete_and_commit`이 예외를 감지하여 SQLite `commit`을 방지하고 `rollback`을 수행함으로써 SQLite만 삭제되고 ChromaDB에 좀비 벡터가 영구 잔류하는 정합성 붕괴 완전 해소.
   - `DEFECT-01`: ChromaDB `get(include=["embeddings"])` 반환 `numpy.ndarray`에 대한 직접 불리언 평가 제거, Guard Clause 및 `.tolist()` 변환으로 100% `ValueError` 크래시 방지 및 단일 사진 재인덱싱/유사도 검색 안정화.
-- **잔여 우선순위 리팩토링 (Open REFACTOR Logs)**:
-  - `REFACTOR-02`: `indexing_service.py`(819줄) 책임별 모듈 분리, `ActionBar.tsx`(357줄)·`Sidebar.tsx`(359줄) 300줄 이하 경량화 및 `exportStream.ts` 빈 `catch`/`IndexingProgressCard.tsx` `any` 정리
+- **잔여 우선순위 리팩토링 (Open REFACTOR Logs)**: `없음 (0건)`
+  - `REFACTOR-02` (`🟢 RESOLVED`): `folder_manager.py`(333줄)·`photo_reindex.py`(167줄) SRP 분리 및 `indexing_service.py`(494줄) 위임 래퍼 유지, `_commit_batch_with_retry`/`run_indexing_background`/`_stream_export_events` 헬퍼 분할, `usePhotoExport.ts`(148줄)·`ExportActionControls.tsx`(211줄)·`ActionBar.tsx`(62줄) 및 `SidebarViewTabs.tsx`(91줄)·`SidebarSearchControls.tsx`(98줄)·`SidebarFolderActions.tsx`(138줄)·`Sidebar.tsx`(86줄) 분할, `IndexingProgressCard.tsx`·`SidebarFolderActions.tsx` `unknown` 예외 처리 및 `exportStream.ts#L69` `console.debug` 로깅 추가.
 - **검증 완료된 테스트 실행 명령어**:
-  - `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_17 -v` (`2 passed`)
-  - `./venv/bin/pytest backend/tests/test_api_folders.py -v` (`5 passed`)
-  - `./venv/bin/pytest backend/tests/ -q` (`151 passed`)
-  - `npx tsc --noEmit && npm run build` (`PASS`)
+  - `./venv/bin/pytest backend/tests/test_api_indexing.py backend/tests/test_api_folders.py backend/tests/test_api_photos.py backend/tests/test_concurrency_hardening.py backend/tests/test_siglip_zero_shot.py -v` (`21 passed`)
+  - `./venv/bin/pytest backend/tests/test_backend_hardening.py -k "not test_base_keep_alive_model_lifecycle" -v` (`34 passed, 1 deselected`)
+  - `npx tsc --noEmit && npm run build` (`PASS`, `0 Errors`)
   - `python3 -B ~/.gemini/config/skills/interactive-feature-planner/scripts/check_wiki_health.py docs` (`exit 0`)
 - **다음 세션 포커스 및 추천 프롬프트**:
-  - `REFACTOR-02` 해결 후 `Active Iteration` Step 1 착수 권장: `"01_indexing_storage 도메인의 REFACTOR-02 티켓 해결해줘"`
+  - 미해결 티켓 0건으로 `Active Iteration` Step 1 착수 가능: `"01_indexing_storage 도메인 Step 1 개발 진행해줘"`

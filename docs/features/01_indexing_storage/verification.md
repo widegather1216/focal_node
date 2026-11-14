@@ -1,8 +1,8 @@
 # 🧪 [01_indexing_storage] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-01~11 및 REFACTOR-01 해결 완료 / REFACTOR-02 1건 대기)`
+- **검증 상태**: `🛠️ Implementing (DEFECT-01~11 및 REFACTOR-01~02 해결 완료 / Active Step 1 대기)`
 - **인수 조건 통과율**: `1 / 4 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -131,15 +131,9 @@
 - **현재 상태**: 🟢 RESOLVED — `PhotoMetadata` 필드 통일, `PhotoRepository` 캡슐화, 썸네일 캐시 명시적 예외 처리 및 로깅 적용 완료 | 회귀: PASS (99 passed)
 
 ### [REFACTOR-02] `indexing_service.py`(819줄) 책임별 모듈 분리, `ActionBar.tsx`·`Sidebar.tsx` 300줄 이하 경량화 및 빈 `catch`/`any` 정리
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
 - **심각도**: 🟡 Should Fix (권장 조치)
-- **위치**: `backend/app/services/indexing_service.py#L135-L381, #L601-L797`, `backend/app/api/photos.py#L286-L322`, `src/components/ActionBar.tsx#L1-L357`, `src/components/Sidebar.tsx#L1-L359`, `src/components/sidebar/IndexingProgressCard.tsx#L101,L115,L130`, `src/utils/exportStream.ts#L69`
-- **위반 규칙**: Rule 4.1 (단일 책임 SRP, 함수 <= 30줄, 단일 UI 파일 <= 300줄), Rule 4.3 (빈 `catch` 금지)
-- **발견된 문제**:
-  - `DEFECT-01~11` 하드닝 패치 누적으로 `indexing_service.py`가 819줄(경로/유니코드 정규화, 좀비 정리, 폴더 삭제 검증/실행, 단건 인덱싱, 배치 워커 혼재)로 비대화되었으며, `_commit_batch_with_retry`(36줄)·`run_indexing_background`(48줄) 및 `photos.py`의 `_stream_export_events`(37줄)가 30줄 가이드를 초과함.
-  - 프론트엔드 `ActionBar.tsx`(357줄)와 `Sidebar.tsx`(359줄)가 단일 UI 파일 300줄 상한을 초과하며, `IndexingProgressCard.tsx`의 `catch (e: any)`(`L101, L115, L130`)와 `exportStream.ts#L69`의 주석만 있는 빈 `catch`가 잔존함.
-- **권장 개선안 (Suggested Diff)**:
-  ```text
-  - `indexing_service.py`에서 경로 정규화·좀비 정리·폴더 삭제 도메인 로직(L135-L381)을 `backend/app/services/folder_manager.py`로 분리해 500줄 이하로 경량화하고 장문 함수 헬퍼 추출
-  - `ActionBar.tsx` 내보내기 배너 및 `Sidebar.tsx` 하위 섹션을 분리해 300줄 이하로 축소하고, `exportStream.ts` 빈 `catch`에 `console.debug` 추가 및 `IndexingProgressCard.tsx` 예외 타입 `unknown` 정리
-  ```
-- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+- **해결 내역**:
+  - **수정 및 신설 파일**: [`backend/app/services/folder_manager.py`](../../../backend/app/services/folder_manager.py), [`backend/app/services/photo_reindex.py`](../../../backend/app/services/photo_reindex.py), [`backend/app/services/indexing_service.py`](../../../backend/app/services/indexing_service.py), [`backend/app/api/photos.py`](../../../backend/app/api/photos.py), [`src/hooks/usePhotoExport.ts`](../../../src/hooks/usePhotoExport.ts), [`src/components/actionbar/ExportActionControls.tsx`](../../../src/components/actionbar/ExportActionControls.tsx), [`src/components/ActionBar.tsx`](../../../src/components/ActionBar.tsx), [`src/components/sidebar/SidebarViewTabs.tsx`](../../../src/components/sidebar/SidebarViewTabs.tsx), [`src/components/sidebar/SidebarSearchControls.tsx`](../../../src/components/sidebar/SidebarSearchControls.tsx), [`src/components/sidebar/SidebarFolderActions.tsx`](../../../src/components/sidebar/SidebarFolderActions.tsx), [`src/components/Sidebar.tsx`](../../../src/components/Sidebar.tsx), [`src/components/sidebar/IndexingProgressCard.tsx`](../../../src/components/sidebar/IndexingProgressCard.tsx), [`src/utils/exportStream.ts`](../../../src/utils/exportStream.ts)
+  - **원인 및 조치**: `indexing_service.py`(819줄)에서 경로/유니코드 정규화·좀비 정리·폴더 삭제 검증/실행 도메인 로직을 `folder_manager.py`(333줄)로, 단건 재인덱싱 로직을 `photo_reindex.py`(167줄)로 SRP 분리하고 기존 테스트/라우터의 `monkeypatch`·`patch` 호환성을 위한 위임 래퍼를 유지해 `indexing_service.py`를 494줄로 경량화함. `_commit_batch_with_retry`, `run_indexing_background`, `scan_directory`, `photos.py`의 `_stream_export_events`를 30줄·중첩 2단계 이하 헬퍼로 분할함. 프론트엔드 `ActionBar.tsx`(357줄 ➔ 62줄)는 `usePhotoExport.ts`(148줄)·`ExportActionControls.tsx`(211줄)로, `Sidebar.tsx`(359줄 ➔ 86줄)는 `SidebarViewTabs.tsx`(91줄)·`SidebarSearchControls.tsx`(98줄)·`SidebarFolderActions.tsx`(138줄)로 분할하고 `IndexingProgressCard.tsx`·`Sidebar.tsx`의 `catch (e: any)`를 `catch (err: unknown)` 및 공유 핸들러로, `exportStream.ts#L69`의 빈 `catch`에 `console.debug` 로깅을 보강함.
+  - **회귀 테스트 결과**: `npx tsc --noEmit && npm run build` (`PASS`, `0 Errors`), `./venv/bin/pytest backend/tests/test_api_indexing.py backend/tests/test_api_folders.py backend/tests/test_api_photos.py backend/tests/test_concurrency_hardening.py backend/tests/test_siglip_zero_shot.py -v` (`21 passed`), `./venv/bin/pytest backend/tests/test_backend_hardening.py -k "not test_base_keep_alive_model_lifecycle" -v` (`34 passed, 1 deselected`, 헤드리스 샌드박스 MPS `torch.mps.synchronize()` segfault 테스트 제외)

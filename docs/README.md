@@ -8,8 +8,8 @@
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
 - **Active 도메인**: [`03_ai_critique`](./features/03_ai_critique/README.md) *(구현 4/4 완료, 마지막 잔여 `REFACTOR-08` 해결 시 즉시 `🟢 Sign-Off`)*
-- **현재 단계 (Stage)**: `🩹 Debugging (REFACTOR-03 해결 완료 / 전 도메인 REFACTOR 5건 잔여)`
-- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 `REFACTOR-03` 해결 (`useCritiqueStatusPolling.ts`·`activePhotoList.ts` 분리로 3중 Polling·`focus` 타이머 증식·3.5s/4s 토스트 레이스·`['critiques']` 캐시 키 불일치·`usePhotoDetail`↔`usePhotoDetailQuery` 순환 참조·`useAppStore.cancelActiveCritique` `fetch` 우회·`api.ts` `Promise<any>`·빈 `catch` 3곳 해소 및 `PhotoCritiqueView` 288줄·`usePhotoDetail` 285줄 경량화, `npx tsc --noEmit && npm run build` PASS 및 비평 API/취소 테스트 24종 PASS)
+- **현재 단계 (Stage)**: `🩹 Debugging (01_indexing_storage REFACTOR-02 해결 완료 / 전 도메인 REFACTOR 4건 잔여)`
+- **직전 완료 작업**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) 도메인 `REFACTOR-02` 해결 (`folder_manager.py`·`photo_reindex.py` SRP 분리로 `indexing_service.py` 494줄 경량화 및 `monkeypatch` 위임 래퍼 유지, `_commit_batch_with_retry`/`run_indexing_background`/`_stream_export_events` 헬퍼 분할, `ActionBar.tsx` 62줄·`Sidebar.tsx` 86줄 및 `usePhotoExport.ts`/`ExportActionControls.tsx`/사이드바 3분할, `IndexingProgressCard.tsx`·`SidebarFolderActions.tsx` `unknown` 예외 정리 및 `exportStream.ts#L69` `console.debug` 로깅 추가, `npx tsc --noEmit && npm run build` PASS 및 도메인 API/동시성/하드닝 테스트 55종 PASS)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
   > `"03_ai_critique 도메인의 REFACTOR-08 티켓 해결해줘"` *(`1 티켓 = 1 격리 세션`으로 `systematic-debugger` 순차 해결)*
 
@@ -20,7 +20,7 @@
 | 도메인 (Bounded Context) | 생명주기 상태 | 구현 진척도 (Active Step 1~4) | QA 인수 통과율 | 미해결 티켓 (`🚨D` / `🧐R`) | 최근 작업 요약 |
 | :--- | :--- :---: | :---: | :---: | :---: | :--- |
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `5/5 (100%)` | `0 / 0` | DEFECT-01~04 전수 해결 완료 (손상 인덱스 valid=False, 실패 시 거짓 완료 차단, 1종 조기완료 차단, 중복 스레드/락 삭제 가드), Sign-Off 완료 |
-| 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `14/17 (82%)` | `0 / 1` | DEFECT-01~11 전수 해결 완료, 통합 감사 `REFACTOR-02` 신규 발권(`indexing_service.py` 819줄/`ActionBar`/`Sidebar` 경량화), Active Step 1 대기 |
+| 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `14/17 (82%)` | `0 / 0` | DEFECT-01~11·REFACTOR-01~02 전수 해결 완료(`folder_manager.py`·`photo_reindex.py` 분리, `ActionBar`/`Sidebar` 경량화), Active Step 1 대기 |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 통합 감사 `REFACTOR-01` 최신화(SigLIP 폴백/`search.py` 로깅/`similar:` 버튼), RRF·스마트 앨범 Step 1~4 대기 |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `13/13 (100%)` | `0 / 1` | `DEFECT-02~03`·`REFACTOR-03~07` 해결 완료, `REFACTOR-08`(Headless MPS 가드·비대 파일 경량화 포함) 1건 대기 |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 🩹 Debugging | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 2` | 통합 감사 `REFACTOR-01`/`02` 최신화(`FullscreenViewer` 433줄·직접 `fetch`·`any` 타입 구체화), 차트 드릴다운 Step 3~4 대기 |
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-14]` `[systematic-debugger]` [`01_indexing_storage`]**: `REFACTOR-02` 리팩토링 티켓 해결 완료 (`e572898`, `b6ffc54` / `backend/app/services/folder_manager.py`·`photo_reindex.py` SRP 분리 및 호환 위임 래퍼 유지로 `indexing_service.py` 819줄 ➔ 494줄 경량화, `_commit_batch_with_retry`/`run_indexing_background`/`photos.py` `_stream_export_events` 30줄 이하 헬퍼 분할, `usePhotoExport.ts`·`ExportActionControls.tsx` 분리로 `ActionBar.tsx` 357줄 ➔ 62줄 경량화, `SidebarViewTabs.tsx`·`SidebarSearchControls.tsx`·`SidebarFolderActions.tsx` 분리로 `Sidebar.tsx` 359줄 ➔ 86줄 경량화, `IndexingProgressCard.tsx`·`SidebarFolderActions.tsx` `any` ➔ `unknown` 교정 및 `exportStream.ts#L69` `console.debug` 추가, `tsc && vite build` PASS 및 도메인 API/동시성/하드닝 테스트 55종 PASS, 위키 동기화).
 
 - **`[2026-11-14]` `[systematic-debugger]` [`03_ai_critique`]**: `REFACTOR-03` 리팩토링 티켓 해결 완료 (`8231646` / `src/hooks/useCritiqueStatusPolling.ts` 및 `src/utils/activePhotoList.ts` 신설로 3중 Polling·`focus`/`visibilitychange` 타이머 증식·3.5s/4s 토스트 재분석 레이스 차단, `['critiques']` 접두어 매칭 복원 및 `usePhotoDetail`↔`usePhotoDetailQuery` 순환 참조·`PhotoDetail` 이동, `useAppStore.cancelActiveCritique` `api.cancelCritique` 일원화, `api.ts` 비평/상세 `Promise<any>` 제거, 빈 `catch` 3곳 제거 및 `PhotoCritiqueView` 288줄·`usePhotoDetail` 285줄 경량화, `tsc && vite build` PASS 및 백엔드 비평 API/취소 24종 PASS, 위키 동기화).
 
