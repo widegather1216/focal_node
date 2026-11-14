@@ -215,8 +215,8 @@ def patch_photo_metadata(
             "id": id,
             "ai_analysis": ai_payload
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to update metadata: {str(e)}")
+    except Exception as err:
+        raise HTTPException(status_code=500, detail=f"Failed to update metadata: {str(err)}")
 
 def _resolve_unique_dest_path(dest_folder: str, file_name: str) -> tuple[str, str]:
     base, ext = os.path.splitext(file_name)
@@ -283,6 +283,26 @@ async def _process_single_export_item(item: dict, dest_folder: str) -> tuple[boo
         return False, file_name, f"Failed to copy {file_name}: {str(exc)}"
 
 
+async def _record_export_step(
+    item: dict,
+    dest_folder: str,
+    exported_ids: list[str],
+    failed_ids: list[str],
+    errors: list[str],
+) -> tuple[bool, str]:
+    success, final_name, err_msg = await _process_single_export_item(item, dest_folder)
+    item_id = item.get("id")
+    if success:
+        if isinstance(item_id, str) and item_id:
+            exported_ids.append(item_id)
+        return True, final_name
+
+    if isinstance(item_id, str) and item_id:
+        failed_ids.append(item_id)
+    errors.append(err_msg or f"Failed to export {final_name}")
+    return False, final_name
+
+
 async def _stream_export_events(export_items: list, dest_folder: str):
     errors: list[str] = []
     exported_ids: list[str] = []
@@ -293,28 +313,20 @@ async def _stream_export_events(export_items: list, dest_folder: str):
 
     try:
         yield _format_sse_event("start", {"total": total_count})
-
         for idx, item in enumerate(export_items):
-            success, final_name, err_msg = await _process_single_export_item(item, dest_folder)
-            item_id = item.get("id")
+            success, final_name = await _record_export_step(
+                item, dest_folder, exported_ids, failed_ids, errors
+            )
             if success:
                 exported_count += 1
-                if isinstance(item_id, str) and item_id:
-                    exported_ids.append(item_id)
-                yield _format_sse_event(
-                    "progress",
-                    {"processed": idx + 1, "total": total_count, "file": final_name},
-                )
+                yield _format_sse_event("progress", {"processed": idx + 1, "total": total_count, "file": final_name})
             else:
                 failed_count += 1
-                if isinstance(item_id, str) and item_id:
-                    failed_ids.append(item_id)
-                errors.append(err_msg or f"Failed to export {final_name}")
 
-        done_payload = _build_export_done_payload(
-            exported_count, failed_count, total_count, exported_ids, failed_ids, errors
+        yield _format_sse_event(
+            "done",
+            _build_export_done_payload(exported_count, failed_count, total_count, exported_ids, failed_ids, errors),
         )
-        yield _format_sse_event("done", done_payload)
     except asyncio.CancelledError:
         raise
     except Exception as exc:
@@ -336,14 +348,14 @@ async def reindex_photo(id: str):
     Forces a re-indexing of a single photo.
     """
     try:
-        updated_data = await reindex_single_photo_inplace(id)
-        return updated_data
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to reindex photo: {str(e)}")
+        reindexed_photo = await reindex_single_photo_inplace(id)
+        return reindexed_photo
+    except ValueError as err:
+        raise HTTPException(status_code=404, detail=str(err))
+    except FileNotFoundError as err:
+        raise HTTPException(status_code=404, detail=str(err))
+    except Exception as err:
+        raise HTTPException(status_code=500, detail=f"Failed to reindex photo: {str(err)}")
 
 @router.post("/{id}/favorite", response_model=schemas.FavoriteToggleResponse)
 def toggle_favorite(id: str, db: Session = Depends(get_db)):

@@ -1,396 +1,147 @@
 """
 Indexing Service Module
 
-Consolidates directory scanning, indexer status state management, 
-atomic cleaning routines, and background photo indexing pipelines.
+Coordinates directory scanning, single-file indexing, batch commit retries,
+and background indexing scheduler orchestration while delegating folder/zombie
+cleanup to folder_manager and single-photo reindexing to photo_reindex.
 """
 
-import os
-import hashlib
 import asyncio
+import hashlib
 import logging
-import unicodedata
-from typing import List, Tuple, Dict, Any, Union, Optional
+import os
+import time
+import traceback
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, func
+
+from database import SessionLocal
+from models import Image as DBImage
+from repositories.vector_repository import VectorRepository
+from services.ai_factory import get_gemma_adapter, get_siglip_adapter
+from services.folder_manager import (
+    FolderDeletionConflictError,
+    FolderNotRegisteredError,
+    cleanup_zombie_records as _cleanup_zombie_records_impl,
+    delete_photo_atomic_sync as _delete_photo_atomic_sync_impl,
+    identify_zombie_photo_ids as _identify_zombie_photo_ids_impl,
+    remove_folder_data as _remove_folder_data_impl,
+)
+from services.indexing_state import indexing_state_manager
+from services.photo import get_thumbnail_path
+from services.photo_reindex import reindex_single_photo_inplace as _reindex_single_photo_impl
+from utils.image import extract_metadata
 
 logger = logging.getLogger("focal_node.indexing_service")
 
-from database import SessionLocal
-from models import Image as DBImage, ImageMetadata as DBImageMetadata, AIAnalysis as DBAIAnalysis, IndexedFolder
-from repositories.vector_repository import VectorRepository
-from services.ai_factory import get_siglip_adapter, get_gemma_adapter
-from services.photo import get_thumbnail_path, _prepare_chroma_metadata
-from utils.image import extract_metadata
-
-# Supported file extensions (Standard and RAW formats)
 SUPPORTED_EXTENSIONS = {
-    # Standard formats
     ".jpg", ".jpeg", ".png", ".webp",
-    # RAW formats
-    ".arw", ".cr2", ".cr3", ".nef", ".dng", ".orf", ".rw2", ".pef", ".raf"
+    ".arw", ".cr2", ".cr3", ".nef", ".dng", ".orf", ".rw2", ".pef", ".raf",
 }
 
 vector_repo = VectorRepository()
 
-from services.indexing_state import indexing_state_manager
 
 def pause_indexing() -> bool:
+    """Pauses active background indexing."""
     return indexing_state_manager.pause()
 
 
 def resume_indexing() -> bool:
+    """Resumes paused background indexing."""
     return indexing_state_manager.resume()
 
 
 def cancel_indexing() -> bool:
+    """Cancels active or paused background indexing."""
     return indexing_state_manager.cancel()
 
 
-# --- File Scanner Helpers ---
 def calculate_sha256(file_path: str) -> str:
-    """
-    Computes SHA-256 checksum of the file in chunks to optimize memory usage.
-    """
-    h = hashlib.sha256()
-    with open(file_path, "rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            h.update(chunk)
-    return h.hexdigest()
+    """Computes SHA-256 checksum of a file in chunks to bound memory usage."""
+    sha256_hash = hashlib.sha256()
+    with open(file_path, "rb") as file_handle:
+        for chunk in iter(lambda: file_handle.read(8192), b""):
+            sha256_hash.update(chunk)
+    return sha256_hash.hexdigest()
+
+
+def _collect_supported_folder_files(folder_path: str, seen_paths: set[str]) -> List[str]:
+    """Walks a single folder recursively and collects unseen supported image paths."""
+    collected_files: List[str] = []
+    for root_dir, _, file_names in os.walk(folder_path):
+        for file_name in file_names:
+            if file_name.startswith(".") or file_name.startswith("._"):
+                continue
+            ext = os.path.splitext(file_name)[1].lower()
+            if ext not in SUPPORTED_EXTENSIONS:
+                continue
+            full_path = os.path.join(root_dir, file_name)
+            if full_path not in seen_paths:
+                seen_paths.add(full_path)
+                collected_files.append(full_path)
+    return collected_files
 
 
 def scan_directory(folder_paths: List[str]) -> List[str]:
-    """
-    Recursively scans targeted folders and extracts supported image file paths.
-    Avoids duplicates from overlapping folders or symlinks.
-    """
-    files_to_index = []
-    seen = set()
-    for folder in folder_paths:
-        if not os.path.exists(folder):
-            print(f"[Indexer] Target folder does not exist: {folder}", flush=True)
+    """Recursively scans targeted folders and extracts deduplicated supported image paths."""
+    files_to_index: List[str] = []
+    seen_paths: set[str] = set()
+    for folder_path in folder_paths:
+        if not os.path.exists(folder_path):
+            print(f"[Indexer] Target folder does not exist: {folder_path}", flush=True)
             continue
-        for root, _, files in os.walk(folder):
-            for file in files:
-                if file.startswith(".") or file.startswith("._"):
-                    continue
-                ext = os.path.splitext(file)[1].lower()
-                if ext in SUPPORTED_EXTENSIONS:
-                    full_path = os.path.join(root, file)
-                    if full_path not in seen:
-                        seen.add(full_path)
-                        files_to_index.append(full_path)
+        files_to_index.extend(_collect_supported_folder_files(folder_path, seen_paths))
     return files_to_index
 
 
-# --- Database & Cache Cleanup Routines ---
-def delete_photo_atomic_sync(db: Session, image_id: str):
-    """
-    Atomically removes database records of an image from SQLite and ChromaDB,
-    and purges its cached thumbnail from disk.
-    Uses CompensatingTransactionManager to ensure atomic multi-database consistency.
-    """
-    from repositories.atomic_transaction import CompensatingTransactionManager
-    
-    db_image = db.query(DBImage).filter(DBImage.id == image_id).first()
-    if db_image:
-        db.delete(db_image)
-        
-    tx_manager = CompensatingTransactionManager(db, vector_repo)
-    tx_manager.delete_and_commit([image_id])
-    
-    # Clean up cached thumbnail
-    t_path = get_thumbnail_path(image_id)
-    if os.path.exists(t_path):
-        try:
-            os.remove(t_path)
-        except FileNotFoundError:
-            logger.debug("Thumbnail cache file %s already removed", t_path)
-        except OSError as e:
-            logger.warning("Failed to remove thumbnail cache %s: %s", t_path, e)
-
-
-def _purge_photo_records_batch(db: Session, photo_ids: List[str]) -> None:
-    """
-    Deletes photo records from SQLite and ChromaDB, and removes cached thumbnails.
-    Enforces ChromaDB deletion before SQLite commit (Rule 2.2).
-    """
-    if not photo_ids:
-        return
-    for i in range(0, len(photo_ids), 900):
-        chunk = photo_ids[i : i + 900]
-        db.query(DBImage).filter(DBImage.id.in_(chunk)).delete(synchronize_session=False)
-        for pid in chunk:
-            t_path = get_thumbnail_path(pid)
-            if os.path.exists(t_path):
-                try:
-                    os.remove(t_path)
-                except FileNotFoundError:
-                    logger.debug("Thumbnail cache file %s already removed", t_path)
-                except OSError as e:
-                    logger.warning("Failed to remove thumbnail cache %s: %s", t_path, e)
-    vector_repo.delete(photo_ids)
-
-
-def _normalize_path_for_comparison(path: str) -> str:
-    """Resolves symlinks and normalizes Unicode (NFC) and case for path comparisons."""
-    if not isinstance(path, str) or not path.strip():
-        return ""
-    try:
-        resolved_path = os.path.realpath(path)
-    except Exception as path_err:
-        logger.debug("realpath failed for %s; falling back to normpath: %s", path, path_err)
-        resolved_path = os.path.normpath(path)
-    # macOS APFS stores filenames in NFD while UI/Tauri passes NFC strings; unify to NFC before comparing.
-    return unicodedata.normalize("NFC", resolved_path).lower()
-
-
-def _to_folder_prefix_pair(folder_path: str) -> Optional[tuple[str, str]]:
-    """Builds a normalized (root_path, prefix_with_sep) pair for folder boundary checks."""
-    normalized_root = _normalize_path_for_comparison(folder_path)
-    if not normalized_root:
-        return None
-    folder_prefix = normalized_root if normalized_root.endswith(os.sep) else normalized_root + os.sep
-    return normalized_root, folder_prefix
-
-
-def _belongs_to_any_folder(
-    file_path: str,
-    parent_dir: str,
-    canonical_prefixes: list[tuple[str, str]],
-) -> bool:
-    """Returns True when the file or parent directory resides under any indexed folder."""
-    if not canonical_prefixes:
-        return False
-    normalized_parent = _normalize_path_for_comparison(parent_dir)
-    normalized_file = _normalize_path_for_comparison(file_path)
-    for folder_root, folder_prefix in canonical_prefixes:
-        if (
-            normalized_parent == folder_root
-            or normalized_parent.startswith(folder_prefix)
-            or normalized_file.startswith(folder_prefix)
-        ):
-            return True
-    return False
+def delete_photo_atomic_sync(db: Session, image_id: str) -> None:
+    """Delegates atomic photo deletion while keeping module-level patch hooks intact."""
+    _delete_photo_atomic_sync_impl(
+        db,
+        image_id,
+        vector_repository=vector_repo,
+        thumbnail_path_fn=get_thumbnail_path,
+    )
 
 
 def _identify_zombie_photo_ids(db: Session, normalized_folder_prefixes: list) -> List[str]:
-    """Identifies photo IDs missing on disk or no longer belonging to any indexed folder."""
-    canonical_prefixes = [
-        pair
-        for folder_root, _ in normalized_folder_prefixes
-        if (pair := _to_folder_prefix_pair(folder_root)) is not None
-    ]
-    all_images = db.query(DBImage.id, DBImage.file_path, DBImage.parent_dir).all()
-    zombie_ids: List[str] = []
-    for image_id, file_path, parent_dir in all_images:
-        if not file_path or not os.path.exists(file_path):
-            zombie_ids.append(image_id)
-            continue
-        if not _belongs_to_any_folder(file_path, parent_dir, canonical_prefixes):
-            zombie_ids.append(image_id)
-    return zombie_ids
+    """Delegates zombie photo identification to folder_manager."""
+    return _identify_zombie_photo_ids_impl(db, normalized_folder_prefixes)
 
 
-def cleanup_zombie_records(db: Session = None):
-    """
-    Checks all indexed images and batch deletes records if:
-    1) Their physical files are missing from disk.
-    2) Their parent folder is no longer in IndexedFolder list.
-    Also acts as a Garbage Collector for ChromaDB and Thumbnail Cache.
-    """
-    close_db = False
-    if db is None:
-        db = SessionLocal()
-        close_db = True
-
-    try:
-        indexed_folders = db.query(IndexedFolder.path).all()
-        normalized_folder_prefixes = [
-            pair
-            for folder_record in indexed_folders
-            if (pair := _to_folder_prefix_pair(folder_record.path)) is not None
-        ]
-
-        zombie_ids = _identify_zombie_photo_ids(db, normalized_folder_prefixes)
-        if zombie_ids:
-            print(f"[Indexer] Found {len(zombie_ids)} unindexed/zombie records in SQLite. Cleaning up...", flush=True)
-            _purge_photo_records_batch(db, zombie_ids)
-            db.commit()
-        else:
-            print("[Indexer] No SQLite zombie/unindexed records found.", flush=True)
-
-        print("[Indexer] Zombie cleanup completed.", flush=True)
-    finally:
-        if close_db:
-            db.close()
-
-
-class FolderNotRegisteredError(ValueError):
-    """Raised when attempting to remove a folder not registered in IndexedFolder."""
-
-
-class FolderDeletionConflictError(RuntimeError):
-    """Raised when folder deletion conflicts with an active indexing run."""
-
-
-def _resolve_path_without_leaf_symlink(path: str) -> str:
-    """Normalizes path and resolves parent symlinks without expanding a leaf symlink."""
-    normalized_path = os.path.normpath(path)
-    if normalized_path.startswith("//"):
-        normalized_path = "/" + normalized_path.lstrip("/")
-    if normalized_path == os.sep:
-        return os.sep
-    if os.path.islink(normalized_path):
-        resolved_parent = os.path.realpath(os.path.dirname(normalized_path))
-        return os.path.join(resolved_parent, os.path.basename(normalized_path))
-    return os.path.realpath(normalized_path)
-
-
-def _normalize_folder_deletion_path(path: str) -> str:
-    """Normalizes a path for folder deletion without expanding leaf symlinks."""
-    if not isinstance(path, str) or not path.strip():
-        return ""
-    try:
-        resolved_path = _resolve_path_without_leaf_symlink(path)
-    except Exception as path_err:
-        logger.debug("Safe path resolution failed for %s; falling back to normpath: %s", path, path_err)
-        resolved_path = os.path.normpath(path)
-    return unicodedata.normalize("NFC", resolved_path).lower()
-
-
-def _validate_folder_deletion_pair(folder_path: str) -> tuple[str, str]:
-    """Validates folder_path is a non-empty absolute path and returns its canonical (root, prefix)."""
-    if not isinstance(folder_path, str) or not folder_path.strip() or "\x00" in folder_path:
-        raise ValueError("Folder path must be a non-empty valid path.")
-    if not os.path.isabs(folder_path):
-        raise ValueError(f"Folder path must be an absolute path: {folder_path}")
-    normalized_root = _normalize_folder_deletion_path(folder_path)
-    if not normalized_root:
-        raise ValueError(f"Invalid folder path: {folder_path}")
-    folder_prefix = normalized_root if normalized_root.endswith(os.sep) else normalized_root + os.sep
-    return normalized_root, folder_prefix
-
-
-def _is_target_or_nested_folder(
-    candidate_path: str,
-    normalized_target: str,
-    target_prefix: str,
-) -> bool:
-    """Returns True if candidate_path equals normalized_target or is nested beneath target_prefix."""
-    normalized_candidate = _normalize_folder_deletion_path(candidate_path)
-    if not normalized_candidate:
-        return False
-    return normalized_candidate == normalized_target or normalized_candidate.startswith(target_prefix)
-
-
-def _find_matching_indexed_folders(
-    db: Session,
-    normalized_target: str,
-    target_prefix: str,
-    original_path: str,
-) -> list[IndexedFolder]:
-    """Requires an exact canonical IndexedFolder match, then returns it with nested subfolders."""
-    all_indexed = db.query(IndexedFolder).all()
-    exact_matches = [
-        folder_record
-        for folder_record in all_indexed
-        if _normalize_folder_deletion_path(folder_record.path) == normalized_target
-    ]
-    if not exact_matches:
-        raise FolderNotRegisteredError(f"Folder is not registered: {original_path}")
-
-    return [
-        folder_record
-        for folder_record in all_indexed
-        if _is_target_or_nested_folder(folder_record.path, normalized_target, target_prefix)
-    ]
-
-
-def _belongs_to_deletion_target(
-    file_path: str,
-    parent_dir: str,
-    target_pair: tuple[str, str],
-) -> bool:
-    """Checks if an image record belongs to target_pair without following leaf symlinks."""
-    target_root, target_prefix = target_pair
-    normalized_parent = _normalize_folder_deletion_path(parent_dir)
-    if normalized_parent == target_root or normalized_parent.startswith(target_prefix):
-        return True
-    if not isinstance(file_path, str) or not file_path.strip():
-        return False
-    file_dir_norm = _normalize_folder_deletion_path(os.path.dirname(file_path))
-    return file_dir_norm == target_root or file_dir_norm.startswith(target_prefix)
-
-
-def _find_folder_image_ids(db: Session, target_pair: tuple[str, str]) -> list[str]:
-    """Collects unique IDs of images belonging to the deleted folder target."""
-    all_images = db.query(DBImage.id, DBImage.file_path, DBImage.parent_dir).all()
-    matched_ids: list[str] = []
-    seen_ids: set[str] = set()
-    for image_id, file_path, parent_dir in all_images:
-        if image_id in seen_ids:
-            continue
-        if _belongs_to_deletion_target(file_path, parent_dir, target_pair):
-            seen_ids.add(image_id)
-            matched_ids.append(image_id)
-    return matched_ids
-
-
-def _execute_folder_deletion(
-    active_db: Session,
-    folder_path: str,
-    target_pair: tuple[str, str],
-) -> None:
-    """Validates registration and active indexing state, then deletes folder records atomically."""
-    normalized_target, target_prefix = target_pair
-    folders_to_delete = _find_matching_indexed_folders(
-        active_db, normalized_target, target_prefix, folder_path
+def cleanup_zombie_records(db: Session = None) -> None:
+    """Delegates zombie record cleanup while keeping module-level patch hooks intact."""
+    _cleanup_zombie_records_impl(
+        db=db,
+        session_factory=SessionLocal,
+        vector_repository=vector_repo,
+        thumbnail_path_fn=get_thumbnail_path,
     )
-    if indexing_state_manager.status in ("processing", "paused"):
-        raise FolderDeletionConflictError("Cannot remove folder while indexing is in progress or paused.")
-
-    image_ids = _find_folder_image_ids(active_db, target_pair)
-    if image_ids:
-        print(f"[Indexer] Removing {len(image_ids)} images for folder {folder_path}", flush=True)
-        _purge_photo_records_batch(active_db, image_ids)
-    for folder_record in folders_to_delete:
-        active_db.delete(folder_record)
-    active_db.commit()
 
 
 def remove_folder_data(folder_path: str, db: Session = None) -> None:
-    """
-    Deletes a registered folder (and nested registered subfolders) from IndexedFolder
-    and removes all associated photos from SQLite, ChromaDB, and Thumbnail cache.
-    """
-    target_pair = _validate_folder_deletion_pair(folder_path)
-    close_db = db is None
-    active_db = SessionLocal() if close_db else db
-    try:
-        _execute_folder_deletion(active_db, folder_path, target_pair)
-    except (FolderNotRegisteredError, FolderDeletionConflictError, ValueError):
-        active_db.rollback()
-        raise
-    except Exception as remove_err:
-        active_db.rollback()
-        logger.error("[Indexer] Error removing folder data for %s: %s", folder_path, remove_err)
-        raise
-    finally:
-        if close_db:
-            active_db.close()
+    """Delegates registered folder deletion while keeping module-level patch hooks intact."""
+    _remove_folder_data_impl(
+        folder_path,
+        db=db,
+        session_factory=SessionLocal,
+        vector_repository=vector_repo,
+        thumbnail_path_fn=get_thumbnail_path,
+        state_manager=indexing_state_manager,
+    )
 
 
-# --- Indexing Pipeline Workers ---
 def run_ai_pipeline_sync(file_path: str) -> Tuple[Dict[str, Any], list[float], Dict[str, Any]]:
-    """
-    Synchronous helper to run EXIF extraction, embedding generation, and caption generation sequentially.
-    """
+    """Runs EXIF extraction, SigLIP embedding/hints, and Gemma captioning sequentially."""
     metadata = extract_metadata(file_path)
     siglip_adapter = get_siglip_adapter()
     embedding = siglip_adapter.get_image_embedding(file_path)
     siglip_hints = siglip_adapter.get_zero_shot_hints(embedding)
-    ai_result = get_gemma_adapter().generate_caption_and_tags(file_path, metadata, siglip_hints=siglip_hints)
+    ai_result = get_gemma_adapter().generate_caption_and_tags(
+        file_path, metadata, siglip_hints=siglip_hints
+    )
     return metadata, embedding, ai_result
 
 
@@ -412,6 +163,14 @@ def _find_existing_id_or_skip(
     finally:
         if db_session is not None:
             db_session.close()
+
+
+def _safe_rollback_session(db_session: Session) -> None:
+    """Rolls back a failed SQLAlchemy session without masking the original commit error."""
+    try:
+        db_session.rollback()
+    except Exception as rollback_err:
+        logger.warning("Failed to rollback batch session cleanly: %s", rollback_err)
 
 
 def _resolve_hash_conflict(
@@ -441,10 +200,7 @@ def _resolve_hash_conflict(
 
 
 def index_single_file_sync(file_path: str) -> Union[dict, str]:
-    """
-    Performs hashing, EXIF extraction, thumbnail generation, embedding inference,
-    caption inference, and prepares atomic registration payload via IndexingPipeline.
-    """
+    """Performs hashing, pipeline inference, and prepares atomic registration payload."""
     try:
         file_size = os.path.getsize(file_path)
         file_mtime = os.path.getmtime(file_path)
@@ -473,192 +229,104 @@ def index_single_file_sync(file_path: str) -> Union[dict, str]:
         return "error"
 
 
-# --- Single Photo Reindexing Helpers ---
-def _validate_photo_for_reindex(photo_id: str) -> str:
-    """Verifies photo exists in DB and on disk before re-indexing."""
-    db = SessionLocal()
-    try:
-        db_img = db.query(DBImage).filter(DBImage.id == photo_id).first()
-        if not db_img:
-            raise ValueError(f"Photo ID {photo_id} not found in database.")
-        file_path = db_img.file_path
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File {file_path} no longer exists.")
-        return file_path
-    finally:
-        db.close()
-
-
-def _update_orm_photo_models(db: Session, photo_id: str, metadata: dict, ai_result: dict) -> None:
-    """Updates ImageMetadata and AIAnalysis ORM entities with newly extracted values."""
-    import json
-    db_meta = db.query(DBImageMetadata).filter(DBImageMetadata.image_id == photo_id).first()
-    if not db_meta:
-        db_meta = DBImageMetadata(image_id=photo_id)
-        db.add(db_meta)
-
-    for field in [
-        "width", "height", "color_space", "camera_model", "lens_model",
-        "f_number", "focal_length", "focal_length_35mm", "crop_factor",
-        "sensor_format", "shutter_speed", "iso", "capture_date"
-    ]:
-        setattr(db_meta, field, metadata.get(field))
-
-    db_ai = db.query(DBAIAnalysis).filter(DBAIAnalysis.image_id == photo_id).first()
-    if not db_ai:
-        db_ai = DBAIAnalysis(image_id=photo_id)
-        db.add(db_ai)
-
-    db_ai.caption = ai_result.get("caption", "")
-    db_ai.tags = json.dumps(ai_result.get("tags", []))
-    db_ai.aesthetic_tags = json.dumps(ai_result.get("aesthetic_tags", []))
-    db_ai.is_user_edited = False
-
-
-def _rollback_chroma_embedding(photo_id: str, old_embedding: Optional[list[float]], chroma_meta: dict, err: Exception) -> None:
-    """Restores previous ChromaDB embedding or deletes it if previously absent."""
-    try:
-        if old_embedding:
-            vector_repo.upsert(ids=[photo_id], embeddings=[old_embedding], metadatas=[chroma_meta])
-        else:
-            vector_repo.delete([photo_id])
-        print(f"[CompensatingTx] Successfully reverted ChromaDB after SQLite failure: {err}", flush=True)
-    except Exception as comp_err:
-        print(f"[CompensatingTx] Failed to execute compensating ChromaDB rollback: {comp_err}", flush=True)
-
-
-def _commit_reindex_with_compensation(
-    photo_id: str,
-    metadata: dict,
-    embedding: list[float],
-    old_embedding: Optional[list[float]],
-    db: Session,
-    db_img: DBImage
-) -> dict:
-    """Upserts ChromaDB embedding, commits SQLite, and rolls back ChromaDB if commit fails."""
-    chroma_meta = _prepare_chroma_metadata(metadata)
-    vector_repo.upsert(
-        ids=[photo_id],
-        embeddings=[embedding],
-        metadatas=[chroma_meta]
-    )
-    try:
-        db.commit()
-        db.refresh(db_img)
-        return db_img.to_detail_dict()
-    except Exception as commit_err:
-        db.rollback()
-        _rollback_chroma_embedding(photo_id, old_embedding, chroma_meta, commit_err)
-        raise commit_err
-
-
 async def reindex_single_photo_inplace(photo_id: str) -> dict:
-    """
-    Re-runs metadata, embedding, and caption inference for an existing photo,
-    updating the database in-place without deleting the core Image record.
-    """
-    file_path = await asyncio.to_thread(_validate_photo_for_reindex, photo_id)
-    metadata, embedding, ai_result = await asyncio.to_thread(run_ai_pipeline_sync, file_path)
-    old_embedding = await asyncio.to_thread(vector_repo.get_embedding_by_id, photo_id)
-
-    def _sync_db_update() -> dict:
-        db = SessionLocal()
-        try:
-            db_img = db.query(DBImage).filter(DBImage.id == photo_id).first()
-            if not db_img:
-                raise ValueError(f"Photo ID {photo_id} was deleted during re-indexing.")
-            _update_orm_photo_models(db, photo_id, metadata, ai_result)
-            return _commit_reindex_with_compensation(photo_id, metadata, embedding, old_embedding, db, db_img)
-        finally:
-            db.close()
-
-    return await asyncio.to_thread(_sync_db_update)
+    """Delegates single-photo in-place reindexing while preserving module patch hooks."""
+    return await _reindex_single_photo_impl(
+        photo_id,
+        ai_pipeline_fn=run_ai_pipeline_sync,
+        session_factory=SessionLocal,
+        vector_repository=vector_repo,
+    )
 
 
-# --- Background Indexing Scheduler Helpers ---
 def _deduplicate_batch_items(raw_items: list[dict]) -> list[dict]:
     """Filters duplicate photo records within a single chunk batch."""
-    batch_data = []
-    seen_ids = set()
+    batch_items: list[dict] = []
+    seen_ids: set[str] = set()
     for item in raw_items:
-        img_id = item["image_data"]["id"]
-        if img_id not in seen_ids:
-            seen_ids.add(img_id)
-            batch_data.append(item)
-        else:
+        image_id = item["image_data"]["id"]
+        if image_id in seen_ids:
             print(f"[Indexer] In-batch duplicate found. Skipping: {item['image_data']['file_path']}", flush=True)
-    return batch_data
+            continue
+        seen_ids.add(image_id)
+        batch_items.append(item)
+    return batch_items
 
 
-def _safe_rollback_session(db_session: Session) -> None:
-    """Rolls back a failed SQLAlchemy session without masking the original commit error."""
+def _attempt_batch_commit(batch_items: list[dict]) -> Optional[Exception]:
+    """Executes one batch upsert attempt and returns any caught exception after rollback."""
+    from services.photo import register_photos_batch_atomic
+
+    db_batch: Optional[Session] = None
     try:
-        db_session.rollback()
-    except Exception as rollback_err:
-        logger.warning("Failed to rollback batch session cleanly: %s", rollback_err)
+        db_batch = SessionLocal()
+        register_photos_batch_atomic(db_batch, batch_items)
+        return None
+    except Exception as commit_err:
+        if db_batch is not None:
+            _safe_rollback_session(db_batch)
+        return commit_err
+    finally:
+        if db_batch is not None:
+            db_batch.close()
 
 
-def _commit_batch_with_retry(batch_data: list[dict], max_attempts: int = 3) -> None:
+def _handle_batch_commit_failure(
+    commit_err: Exception, attempt: int, max_attempts: int, item_count: int
+) -> None:
+    """Logs batch commit failure and either sleeps for retry or re-raises on final attempt."""
+    logger.error(
+        "[Indexer] Batch DB Upsert attempt %d/%d failed for %d items: %s",
+        attempt + 1, max_attempts, item_count, commit_err,
+    )
+    print(
+        f"[Indexer] Batch DB Upsert attempt {attempt + 1}/{max_attempts} failed for {item_count} items: {commit_err}",
+        flush=True,
+    )
+    if attempt < max_attempts - 1:
+        time.sleep(0.3 * (attempt + 1))
+        return
+    traceback.print_exc()
+    raise commit_err
+
+
+def _commit_batch_with_retry(batch_items: list[dict], max_attempts: int = 3) -> None:
     """Saves indexed photos batch to SQLite and ChromaDB with exponential backoff retry."""
     if max_attempts < 1:
         raise ValueError(f"max_attempts must be at least 1, got {max_attempts}")
-    if not batch_data:
+    if not batch_items:
         return
 
-    import time
-    from services.photo import register_photos_batch_atomic
-
     for attempt in range(max_attempts):
-        db_batch = None
-        try:
-            db_batch = SessionLocal()
-            register_photos_batch_atomic(db_batch, batch_data)
+        commit_err = _attempt_batch_commit(batch_items)
+        if commit_err is None:
             return
-        except Exception as commit_err:
-            if db_batch is not None:
-                _safe_rollback_session(db_batch)
-            logger.error(
-                "[Indexer] Batch DB Upsert attempt %d/%d failed for %d items: %s",
-                attempt + 1, max_attempts, len(batch_data), commit_err
-            )
-            print(
-                f"[Indexer] Batch DB Upsert attempt {attempt+1}/{max_attempts} failed for {len(batch_data)} items: {commit_err}",
-                flush=True
-            )
-            if attempt < max_attempts - 1:
-                time.sleep(0.3 * (attempt + 1))
-            else:
-                import traceback
-                traceback.print_exc()
-                raise
-        finally:
-            if db_batch is not None:
-                db_batch.close()
+        _handle_batch_commit_failure(commit_err, attempt, max_attempts, len(batch_items))
 
 
-def _log_indexing_progress(f_path: str, res: Any, count: int, total: int) -> None:
-    """Formats and prints progress log for indexed file."""
-    if isinstance(res, dict):
+_PROGRESS_STATUS_LABELS = {
+    "skipped_duplicate_hash": "Skipped (Duplicate Hash)",
+    "skipped": "Skipped (Already Indexed)",
+}
+
+
+def _log_indexing_progress(file_path: str, file_result: Any, count: int, total: int) -> None:
+    """Formats and prints progress log for an indexed file."""
+    if isinstance(file_result, dict):
         status_str = "Indexed with AI"
-    elif res == "skipped_duplicate_hash":
-        status_str = "Skipped (Duplicate Hash)"
-    elif res == "skipped":
-        status_str = "Skipped (Already Indexed)"
     else:
-        status_str = f"Status: {res}"
-    print(f"[Indexing] Progress: {count}/{total} - {f_path} ({status_str})", flush=True)
+        status_str = _PROGRESS_STATUS_LABELS.get(file_result, f"Status: {file_result}")
+    print(f"[Indexing] Progress: {count}/{total} - {file_path} ({status_str})", flush=True)
 
 
 def _normalize_indexing_error(exc: BaseException) -> str:
     """Formats an indexing exception into a non-empty single-line error message."""
     single_line = " ".join(str(exc).split())
-    if not single_line:
-        return type(exc).__name__
-    return single_line[:500]
+    return single_line[:500] if single_line else type(exc).__name__
 
 
 async def _process_single_indexing_file(
-    f_path: str,
+    file_path: str,
     semaphore: asyncio.Semaphore,
     total_files: int,
     counter: list[int],
@@ -672,13 +340,13 @@ async def _process_single_indexing_file(
         if not await indexing_state_manager.wait_if_paused(run_id):
             return "cancelled"
 
-        result = await asyncio.to_thread(index_single_file_sync, f_path)
+        file_result = await asyncio.to_thread(index_single_file_sync, file_path)
         if indexing_state_manager.is_run_cancelled(run_id):
             return "cancelled"
         counter[0] += 1
-        indexing_state_manager.update_progress(counter[0], total_files, f_path, run_id=run_id)
-        _log_indexing_progress(f_path, result, counter[0], total_files)
-        return result
+        indexing_state_manager.update_progress(counter[0], total_files, file_path, run_id=run_id)
+        _log_indexing_progress(file_path, file_result, counter[0], total_files)
+        return file_result
 
 
 async def _cancel_pending_chunk_tasks(tasks: list[asyncio.Task]) -> None:
@@ -700,12 +368,12 @@ async def _process_indexing_chunk(
     """Processes a single chunk of files concurrently and commits the batch atomically."""
     tasks = [
         asyncio.create_task(
-            _process_single_indexing_file(f_path, semaphore, total_files, counter, run_id=run_id)
+            _process_single_indexing_file(file_path, semaphore, total_files, counter, run_id=run_id)
         )
-        for f_path in chunk_files
+        for file_path in chunk_files
     ]
     try:
-        results = await asyncio.gather(*tasks)
+        chunk_results = await asyncio.gather(*tasks)
     except BaseException:
         await _cancel_pending_chunk_tasks(tasks)
         raise
@@ -713,10 +381,10 @@ async def _process_indexing_chunk(
     if indexing_state_manager.is_run_cancelled(run_id):
         return
 
-    raw_batch_data = [item for item in results if isinstance(item, dict)]
-    if raw_batch_data:
-        batch_data = _deduplicate_batch_items(raw_batch_data)
-        await asyncio.to_thread(_commit_batch_with_retry, batch_data)
+    raw_batch_items = [item for item in chunk_results if isinstance(item, dict)]
+    if raw_batch_items:
+        batch_items = _deduplicate_batch_items(raw_batch_items)
+        await asyncio.to_thread(_commit_batch_with_retry, batch_items)
 
 
 def _finalize_indexing_status(
@@ -724,16 +392,15 @@ def _finalize_indexing_status(
     run_id: Optional[int] = None,
 ) -> None:
     """Sets final indexing status and emits completion, cancellation, or error log."""
-    final_status = indexing_state_manager.finalize_run(
-        error_message=error_message,
-        run_id=run_id,
-    )
+    final_status = indexing_state_manager.finalize_run(error_message=error_message, run_id=run_id)
     if final_status == "cancelled":
         print("[Indexer] Background indexing cancelled.", flush=True)
-    elif final_status == "error":
+        return
+    if final_status == "error":
         safe_run_id = run_id if run_id is not None else 0
         print(f"[Indexer] Background indexing failed [run={safe_run_id}]: {error_message}", flush=True)
-    elif final_status == "idle":
+        return
+    if final_status == "idle":
         print("[Indexer] Background indexing completed.", flush=True)
         print("[Indexer] Sync completed.", flush=True)
 
@@ -747,11 +414,42 @@ async def _wait_if_paused(run_id: Optional[int]) -> bool:
     return await indexing_state_manager.wait_if_paused(run_id)
 
 
-async def run_indexing_background(folder_paths: list[str], run_id: Optional[int] = None):
-    """
-    Main background scheduler executing the indexing lifecycle without blocking the main event loop.
-    Propagates batch commit failures to error state and prevents false completion logs.
-    """
+async def _prepare_and_scan_for_run(
+    folder_paths: list[str], active_run_id: int
+) -> Optional[list[str]]:
+    """Waits for pause release, scans folders, and runs zombie cleanup before indexing."""
+    if not await _wait_if_paused(active_run_id):
+        return None
+    files = await asyncio.to_thread(scan_directory, folder_paths)
+    total_files = len(files)
+    indexing_state_manager.update_progress(0, total_files, "", run_id=active_run_id)
+    print(f"[Indexer] Starting background indexing. Found {total_files} files.", flush=True)
+
+    if not await _wait_if_paused(active_run_id):
+        return None
+    await asyncio.to_thread(cleanup_zombie_records)
+    if not files:
+        print("[Indexer] No files found for indexing.", flush=True)
+        return None
+    return files
+
+
+async def _execute_indexing_chunks(files: list[str], active_run_id: int) -> None:
+    """Executes chunked concurrent file indexing with pause checks between chunks."""
+    semaphore = asyncio.Semaphore(4)
+    counter = [0]
+    chunk_size = 100
+    total_files = len(files)
+    for start_idx in range(0, total_files, chunk_size):
+        if not await _wait_if_paused(active_run_id):
+            break
+        chunk_files = files[start_idx : start_idx + chunk_size]
+        await _process_indexing_chunk(chunk_files, semaphore, total_files, counter, active_run_id)
+        await asyncio.sleep(0.01)
+
+
+async def run_indexing_background(folder_paths: list[str], run_id: Optional[int] = None) -> None:
+    """Main background scheduler executing the indexing lifecycle without blocking the event loop."""
     active_run_id = indexing_state_manager.initialize_background_run(run_id=run_id)
     if active_run_id is None:
         logger.info("[Indexer] Skipping cancelled or superseded background run (run_id=%s).", run_id)
@@ -759,32 +457,9 @@ async def run_indexing_background(folder_paths: list[str], run_id: Optional[int]
 
     error_message: Optional[str] = None
     try:
-        if not await _wait_if_paused(active_run_id):
-            return
-        files = await asyncio.to_thread(scan_directory, folder_paths)
-        total_files = len(files)
-        indexing_state_manager.update_progress(0, total_files, "", run_id=active_run_id)
-        print(f"[Indexer] Starting background indexing. Found {total_files} files.", flush=True)
-
-        if not await _wait_if_paused(active_run_id):
-            return
-        await asyncio.to_thread(cleanup_zombie_records)
-        if not files:
-            print("[Indexer] No files found for indexing.", flush=True)
-            return
-
-        semaphore = asyncio.Semaphore(4)
-        counter = [0]
-        chunk_size = 100
-
-        for idx in range(0, len(files), chunk_size):
-            if not await _wait_if_paused(active_run_id):
-                break
-            await _process_indexing_chunk(
-                files[idx:idx + chunk_size], semaphore, total_files, counter, active_run_id
-            )
-            await asyncio.sleep(0.01)
-
+        files = await _prepare_and_scan_for_run(folder_paths, active_run_id)
+        if files:
+            await _execute_indexing_chunks(files, active_run_id)
     except Exception as exc:
         error_message = _normalize_indexing_error(exc)
         logger.error("[Indexer] Background task error: %s", error_message, exc_info=True)
