@@ -54,6 +54,14 @@ export const IndexingProgressCard: React.FC<IndexingProgressCardProps> = ({
     return <CheckCircle2 size={13} color="var(--accent-emerald)" style={{ flexShrink: 0 }} />;
   };
 
+  const runIndexingControlAction = async (actionLabel: string, action: () => Promise<unknown>) => {
+    try {
+      await action();
+    } catch (err: unknown) {
+      console.error(`${actionLabel} error:`, err);
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -95,13 +103,7 @@ export const IndexingProgressCard: React.FC<IndexingProgressCardProps> = ({
             <>
               {isProcessing ? (
                 <button
-                  onClick={async () => {
-                    try {
-                      await api.pauseIndexing();
-                    } catch (e: any) {
-                      console.error("Pause error:", e);
-                    }
-                  }}
+                  onClick={() => runIndexingControlAction('Pause', () => api.pauseIndexing())}
                   style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
                   title="일시정지"
                 >
@@ -109,13 +111,7 @@ export const IndexingProgressCard: React.FC<IndexingProgressCardProps> = ({
                 </button>
               ) : (
                 <button
-                  onClick={async () => {
-                    try {
-                      await api.resumeIndexing();
-                    } catch (e: any) {
-                      console.error("Resume error:", e);
-                    }
-                  }}
+                  onClick={() => runIndexingControlAction('Resume', () => api.resumeIndexing())}
                   style={{ background: 'none', border: 'none', color: 'var(--accent-focal)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
                   title="계속 진행"
                 >
@@ -124,13 +120,7 @@ export const IndexingProgressCard: React.FC<IndexingProgressCardProps> = ({
               )}
 
               <button
-                onClick={async () => {
-                  try {
-                    await api.cancelIndexing();
-                  } catch (e: any) {
-                    console.error("Cancel error:", e);
-                  }
-                }}
+                onClick={() => runIndexingControlAction('Cancel', () => api.cancelIndexing())}
                 style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
                 title="취소"
               >

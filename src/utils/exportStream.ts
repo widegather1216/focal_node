@@ -66,8 +66,9 @@ export function extractSseErrorMessage(rawPayload: string): string {
         return candidateMessage.trim();
       }
     }
-  } catch {
+  } catch (parseErr: unknown) {
     // SSE error frames may carry plain-text diagnostics rather than JSON.
+    console.debug('Export SSE error payload is not JSON, using raw text:', parseErr);
   }
 
   return trimmedPayload;
