@@ -1,8 +1,8 @@
 # 📊 [04_studio_ui_analytics] Studio UI, Design System & Gear Analytics
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (Baseline 완료 / REFACTOR 2건 대기 / 통계 차트 드릴다운 Step 3~4 대기)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (Baseline 완료 / REFACTOR-01 완료 / REFACTOR-02 대기 / 통계 차트 드릴다운 Step 3~4 대기)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 2건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -23,7 +23,7 @@
 - [x] 탭/선택/풀스크린 Zustand 전역 스토어 및 풀스크린 줌/패닝/단축키 제어 훅
   - 📂 구현: [`useAppStore.ts`](../../../src/store/useAppStore.ts), [`useFullscreenControls.ts`](../../../src/hooks/useFullscreenControls.ts), [`usePhotosQuery.ts`](../../../src/hooks/usePhotosQuery.ts)
 - [x] `@tanstack/react-virtual` 갤러리 그리드, 우측 상세 패널, 풀스크린 뷰어 및 Recharts 도넛/바 차트
-  - 📂 구현: [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx), [`PhotoCard.tsx`](../../../src/components/gallery/PhotoCard.tsx), [`DetailPanel.tsx`](../../../src/components/DetailPanel.tsx), [`FullscreenViewer.tsx`](../../../src/components/FullscreenViewer.tsx), [`AnalyticsView.tsx`](../../../src/components/AnalyticsView.tsx), [`ExifBarCharts.tsx`](../../../src/components/analytics/ExifBarCharts.tsx)
+  - 📂 구현: [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx), [`PhotoCard.tsx`](../../../src/components/gallery/PhotoCard.tsx), [`DetailPanel.tsx`](../../../src/components/DetailPanel.tsx), [`FullscreenViewer.tsx`](../../../src/components/FullscreenViewer.tsx), [`FullscreenToolbar.tsx`](../../../src/components/fullscreen/FullscreenToolbar.tsx), [`FullscreenNavigation.tsx`](../../../src/components/fullscreen/FullscreenNavigation.tsx), [`AnalyticsView.tsx`](../../../src/components/AnalyticsView.tsx), [`ExifBarCharts.tsx`](../../../src/components/analytics/ExifBarCharts.tsx)
 
 ### 🚀 Active Iteration: 통계 차트 인터랙티브 드릴다운 (Click-to-Filter) `[To-Be]`
 - [x] **Step 1 [DB & Types]**: `[N/A - 02_search_curation의 SearchFilters.use_35mm_equivalent 확장 공유]`
@@ -35,11 +35,15 @@
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-11-14 / clean-code-auditor / 전 도메인 통합 정적 감사 반영 (REFACTOR-01, 02 최신 라인·FullscreenViewer 433줄·any/fetch 전수 스캔 / 직전 기획: 2026-10-17)`
+- **직전 완료 작업**: `2026-11-15 / systematic-debugger / 04_studio_ui_analytics REFACTOR-01 해결 완료` (`4ddbe98`, `d28a57e`)
 - **생성/수정된 핵심 파일**:
-  - `docs/features/04_studio_ui_analytics/verification.md`: `useAppStore.ts` 직접 `fetch()`/`FullscreenViewer.tsx`(433줄) 및 `api.ts`(17건 `any`)/`useFullscreenControls.ts` 감사 내역 최신화
-  - `docs/features/04_studio_ui_analytics/*`: `applyAnalyticsDrilldown` 상태 전이 계약 및 `GearDonutCharts`/`ExifBarCharts` 인터랙티브 드릴다운 명세 반영
+  - `src/services/api.ts`, `src/store/useAppStore.ts`: `ApiHttpError` 도입 및 `parseError` 비-JSON `console.debug` 로깅, `fetchFolders`/`removeFolder` 직접 `fetch()`·빈 `catch`를 `api.fetchFolders()`/`api.removeFolder()`로 일원화(`404` 재동기화 유지)
+  - `src/hooks/usePhotosQuery.ts`, `src/hooks/useFullscreenControls.ts`: 미사용 `usePhotosQuery` 제거 및 중복 `getActivePhotoList`를 `activePhotoList.ts` 공통 유틸로 통합
+  - `src/components/FullscreenViewer.tsx`, `src/components/fullscreen/FullscreenToolbar.tsx`, `src/components/fullscreen/FullscreenNavigation.tsx`: 툴바/네비게이션 분리 및 `getFitModeImageStyle` 추출로 `FullscreenViewer.tsx` 433줄 ➔ 232줄 경량화
+- **최근 커밋 (`Recent Commits`)**:
+  - `4ddbe98` - `refactor(store): unify folder api calls and remove unused query hook`
+  - `d28a57e` - `refactor(fullscreen): split viewer controls and share active photo list`
 - **검증 완료된 테스트 실행 명령어**:
-  - `./venv/bin/pytest backend/tests/test_api_analytics.py && npx tsc --noEmit`
+  - `./venv/bin/pytest backend/tests/test_api_analytics.py && npx tsc --noEmit && npm run build` (`PASS`)
 - **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - `REFACTOR-01`, `REFACTOR-02` 해결 권장 (`"04_studio_ui_analytics 도메인의 REFACTOR-01 티켓 해결해줘"`). 이후 Active Step 3~4 구현 시 `ExifBarCharts.tsx`에서 화각 막대(`"35mm"`) 클릭 시 숫자(`35`)를 파싱하여 `focal_length_min: 35, focal_length_max: 35, use_35mm_equivalent: is35mmMode`로 전달할 것.
+  - `REFACTOR-02` 해결 권장 (`"04_studio_ui_analytics 도메인의 REFACTOR-02 티켓 해결해줘"`). 이후 Active Step 3~4 구현 시 `ExifBarCharts.tsx`에서 화각 막대(`"35mm"`) 클릭 시 숫자(`35`)를 파싱하여 `focal_length_min: 35, focal_length_max: 35, use_35mm_equivalent: is35mmMode`로 전달할 것.

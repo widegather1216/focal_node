@@ -1,8 +1,8 @@
 # 🧪 [04_studio_ui_analytics] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (Baseline AC 완료 / REFACTOR 2건 대기 / 차트 드릴다운 AC 1건 대기)`
+- **검증 상태**: `🩹 Debugging (Baseline AC 완료 / REFACTOR 1건 대기 / 차트 드릴다운 AC 1건 대기)`
 - **인수 조건 통과율**: `2 / 3 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 2건`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건`
 
 ---
 
@@ -52,15 +52,15 @@
 - **심각도**: 🟡 Should Fix (권장 조치)
 - **위치**: `src/store/useAppStore.ts#L223-L286`, `src/hooks/usePhotosQuery.ts#L5-L27`, `src/components/FullscreenViewer.tsx#L1-L433`, `src/hooks/useFullscreenControls.ts#L17-L35`
 - **위반 규칙**: 단방향 레이어 의존성 (`Store ➔ ApiClient`), Rule 4.1 (단일 UI 파일 <= 300줄, 중복 제거), Rule 4.3 (빈 `catch` 금지) & Dead Code 제거
-- **발견된 문제**:
-  - `useAppStore.ts`의 `cancelActiveCritique#L227`, `fetchFolders#L252`, `removeFolder#L266` 액션이 `src/services/api.ts`를 거치지 않고 `fetch()`를 직접 호출하며, `L276`에 주석만 있는 빈 `catch`가 존재함.
-  - `src/hooks/usePhotosQuery.ts`의 `usePhotosQuery` 함수(`L5-L27`)가 어디에서도 호출되지 않는 Dead Code로 남아 있으며, `FullscreenViewer.tsx`(433줄)가 단일 UI 파일 300줄 상한을 초과함(`useFullscreenControls.ts#L17-L35`의 `getActivePhotoList`도 `usePhotoDetail.ts`와 중복되며 `['critiques']` 키 불일치를 공유함).
-- **권장 개선안 (Suggested Diff)**:
-  ```text
-  - useAppStore.ts의 직접 fetch 호출을 api.cancelCritique, api.fetchFolders, api.removeFolder로 일원화하고 L276 catch 로깅 보강
-  - usePhotosQuery.ts 미사용 usePhotosQuery 제거, FullscreenViewer.tsx 툴바/네비게이션 분리(<=300줄) 및 getActivePhotoList 공통 유틸 통합
-  ```
-- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정/신설 파일**: [`useAppStore.ts`](../../../src/store/useAppStore.ts), [`api.ts`](../../../src/services/api.ts), [`usePhotosQuery.ts`](../../../src/hooks/usePhotosQuery.ts), [`useFullscreenControls.ts`](../../../src/hooks/useFullscreenControls.ts), [`FullscreenViewer.tsx`](../../../src/components/FullscreenViewer.tsx), [`FullscreenToolbar.tsx`](../../../src/components/fullscreen/FullscreenToolbar.tsx), [`FullscreenNavigation.tsx`](../../../src/components/fullscreen/FullscreenNavigation.tsx)
+  - **원인 및 조치**:
+    - `api.ts`에 `ApiHttpError`(HTTP status 보존)를 추가하고 `parseError`의 비-JSON 폴백 `catch`에 `console.debug` 로깅을 보강했으며, `useAppStore.ts`의 `fetchFolders`/`removeFolder` 직접 `fetch()` 및 빈 `catch`를 `api.fetchFolders()`·`api.removeFolder(path)` 호출(`404` 시 `ApiHttpError` 분기 재동기화 유지)로 일원화함(`cancelActiveCritique`는 선행 작업에서 이미 `api.cancelCritique`로 일원화 완료).
+    - `usePhotosQuery.ts`에서 미사용 Dead Code인 `usePhotosQuery` 함수와 미사용 `useQuery` 임포트를 제거하고 `useToggleFavoriteMutation`만 유지함.
+    - `useFullscreenControls.ts`의 중복 `getActivePhotoList`(`['critiques']` 키 불일치 포함) 및 `any` 타입을 제거하고 공통 유틸 [`activePhotoList.ts`](../../../src/utils/activePhotoList.ts)의 `getActivePhotoList(queryClient)`로 통합함.
+    - `FullscreenViewer.tsx`(433줄)에서 상단 툴바(`FullscreenToolbar.tsx`, 230줄)와 좌/우 네비게이션(`FullscreenNavigation.tsx`, 74줄)을 분리하고 `getFitModeImageStyle` 헬퍼를 추출해 `FullscreenViewer.tsx`를 232줄(<=300줄)로 경량화함.
+  - **회귀 테스트 결과**: `npx tsc --noEmit && npm run build` (`PASS`), `./venv/bin/pytest backend/tests/test_api_analytics.py` (`1 passed`)
  
 ### [REFACTOR-02] API 클라이언트(`api.ts`, 368줄) 및 Analytics/Fullscreen/Gallery 훅·컴포넌트 내 `any` 타입 구체화
 - **심각도**: 🟡 Should Fix (권장 조치)

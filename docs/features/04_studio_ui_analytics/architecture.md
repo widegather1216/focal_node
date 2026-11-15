@@ -45,17 +45,19 @@ src/
 ├── hooks/
 │   ├── useAnalyticsQuery.ts           # [기존] 장비 통계 TanStack Query 훅
 │   ├── useFullscreenControls.ts       # [기존] 풀스크린 줌/패닝/키보드 네비게이션 제어 훅
-│   └── usePhotosQuery.ts              # [기존/리팩토링대상] 즐겨찾기 낙관적 업데이트 뮤테이션 훅
+│   └── usePhotosQuery.ts              # [기존] 즐겨찾기 낙관적 업데이트 뮤테이션 훅
 └── components/
     ├── PhotoGallery.tsx               # [기존] 반응형 가상화 그리드 계산 및 무한 스크롤
     ├── DetailPanel.tsx                # [기존] 우측 슬라이드 인 상세 컨테이너
-    ├── FullscreenViewer.tsx           # [기존] 풀스크린 원본 뷰어 및 줌/이동 캔버스
+    ├── FullscreenViewer.tsx           # [기존] 풀스크린 원본 뷰어 및 줌/이동 캔버스 (232줄 경량화)
     ├── AnalyticsView.tsx              # [기존] 장비 인사이트 대시보드 컨테이너
     ├── gallery/
     │   └── PhotoCard.tsx              # [기존] 개별 썸네일 카드, 즐겨찾기 토글, 다중 선택 체크박스
     ├── detail/
     │   └── PhotoExifView.tsx          # [기존] EXIF 촬영 스펙 배지 및 Finder 열기(reveal_in_finder) 버튼
     ├── fullscreen/
+    │   ├── FullscreenToolbar.tsx      # [신규] 풀스크린 상단 제어 툴바 (줌/맞춤모드/몰입/EXIF 토글)
+    │   ├── FullscreenNavigation.tsx   # [신규] 풀스크린 좌/우 이전·다음 사진 이동 버튼
     │   └── FullscreenMetadataOverlay.tsx # [기존] 풀스크린 플로팅 EXIF 오버레이
     └── analytics/
         ├── AnalyticsKpiGrid.tsx       # [기존] 총 사진 수, 카메라 기종 수, 렌즈 라인업 수, 최다 활용 조리개 KPI 카드

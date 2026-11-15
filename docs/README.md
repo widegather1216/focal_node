@@ -7,11 +7,11 @@
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
-- **Active 도메인**: [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) *(`02_search_curation` `REFACTOR-01` 해결 완료 / 전 도메인 `REFACTOR` 2건 잔여)*
-- **현재 단계 (Stage)**: `🩹 Debugging (02_search_curation REFACTOR-01 완료 / 04_studio_ui_analytics REFACTOR-01~02 대기)`
-- **직전 완료 작업**: [`02_search_curation`](./features/02_search_curation/README.md) 도메인 `REFACTOR-01` 해결 완료 (`SearchService` SRP 분할 및 SigLIP 2 미설치/추론 실패 시 `logger.warning` 후 SQLite 텍스트+EXIF `200 OK` 폴백, `search.py` `logger.exception` 전환, `useAppStore.findSimilarPhotos`·`PhotoGallery` `similar:` 즉시 검색·`DetailPanel` `[유사한 무드 사진 찾기]` 버튼 연결, 회귀 테스트 추가 및 `pytest 154 passed`·`tsc && vite build` PASS ➔ `🛠️ Implementing`)
+- **Active 도메인**: [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) *(`04_studio_ui_analytics` `REFACTOR-01` 해결 완료 / 전 도메인 `REFACTOR` 1건 잔여)*
+- **현재 단계 (Stage)**: `🩹 Debugging (04_studio_ui_analytics REFACTOR-01 완료 / REFACTOR-02 대기)`
+- **직전 완료 작업**: [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) 도메인 `REFACTOR-01` 해결 완료 (`ApiHttpError` 도입 및 `useAppStore` `fetchFolders`/`removeFolder` `api.ts` 일원화·빈 `catch` 로깅 보강, `usePhotosQuery` Dead Code 제거, `useFullscreenControls` 중복 `getActivePhotoList` `activePhotoList.ts` 통합, `FullscreenToolbar`/`FullscreenNavigation` 분리로 `FullscreenViewer.tsx` 433줄 ➔ 232줄 경량화, `npx tsc --noEmit && npm run build`·`test_api_analytics.py` PASS)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"04_studio_ui_analytics 도메인의 REFACTOR-01 티켓 해결해줘"` *(`1 티켓 = 1 격리 세션`으로 `systematic-debugger` 순차 해결)*
+  > `"04_studio_ui_analytics 도메인의 REFACTOR-02 티켓 해결해줘"` *(`1 티켓 = 1 격리 세션`으로 `systematic-debugger` 순차 해결)*
 
 ---
 
@@ -23,7 +23,7 @@
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `14/17 (82%)` | `0 / 0` | DEFECT-01~11·REFACTOR-01~02 전수 해결 완료(`folder_manager.py`·`photo_reindex.py` 분리, `ActionBar`/`Sidebar` 경량화), Active Step 1 대기 |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 0` | `REFACTOR-01` 해결 완료(SigLIP 폴백·`search.py` 로깅·`similar:` 버튼 연결), RRF·스마트 앨범 Step 1~4 대기 |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `15/15 (100%)` | `0 / 0` | `DEFECT-01~03`·`REFACTOR-01~08` 전수 해결 완료 (Headless MPS/MLX 가드·ADR-05 레거시 정리·300줄 이하 분할), Sign-Off 완료 |
-| 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 🩹 Debugging | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 2` | 통합 감사 `REFACTOR-01`/`02` 최신화(`FullscreenViewer` 433줄·직접 `fetch`·`any` 타입 구체화), 차트 드릴다운 Step 3~4 대기 |
+| 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 🩹 Debugging | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 1` | `REFACTOR-01` 해결 완료(`useAppStore` `api.ts` 일원화·`FullscreenViewer` 232줄 경량화·`usePhotosQuery` 정리), `REFACTOR-02` 및 차트 드릴다운 Step 3~4 대기 |
 
 *(※ 상태 범례: `📐 Planning` | `🛠️ Implementing` | `🧐 Auditing` | `🧪 QA Testing` | `🩹 Debugging` | `🟢 Sign-Off`)*
 *(※ 미해결 티켓: `🚨D` = Open `DEFECT-xx` 개수, `🧐R` = Open `REFACTOR-xx` 개수)*
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-15]` `[systematic-debugger]` [`04_studio_ui_analytics`]**: `REFACTOR-01` 리팩토링 티켓 해결 완료 (`4ddbe98`, `d28a57e` / `ApiHttpError` 도입 및 `api.parseError` 비-JSON `console.debug` 로깅 보강, `useAppStore.ts` `fetchFolders`/`removeFolder` 직접 `fetch()` 및 빈 `catch`를 `api.fetchFolders()`/`api.removeFolder()`로 일원화·`404` 재동기화 보존, `usePhotosQuery.ts` 미사용 `usePhotosQuery` Dead Code 제거, `useFullscreenControls.ts` 중복 `getActivePhotoList`를 `activePhotoList.ts` 공통 유틸로 통합, `FullscreenToolbar.tsx`·`FullscreenNavigation.tsx` 분리 및 `getFitModeImageStyle` 추출로 `FullscreenViewer.tsx` 433줄 ➔ 232줄 경량화, `npx tsc --noEmit && npm run build`·`test_api_analytics.py` PASS 및 위키 헬스체크 통과).
 
 - **`[2026-11-15]` `[systematic-debugger]` [`02_search_curation`]**: `REFACTOR-01` 리팩토링 티켓 해결 완료 (`2bf7ad9`, `f6dabef` / `SearchService` `_extract_query_embedding_sync`/`_compute_search_limit`/`_query_vector_ids`/`_resolve_query_candidate_ids` SRP 분할로 전 메서드 `<=26줄`·`중첩<=2` 달성 및 SigLIP 2 미설치/추론 예외 시 `logger.warning` 후 SQLite 텍스트+EXIF `200 OK` 폴백 교정, `backend/app/api/search.py` `traceback.print_exc()` ➔ `logger.exception` 표준 로깅 전환, `useAppStore.findSimilarPhotos` 원자적 액션·`PhotoGallery` `similar:` 디바운스 우회·`DetailPanel` `[유사한 무드 사진 찾기]` 버튼 연결, `test_api_search.py` SigLIP 폴백/유사 검색 회귀 테스트 3종 추가 및 전체 `pytest 154 passed`·`tsc && vite build` PASS, `02_search_curation` `🛠️ Implementing` 전환 및 위키 헬스체크 통과).
 
