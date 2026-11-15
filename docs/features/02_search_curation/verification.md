@@ -1,8 +1,8 @@
 # 🧪 [02_search_curation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (Baseline 완료 / REFACTOR-01 1건 대기 / RRF·스마트앨범 AC 2건 대기)`
+- **검증 상태**: `🛠️ Implementing (Baseline 및 REFACTOR-01 완료 / RRF·스마트앨범 AC 2건 대기)`
 - **인수 조건 통과율**: `1 / 3 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -53,16 +53,8 @@
 ## 🧐 4. 코드 품질 감사 리포트 (Audit & Refactoring Logs)
 
 ### [REFACTOR-01] `SearchService` 모델 미설치 시 SQLite 폴백 방어, `search.py` 표준 로깅 전환 및 상세 패널 유사 사진(`similar:`) 버튼 연결
-- **심각도**: 🟡 Should Fix (권장 조치)
-- **위치**: `backend/app/services/search_service.py#L16-L58`, `backend/app/api/search.py#L23-L25, #L43-L45`, `src/components/detail/PhotoExifView.tsx`, `src/components/DetailPanel.tsx`
-- **위반 규칙**: Graceful Fallback, Rule 4.1 (`search_photos` 43줄 > 30줄), Rule 4.3 (표준 로깅) & UI Feature Wiring
-- **발견된 문제**:
-  - `SearchService.search_photos`(43줄)에서 `get_siglip_adapter().get_text_embedding()` 호출 시 예외 방어가 없어, SigLIP 2 모델 미설치/로딩 실패 상태에서 검색 시 SQLite 텍스트/EXIF 매칭 결과까지 함께 500 에러로 실패함.
-  - `backend/app/api/search.py#L24,L44`에서 표준 로거 대신 `traceback.print_exc()`를 직접 출력함.
-  - 백엔드 `POST /api/search/similar` 및 `src/services/api.ts`의 `similar:{photoId}` 라우팅이 구현되어 있으나, 우측 상세 패널 UI에 이를 호출하는 버튼이 누락되어 있음.
-- **권장 개선안 (Suggested Diff)**:
-  ```text
-  - search_service.py에서 쿼리 임베딩·검색 단계를 헬퍼로 분리하고 SigLIP 2 실패 시 경고 로깅 후 text_search_ids + EXIF 결과만 반환하도록 폴백 적용
-  - search.py의 traceback.print_exc()를 logger.exception(...)으로 대체하고 PhotoExifView.tsx/DetailPanel.tsx에 setSearchQuery(`similar:${photo.id}`) 버튼 연결
-  ```
-- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`search_service.py`](../../../backend/app/services/search_service.py#L20-L115), [`search.py`](../../../backend/app/api/search.py#L1-L48), [`useAppStore.ts`](../../../src/store/useAppStore.ts#L119-L124), [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx#L21-L26), [`DetailPanel.tsx`](../../../src/components/DetailPanel.tsx#L148-L167), [`test_api_search.py`](../../../backend/tests/test_api_search.py#L1-L157)
+  - **원인 및 조치**: `SearchService`에서 임베딩 추출(`_extract_query_embedding_sync`), 검색 한도 계산(`_compute_search_limit`), 벡터 질의(`_query_vector_ids`), 후보 결합(`_resolve_query_candidate_ids`)을 SRP 헬퍼로 분리해 모든 메서드를 `<=26줄`·`중첩<=2`로 경량화하고, SigLIP 2 미설치/로딩/추론 예외 시 `logger.warning` 기록 후 500 에러 없이 SQLite `text_search_ids` + EXIF 결과로 정상 폴백(`200 OK`)하도록 교정함. `search.py`의 `traceback.print_exc()`를 `logger.exception(...)`으로 전환하고, `useAppStore.findSimilarPhotos` 원자적 액션(`similar:${photo.id}` 설정 + 필터 초기화 + `'gallery'` 탭 전환 + 패널 닫기)·`PhotoGallery` `similar:` 즉시 디바운스 우회 및 `DetailPanel` `[유사한 무드 사진 찾기]` 버튼을 연결함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_api_search.py backend/tests/test_concurrency_hardening.py -v` (`15 passed`), `./venv/bin/pytest backend/tests/ -q` (`154 passed`), `npx tsc --noEmit && npm run build` (`PASS`)

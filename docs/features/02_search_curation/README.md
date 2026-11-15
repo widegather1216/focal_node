@@ -1,8 +1,8 @@
 # 🔍 [02_search_curation] Hybrid Search, K-NN Curation & Smart Albums
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (Baseline 완료 / REFACTOR-01 1건 대기 / Active Step 1~4 대기)`
+- **현재 상태 (Lifecycle)**: `🛠️ Implementing (Baseline 및 REFACTOR-01 완료 / Active Step 1~4 대기)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -33,11 +33,19 @@ SigLIP 2 자연어 시맨틱 검색(코사인 거리 임계값 절삭)과 SQLite
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-11-14 / clean-code-auditor / 전 도메인 통합 정적 감사 반영 (REFACTOR-01 라인·로깅·함수 길이 최신화 / 직전 기획: 2026-10-17)`
+- **Recent Commits (2026-11-15)**:
+  - `f6dabef` - `feat(search-ui): wire similar photo lookup into detail panel`
+  - `2bf7ad9` - `refactor(search): fallback to sqlite on siglip errors and use logger`
+- **Working Tree State**: 🟢 Clean (No uncommitted changes)
+- **직전 완료 작업**: `2026-11-15 / systematic-debugger / REFACTOR-01 해결 완료 (SearchService SRP 분할 및 SigLIP 2 실패 시 SQLite 폴백, search.py 표준 로깅, DetailPanel 유사 사진 검색 버튼 연결)`
 - **생성/수정된 핵심 파일**:
-  - `docs/features/02_search_curation/verification.md`: `SearchService.search_photos`(43줄), `search.py` `traceback.print_exc()`, `similar:` UI 연결 감사 내역 최신화
-  - `docs/features/02_search_curation/*`: RRF($k=60$) 수식, ChromaDB 거리 임계값(`max_distance=0.88`), `use_35mm_equivalent`, `min_overall_score` 및 `smart_albums` 명세 반영
+  - `backend/app/services/search_service.py`: `_extract_query_embedding_sync`, `_compute_search_limit`, `_query_vector_ids`, `_resolve_query_candidate_ids` 분할(`<=26줄`) 및 SigLIP/Chroma 예외 시 `logger.warning` 후 SQLite 폴백(`200 OK`) 적용
+  - `backend/app/api/search.py`: `traceback.print_exc()` 제거 및 `logger.exception(...)` 표준 로깅 전환
+  - `src/store/useAppStore.ts`, `src/components/PhotoGallery.tsx`, `src/components/DetailPanel.tsx`: `findSimilarPhotos` 원자적 액션, `similar:` 디바운스 우회 및 `[유사한 무드 사진 찾기]` 버튼 연결
+  - `backend/tests/test_api_search.py`: SigLIP 미설치/추론 실패 폴백 및 `similar` 자기 자신 제외 회귀 테스트 추가
 - **검증 완료된 테스트 실행 명령어**:
-  - `./venv/bin/pytest backend/tests/test_api_search.py`
+  - `./venv/bin/pytest backend/tests/test_api_search.py backend/tests/test_concurrency_hardening.py -v` (`15 passed`)
+  - `./venv/bin/pytest backend/tests/ -q` (`154 passed`)
+  - `npx tsc --noEmit && npm run build` (`PASS`)
 - **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - `REFACTOR-01` 해결 권장 (`"02_search_curation 도메인의 REFACTOR-01 티켓 해결해줘"`). Step 2 구현 시 `VectorRepository.query_similar_by_embedding`에서 `include=["distances"]`로 거리를 조회하여 `d <= max_distance`인 후보만 반환하도록 수정할 것.
+  - 미해결 티켓 0건으로 Active Iteration Step 1(`"02_search_curation 도메인 Step 1 개발 진행해줘"`) 착수 가능. Step 2 구현 시 `VectorRepository.query_similar_by_embedding`에서 `include=["distances"]`로 거리를 조회하여 `d <= max_distance`인 후보만 반환하도록 수정할 것.

@@ -7,11 +7,11 @@
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
-- **Active 도메인**: [`02_search_curation`](./features/02_search_curation/README.md) *(`03_ai_critique` `🟢 Sign-Off` 전환 완료 / 전 도메인 `REFACTOR` 3건 잔여)*
-- **현재 단계 (Stage)**: `🩹 Debugging (03_ai_critique Sign-Off 완료 / 02_search_curation REFACTOR-01·04_studio_ui_analytics REFACTOR-01~02 대기)`
-- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 `REFACTOR-08` 해결 완료 (`base_model.clear_mps_cache`·`clear_mlx_cache` 가드 및 `conftest.py` 헤드리스 `mlx_vlm` 스텁/`test_mps_guard.py` 5종으로 비-MPS Segfault 원천 차단, ADR-05 레거시·`MagicMock`·인자 순서 역전/중복 언로드 버그 제거 및 백엔드 SRP 분할 11개 파일 함수 `<=30줄` 달성, 프론트엔드 6대 비대 파일 `<=300줄` 분할, 진행률 역행·`ScoringGuideModal` `createPortal`·가이드 버튼 교정, 전체 `pytest 151 passed` 및 `tsc && vite build` PASS ➔ `🟢 Sign-Off`)
+- **Active 도메인**: [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) *(`02_search_curation` `REFACTOR-01` 해결 완료 / 전 도메인 `REFACTOR` 2건 잔여)*
+- **현재 단계 (Stage)**: `🩹 Debugging (02_search_curation REFACTOR-01 완료 / 04_studio_ui_analytics REFACTOR-01~02 대기)`
+- **직전 완료 작업**: [`02_search_curation`](./features/02_search_curation/README.md) 도메인 `REFACTOR-01` 해결 완료 (`SearchService` SRP 분할 및 SigLIP 2 미설치/추론 실패 시 `logger.warning` 후 SQLite 텍스트+EXIF `200 OK` 폴백, `search.py` `logger.exception` 전환, `useAppStore.findSimilarPhotos`·`PhotoGallery` `similar:` 즉시 검색·`DetailPanel` `[유사한 무드 사진 찾기]` 버튼 연결, 회귀 테스트 추가 및 `pytest 154 passed`·`tsc && vite build` PASS ➔ `🛠️ Implementing`)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"02_search_curation 도메인의 REFACTOR-01 티켓 해결해줘"` *(`1 티켓 = 1 격리 세션`으로 `systematic-debugger` 순차 해결)*
+  > `"04_studio_ui_analytics 도메인의 REFACTOR-01 티켓 해결해줘"` *(`1 티켓 = 1 격리 세션`으로 `systematic-debugger` 순차 해결)*
 
 ---
 
@@ -21,7 +21,7 @@
 | :--- | :--- :---: | :---: | :---: | :---: | :--- |
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `5/5 (100%)` | `0 / 0` | DEFECT-01~04 전수 해결 완료 (손상 인덱스 valid=False, 실패 시 거짓 완료 차단, 1종 조기완료 차단, 중복 스레드/락 삭제 가드), Sign-Off 완료 |
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `14/17 (82%)` | `0 / 0` | DEFECT-01~11·REFACTOR-01~02 전수 해결 완료(`folder_manager.py`·`photo_reindex.py` 분리, `ActionBar`/`Sidebar` 경량화), Active Step 1 대기 |
-| 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 통합 감사 `REFACTOR-01` 최신화(SigLIP 폴백/`search.py` 로깅/`similar:` 버튼), RRF·스마트 앨범 Step 1~4 대기 |
+| 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 0` | `REFACTOR-01` 해결 완료(SigLIP 폴백·`search.py` 로깅·`similar:` 버튼 연결), RRF·스마트 앨범 Step 1~4 대기 |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `15/15 (100%)` | `0 / 0` | `DEFECT-01~03`·`REFACTOR-01~08` 전수 해결 완료 (Headless MPS/MLX 가드·ADR-05 레거시 정리·300줄 이하 분할), Sign-Off 완료 |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 🩹 Debugging | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 2` | 통합 감사 `REFACTOR-01`/`02` 최신화(`FullscreenViewer` 433줄·직접 `fetch`·`any` 타입 구체화), 차트 드릴다운 Step 3~4 대기 |
 
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-15]` `[systematic-debugger]` [`02_search_curation`]**: `REFACTOR-01` 리팩토링 티켓 해결 완료 (`2bf7ad9`, `f6dabef` / `SearchService` `_extract_query_embedding_sync`/`_compute_search_limit`/`_query_vector_ids`/`_resolve_query_candidate_ids` SRP 분할로 전 메서드 `<=26줄`·`중첩<=2` 달성 및 SigLIP 2 미설치/추론 예외 시 `logger.warning` 후 SQLite 텍스트+EXIF `200 OK` 폴백 교정, `backend/app/api/search.py` `traceback.print_exc()` ➔ `logger.exception` 표준 로깅 전환, `useAppStore.findSimilarPhotos` 원자적 액션·`PhotoGallery` `similar:` 디바운스 우회·`DetailPanel` `[유사한 무드 사진 찾기]` 버튼 연결, `test_api_search.py` SigLIP 폴백/유사 검색 회귀 테스트 3종 추가 및 전체 `pytest 154 passed`·`tsc && vite build` PASS, `02_search_curation` `🛠️ Implementing` 전환 및 위키 헬스체크 통과).
 
 - **`[2026-11-15]` `[systematic-debugger]` [`03_ai_critique`]**: `REFACTOR-08` 리팩토링 티켓 해결 및 `03_ai_critique` `🟢 Sign-Off` 전환 완료 (`80f7f0f`, `a92fb93`, `c35be11` / `base_model.clear_mps_cache`·`clear_mlx_cache` 가드로 비-MPS `torch.mps` Segfault 원천 차단 및 `conftest.py` `__spec__` 포함 헤드리스 `mlx_vlm` 스텁/`test_mps_guard.py` 5종 추가, `chat_service.py` `MagicMock` 분기·인자 순서 역전·`unipercept_adapter.py` 중복 언로드 버그·ADR-05 이전 2단계 번역/3-Way VQA/사문화 파서 제거, `critique_prompts.py`·`siglip_adapter.py`·`unipercept_runtime.py`·`critique_db_helpers.py` SRP 분할로 백엔드 11개 파일 함수 `<=30줄` 및 `data/info/temp/res`·`except: pass` 0건 달성, 프론트엔드 `critiquePrintTemplate.ts`·`critiqueExportHelpers.ts`·`critiqueMarkdownParser.ts`·`ScoringGuideContent.tsx`·`CritiqueCardHeader.tsx`·`CritiqueToolbarExportMenu.tsx`·`useCritiqueDocumentModal.ts` 분할로 모든 수정/신설 파일 `<=299줄` 경량화, `CritiqueProgressWidget`/`GlobalCritiqueToast` 진행률 역행(`15%->10%`) 및 `[1/6]` 라벨 교정, `ScoreHudStrip`/`CritiqueDocumentArticle` 점수 가이드 버튼 연결 및 `ScoringGuideModal` `createPortal`·캡처 `Escape` 격리 적용, 전체 `pytest 151 passed`·`tsc && vite build` PASS·위키 헬스체크 통과).
 
