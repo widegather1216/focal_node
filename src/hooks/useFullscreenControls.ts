@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../store/useAppStore';
+import { getActivePhotoList } from '../utils/activePhotoList';
 
 export function useFullscreenControls() {
   const { isFullscreenOpen, fullscreenPhotoId, openFullscreen, setSelectedPhotoId, closeFullscreen } = useAppStore();
@@ -14,30 +15,10 @@ export function useFullscreenControls() {
   
   const queryClient = useQueryClient();
 
-  const getActivePhotoList = (): any[] => {
-    if (useAppStore.getState().activeTab === 'critique') {
-      const critiqueData = queryClient.getQueryData<any[]>(['critiques']);
-      if (Array.isArray(critiqueData) && critiqueData.length > 0) {
-        return critiqueData.map(c => ({ id: c.photo_id, ...c }));
-      }
-    }
-
-    const queryCache = queryClient.getQueriesData<any>({ queryKey: ['photos'] });
-    for (const [, data] of queryCache) {
-      if (data && data.pages && Array.isArray(data.pages)) {
-        return data.pages.flatMap((page: any) => page);
-      }
-      if (Array.isArray(data)) {
-        return data;
-      }
-    }
-    return [];
-  };
-
   const handlePrevPhoto = () => {
-    const photos = getActivePhotoList();
+    const photos = getActivePhotoList(queryClient);
     if (!photos.length || !fullscreenPhotoId) return;
-    const currentIndex = photos.findIndex((p: any) => p.id === fullscreenPhotoId);
+    const currentIndex = photos.findIndex((photo) => photo.id === fullscreenPhotoId);
     if (currentIndex > 0) {
       const prevPhoto = photos[currentIndex - 1];
       openFullscreen(prevPhoto.id);
@@ -46,9 +27,9 @@ export function useFullscreenControls() {
   };
 
   const handleNextPhoto = () => {
-    const photos = getActivePhotoList();
+    const photos = getActivePhotoList(queryClient);
     if (!photos.length || !fullscreenPhotoId) return;
-    const currentIndex = photos.findIndex((p: any) => p.id === fullscreenPhotoId);
+    const currentIndex = photos.findIndex((photo) => photo.id === fullscreenPhotoId);
     if (currentIndex !== -1 && currentIndex < photos.length - 1) {
       const nextPhoto = photos[currentIndex + 1];
       openFullscreen(nextPhoto.id);

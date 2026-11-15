@@ -1,10 +1,22 @@
-import { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ZoomOut, ZoomIn, RotateCcw, Eye, Info, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { usePhotoDetailQuery } from '../hooks/usePhotoDetailQuery';
 import { useFullscreenControls } from '../hooks/useFullscreenControls';
 import { FullscreenMetadataOverlay } from './fullscreen/FullscreenMetadataOverlay';
+import { FullscreenToolbar } from './fullscreen/FullscreenToolbar';
+import { FullscreenNavigation } from './fullscreen/FullscreenNavigation';
 import { api } from '../services/api';
+
+function getFitModeImageStyle(fitMode: 'fit-height' | 'contain' | 'cover'): React.CSSProperties {
+  return {
+    height: fitMode === 'fit-height' || fitMode === 'cover' ? '100vh' : 'auto',
+    width: fitMode === 'cover' ? '100vw' : 'auto',
+    maxHeight: fitMode === 'fit-height' ? '100vh' : fitMode === 'contain' ? '92vh' : 'none',
+    maxWidth: fitMode === 'contain' ? '92vw' : 'none',
+    objectFit: fitMode === 'cover' ? 'cover' : 'contain',
+  };
+}
 
 export function FullscreenViewer() {
   const {
@@ -22,7 +34,7 @@ export function FullscreenViewer() {
     closeFullscreen,
     handlePrevPhoto,
     handleNextPhoto,
-    toggleZenMode
+    toggleZenMode,
   } = useFullscreenControls();
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -38,14 +50,15 @@ export function FullscreenViewer() {
   const thumbUrl = api.getPhotoThumbnailUrl(fullscreenPhotoId);
   const originalUrl = `${api.getPhotoOriginalUrl(fullscreenPhotoId)}?raw=true`;
   const imageUrl = imgError ? thumbUrl : originalUrl;
+  const fitImageStyle = getFitModeImageStyle(fitMode);
 
-  const handleWheel = (e: React.WheelEvent) => {
-    if (e.ctrlKey || e.metaKey || scale > 1) {
-      e.preventDefault();
-      if (e.deltaY < 0) {
-        setScale(prev => Math.min(prev + 0.25, 4));
+  const handleWheel = (event: React.WheelEvent) => {
+    if (event.ctrlKey || event.metaKey || scale > 1) {
+      event.preventDefault();
+      if (event.deltaY < 0) {
+        setScale((prev) => Math.min(prev + 0.25, 4));
       } else {
-        setScale(prev => Math.max(prev - 0.25, 0.5));
+        setScale((prev) => Math.max(prev - 0.25, 0.5));
       }
     }
   };
@@ -69,245 +82,29 @@ export function FullscreenViewer() {
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
-            userSelect: 'none'
+            userSelect: 'none',
           }}
         >
-          {/* Top Floating Control Bar */}
-          <AnimatePresence>
-            {!isZenMode && (
-              <motion.div
-                initial={{ y: -50, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                exit={{ y: -50, opacity: 0 }}
-                transition={{ duration: 0.2 }}
-                style={{
-                  position: 'absolute',
-                  top: '20px',
-                  left: '20px',
-                  right: '20px',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  zIndex: 120,
-                  pointerEvents: 'none'
-                }}
-              >
-                {/* File Title */}
-                <div className="glass-panel" style={{
-                  padding: '8px 16px',
-                  borderRadius: '10px',
-                  color: '#fff',
-                  fontSize: '14px',
-                  fontWeight: 500,
-                  maxWidth: '300px',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  pointerEvents: 'auto'
-                }}>
-                  {photo?.file_name || '사진 뷰어'}
-                </div>
+          <FullscreenToolbar
+            fileName={photo?.file_name}
+            isVisible={!isZenMode}
+            scale={scale}
+            fitMode={fitMode}
+            showMetadata={showMetadata}
+            onZoomOut={() => setScale((prev) => Math.max(prev - 0.5, 0.5))}
+            onZoomIn={() => setScale((prev) => Math.min(prev + 0.5, 4))}
+            onResetZoom={() => setScale(1)}
+            onSelectFitMode={(mode) => setFitMode(mode)}
+            onToggleZenMode={toggleZenMode}
+            onToggleMetadata={() => setShowMetadata((prev) => !prev)}
+            onClose={closeFullscreen}
+          />
 
-                {/* Toolbar Buttons */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', pointerEvents: 'auto' }}>
-                  {/* Zoom Controls */}
-                  <div className="glass-panel" style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    borderRadius: '10px',
-                    padding: '4px'
-                  }}>
-                    <button
-                      onClick={() => setScale(prev => Math.max(prev - 0.5, 0.5))}
-                      style={{ background: 'none', border: 'none', color: '#a1a1aa', padding: '6px', cursor: 'pointer', display: 'flex' }}
-                      title="축소 (-)"
-                    >
-                      <ZoomOut size={16} />
-                    </button>
-                    <span style={{ color: '#fff', fontSize: '12px', minWidth: '45px', textAlign: 'center', fontWeight: 600 }}>
-                      {Math.round(scale * 100)}%
-                    </span>
-                    <button
-                      onClick={() => setScale(prev => Math.min(prev + 0.5, 4))}
-                      style={{ background: 'none', border: 'none', color: '#a1a1aa', padding: '6px', cursor: 'pointer', display: 'flex' }}
-                      title="확대 (+)"
-                    >
-                      <ZoomIn size={16} />
-                    </button>
-                    <button
-                      onClick={() => setScale(1)}
-                      style={{ background: 'none', border: 'none', color: scale !== 1 ? 'var(--accent-focal-hover)' : '#71717a', padding: '6px', cursor: 'pointer', display: 'flex' }}
-                      title="100% 원본 비율 (0)"
-                    >
-                      <RotateCcw size={15} />
-                    </button>
-                  </div>
-
-                  {/* Fit Mode Switcher */}
-                  <div className="glass-panel" style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    borderRadius: '10px',
-                    padding: '4px',
-                    flexShrink: 0
-                  }}>
-                    <button
-                      onClick={() => setFitMode('fit-height')}
-                      style={{
-                        background: fitMode === 'fit-height' ? 'var(--bg-elevated)' : 'none',
-                        border: 'none', color: fitMode === 'fit-height' ? '#fff' : 'var(--text-secondary)',
-                        padding: '6px 10px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 500,
-                        whiteSpace: 'nowrap', flexShrink: 0
-                      }}
-                      title="높이 맞춤"
-                    >
-                      높이 맞춤
-                    </button>
-                    <button
-                      onClick={() => setFitMode('contain')}
-                      style={{
-                        background: fitMode === 'contain' ? 'var(--bg-elevated)' : 'none',
-                        border: 'none', color: fitMode === 'contain' ? '#fff' : 'var(--text-secondary)',
-                        padding: '6px 10px', borderRadius: '6px', fontSize: '12px', cursor: 'pointer', fontWeight: 500,
-                        whiteSpace: 'nowrap', flexShrink: 0
-                      }}
-                      title="전체 맞춤"
-                    >
-                      전체 맞춤
-                    </button>
-                  </div>
-
-                  {/* Zen Mode Button */}
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={toggleZenMode}
-                    className="glass-button"
-                    style={{
-                      padding: '8px 12px',
-                      fontSize: '12px',
-                      fontWeight: 500,
-                      whiteSpace: 'nowrap',
-                      flexShrink: 0
-                    }}
-                    title="몰입 모드 (F)"
-                  >
-                    <Eye size={15} style={{ flexShrink: 0 }} /> 몰입 모드
-                  </motion.button>
-
-                  {/* EXIF Info Toggle */}
-                  <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => setShowMetadata(prev => !prev)}
-                    className="glass-button"
-                    style={{
-                      borderColor: showMetadata ? 'var(--accent-focal)' : undefined,
-                      color: showMetadata ? 'var(--accent-focal)' : undefined,
-                      padding: '8px 12px',
-                      fontSize: '12px',
-                      fontWeight: 500,
-                      whiteSpace: 'nowrap',
-                      flexShrink: 0
-                    }}
-                    title="메타데이터 오버레이 토글 (I)"
-                  >
-                    <Info size={15} style={{ flexShrink: 0 }} /> EXIF 오버레이
-                  </motion.button>
-
-                  {/* Close Button */}
-                  <motion.button
-                    whileHover={{ scale: 1.1, backgroundColor: '#ef4444', color: '#fff' }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={closeFullscreen}
-                    style={{
-                      background: '#27272a', border: 'none', color: '#f4f4f5',
-                      borderRadius: '50%', padding: '8px', cursor: 'pointer', display: 'flex', marginLeft: '8px',
-                      transition: 'all 0.15s ease'
-                    }}
-                    title="닫기 (Esc)"
-                  >
-                    <X size={20} />
-                  </motion.button>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Floating Navigation Arrows */}
-          <AnimatePresence>
-            {!isZenMode && (
-              <>
-                <motion.button
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 0.8, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  whileHover={{ scale: 1.15, opacity: 1, backgroundColor: 'rgba(24, 24, 27, 0.95)' }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handlePrevPhoto();
-                  }}
-                  style={{
-                    position: 'absolute',
-                    left: '24px',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    background: 'rgba(24, 24, 27, 0.6)',
-                    backdropFilter: 'blur(8px)',
-                    border: '1px solid rgba(63, 63, 70, 0.6)',
-                    color: '#fff',
-                    borderRadius: '50%',
-                    padding: '14px',
-                    cursor: 'pointer',
-                    zIndex: 130,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    boxShadow: '0 8px 25px rgba(0,0,0,0.5)',
-                    transition: 'opacity 0.2s, background-color 0.2s'
-                  }}
-                  title="이전 사진 (←)"
-                >
-                  <ChevronLeft size={24} />
-                </motion.button>
-
-                <motion.button
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 0.8, x: 0 }}
-                  exit={{ opacity: 0, x: 20 }}
-                  whileHover={{ scale: 1.15, opacity: 1, backgroundColor: 'rgba(24, 24, 27, 0.95)' }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleNextPhoto();
-                  }}
-                  style={{
-                    position: 'absolute',
-                    right: '24px',
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    background: 'rgba(24, 24, 27, 0.6)',
-                    backdropFilter: 'blur(8px)',
-                    border: '1px solid rgba(63, 63, 70, 0.6)',
-                    color: '#fff',
-                    borderRadius: '50%',
-                    padding: '14px',
-                    cursor: 'pointer',
-                    zIndex: 130,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    boxShadow: '0 8px 25px rgba(0,0,0,0.5)',
-                    transition: 'opacity 0.2s, background-color 0.2s'
-                  }}
-                  title="다음 사진 (→)"
-                >
-                  <ChevronRight size={24} />
-                </motion.button>
-              </>
-            )}
-          </AnimatePresence>
+          <FullscreenNavigation
+            isVisible={!isZenMode}
+            onPrevPhoto={handlePrevPhoto}
+            onNextPhoto={handleNextPhoto}
+          />
 
           {/* Main Image Container */}
           <div
@@ -323,7 +120,7 @@ export function FullscreenViewer() {
               alignItems: 'center',
               justifyContent: 'center',
               overflow: 'hidden',
-              cursor: isZenMode ? 'pointer' : (scale > 1 ? 'grab' : 'default')
+              cursor: isZenMode ? 'pointer' : scale > 1 ? 'grab' : 'default',
             }}
             onClick={toggleZenMode}
           >
@@ -334,22 +131,30 @@ export function FullscreenViewer() {
                 left: -window.innerWidth * (scale - 0.8),
                 right: window.innerWidth * (scale - 0.8),
                 top: -window.innerHeight * (scale - 0.8),
-                bottom: window.innerHeight * (scale - 0.8)
+                bottom: window.innerHeight * (scale - 0.8),
               }}
               dragMomentum={false}
               dragElastic={0}
-              onPointerDown={(e) => {
+              onPointerDown={(event) => {
                 if (scale > 1) {
-                  e.stopPropagation();
+                  event.stopPropagation();
                 }
               }}
               animate={{
                 scale,
                 x: scale === 1 ? 0 : undefined,
-                y: scale === 1 ? 0 : undefined
+                y: scale === 1 ? 0 : undefined,
               }}
               transition={scale === 1 ? { type: 'spring', stiffness: 300, damping: 30 } : { duration: 0 }}
-              style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', height: '100%', touchAction: 'none', position: 'relative' }}
+              style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                width: '100%',
+                height: '100%',
+                touchAction: 'none',
+                position: 'relative',
+              }}
             >
               {/* Thumbnail Placeholder while Full Res is loading */}
               {!isFullLoaded && !imgError && (
@@ -357,12 +162,8 @@ export function FullscreenViewer() {
                   src={thumbUrl}
                   alt="미리보기"
                   style={{
+                    ...fitImageStyle,
                     position: 'absolute',
-                    height: fitMode === 'fit-height' ? '100vh' : fitMode === 'cover' ? '100vh' : 'auto',
-                    width: fitMode === 'cover' ? '100vw' : 'auto',
-                    maxHeight: fitMode === 'fit-height' ? '100vh' : fitMode === 'contain' ? '92vh' : 'none',
-                    maxWidth: fitMode === 'contain' ? '92vw' : 'none',
-                    objectFit: fitMode === 'cover' ? 'cover' : 'contain',
                     filter: 'blur(8px)',
                     opacity: 0.8,
                     pointerEvents: 'none',
@@ -375,19 +176,15 @@ export function FullscreenViewer() {
                 src={imageUrl}
                 alt={photo?.file_name || '원본 사진'}
                 draggable={false}
-                onDragStart={(e) => e.preventDefault()}
+                onDragStart={(event) => event.preventDefault()}
                 onLoad={() => setIsFullLoaded(true)}
                 onError={() => {
                   setImgError(true);
                   setIsFullLoaded(true);
                 }}
-                onDoubleClick={() => setScale(prev => (prev === 1 ? 2 : 1))}
+                onDoubleClick={() => setScale((prev) => (prev === 1 ? 2 : 1))}
                 style={{
-                  height: fitMode === 'fit-height' ? '100vh' : fitMode === 'cover' ? '100vh' : 'auto',
-                  width: fitMode === 'cover' ? '100vw' : 'auto',
-                  maxHeight: fitMode === 'fit-height' ? '100vh' : fitMode === 'contain' ? '92vh' : 'none',
-                  maxWidth: fitMode === 'contain' ? '92vw' : 'none',
-                  objectFit: fitMode === 'cover' ? 'cover' : 'contain',
+                  ...fitImageStyle,
                   display: 'block',
                   userSelect: 'none',
                   WebkitUserSelect: 'none',
@@ -399,22 +196,24 @@ export function FullscreenViewer() {
 
               {/* Decoding RAW spinner badge */}
               {!isFullLoaded && !imgError && (
-                <div style={{
-                  position: 'absolute',
-                  bottom: '24px',
-                  right: '24px',
-                  background: 'rgba(0, 0, 0, 0.7)',
-                  backdropFilter: 'blur(8px)',
-                  padding: '6px 12px',
-                  borderRadius: '20px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  color: '#e4e4e7',
-                  fontSize: '12px',
-                  zIndex: 10,
-                  border: '1px solid rgba(255, 255, 255, 0.1)',
-                }}>
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: '24px',
+                    right: '24px',
+                    background: 'rgba(0, 0, 0, 0.7)',
+                    backdropFilter: 'blur(8px)',
+                    padding: '6px 12px',
+                    borderRadius: '20px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    color: '#e4e4e7',
+                    fontSize: '12px',
+                    zIndex: 10,
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                  }}
+                >
                   <Loader2 size={13} className="spin" color="var(--accent-focal)" style={{ flexShrink: 0 }} />
                   <span style={{ whiteSpace: 'nowrap' }}>고해상도 디코딩 중...</span>
                 </div>
