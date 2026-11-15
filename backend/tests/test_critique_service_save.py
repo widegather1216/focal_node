@@ -287,7 +287,6 @@ async def test_generate_photo_critique_unipercept_pipeline_end_to_end(db_session
         "한국어로 정제된 비평 본문입니다."
     )
     mock_gemma_inst.generate_perceptual_critique.return_value = critique_output
-    mock_gemma_inst.translate_and_format_critique.return_value = critique_output
     monkeypatch.setattr("services.chat_service.get_gemma_adapter", lambda: mock_gemma_inst)
 
     req = schemas.CritiqueRequest(photo_id=photo_id, engine="unipercept")

@@ -1,6 +1,63 @@
 import sys
 import os
+import importlib.machinery
+import importlib.util
+import types
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'app')))
+
+
+def _create_stub_module(name: str, is_package: bool = False) -> types.ModuleType:
+    stub = types.ModuleType(name)
+    stub.__spec__ = importlib.machinery.ModuleSpec(name, loader=None, is_package=is_package)
+    if is_package:
+        stub.__path__ = []
+    return stub
+
+
+def _ensure_headless_mlx_stubs() -> None:
+    """Install safe mlx/mlx_vlm stubs when running in headless or non-Metal test environments."""
+    mps_available = False
+    try:
+        import torch
+        mps_available = bool(
+            hasattr(torch, "backends")
+            and hasattr(torch.backends, "mps")
+            and torch.backends.mps.is_available()
+        )
+    except Exception:
+        mps_available = False
+
+    has_mlx_package = importlib.util.find_spec("mlx") is not None
+    if mps_available and has_mlx_package:
+        return
+
+    mlx_pkg = sys.modules.get("mlx")
+    if mlx_pkg is None:
+        mlx_pkg = _create_stub_module("mlx", is_package=True)
+        sys.modules["mlx"] = mlx_pkg
+
+    mlx_core = sys.modules.get("mlx.core")
+    if mlx_core is None:
+        mlx_core = _create_stub_module("mlx.core")
+        mlx_core.clear_cache = lambda: None
+        mlx_core.metal = types.SimpleNamespace(is_available=lambda: False)
+        sys.modules["mlx.core"] = mlx_core
+    mlx_pkg.core = mlx_core
+
+    mlx_nn = sys.modules.get("mlx.nn")
+    if mlx_nn is None:
+        mlx_nn = _create_stub_module("mlx.nn")
+        sys.modules["mlx.nn"] = mlx_nn
+    mlx_pkg.nn = mlx_nn
+
+    if "mlx_vlm" not in sys.modules:
+        mlx_vlm_stub = _create_stub_module("mlx_vlm", is_package=True)
+        mlx_vlm_stub.load = lambda *args, **kwargs: (None, None)
+        mlx_vlm_stub.generate = lambda *args, **kwargs: types.SimpleNamespace(text="")
+        sys.modules["mlx_vlm"] = mlx_vlm_stub
+
+
+_ensure_headless_mlx_stubs()
 
 import pytest
 from fastapi.testclient import TestClient

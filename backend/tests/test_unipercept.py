@@ -13,111 +13,23 @@ def test_unipercept_adapter_initial_state():
     assert adapter.model is None
     assert adapter.timer_active is False
 
-def test_extract_score_from_text_multiline_and_averaging_fix():
-    adapter = UniPerceptAdapter()
-    
-    # Text with multiple internal scores but final explicit Aesthetic Score at the end
-    sample_text = (
-        "This photo is well composed.\n"
-        "Color Harmony Score: 40/100.\n"
-        "Composition Score: 37/100.\n"
-        "Overall Aesthetic Score: 97/100"
-    )
-    score = adapter._extract_score_from_text(sample_text, ["Aesthetic Score", "Overall Aesthetic Score", "Score"])
-    assert score == 97, f"Expected 97 but got {score}"
-
-    # Text where model outputs final line score
-    sample_text_2 = (
-        "Great shot.\n"
-        "Aesthetic Score: 95/100"
-    )
-    score_2 = adapter._extract_score_from_text(sample_text_2, ["Aesthetic Score"])
-    assert score_2 == 95, f"Expected 95 but got {score_2}"
-
-def test_extract_all_scores_dict():
-    adapter = UniPerceptAdapter()
-    
-    comp_text = (
-        "This image is well executed.\n"
-        "Overall Score: 88/100\n"
-        "IAA Score: 95/100\n"
-        "IQA Score: 80/100\n"
-        "ISTA Score: 85/100"
-    )
-    scores = adapter._extract_all_scores_dict(comp_text)
-    assert scores["overall"] == 88
-    assert scores["iaa"] == 95
-    assert scores["iqa"] == 80
-    assert scores["ista"] == 85
-
-def test_extract_score_from_text_score_first_header():
-    adapter = UniPerceptAdapter()
-    
-    # Score-First format where scores appear at the very top header
-    header_text = (
-        "[SCORES]\n"
-        "Overall Score: 89/100\n"
-        "Aesthetic Score: 92/100\n"
-        "Quality Score: 85/100\n"
-        "Structure Score: 87/100\n"
-        "[ANALYSIS]\n"
-        "The image exhibits remarkable dynamic range and balanced composition."
-    )
-    score = adapter._extract_score_from_text(header_text, ["Aesthetic Score", "Overall Score"])
-    assert score == 92, f"Expected 92 but got {score}"
-
-    all_scores = adapter._extract_all_scores_dict(header_text)
-    assert all_scores["overall"] == 89
-    assert all_scores["iaa"] == 92
-    assert all_scores["iqa"] == 85
-    assert all_scores["ista"] == 87
-
-def test_safety_net_retry_logic(monkeypatch):
-    import os
-    adapter = UniPerceptAdapter()
-    
-    test_img = os.path.join(os.path.dirname(__file__), "fixtures", "test_scenic.jpg")
-    if not os.path.exists(test_img):
-        test_img = os.path.abspath("backend/tests/fixtures/test_scenic.jpg")
-    
-    call_count = 0
-    def mock_chat(*args, **kwargs):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            return "This response has no score anywhere."
-        else:
-            return "This response has final Aesthetic Score: 92/100."
-
-    adapter.model = type("DummyModel", (), {"chat": mock_chat})()
-    
-    res = adapter.generate_unipercept_critique(
-        test_img,
-        custom_prompt="Rate this photo",
-        retry_if_score_missing=True,
-        max_retries=2
-    )
-    assert call_count == 2, f"Expected 2 attempts but got {call_count}"
-    assert res["quality_score"] == 92, f"Expected score 92 but got {res['quality_score']}"
-
-def test_vr_scores_and_weighted_overall():
-    adapter = UniPerceptAdapter()
-    
-    # VR output containing only 3 metrics
-    vr_text = (
-        "Aesthetic Score: [85]\n"
-        "Quality Score: [90]\n"
-        "Structure Score: [80]"
-    )
-    vr_scores = adapter._extract_3_vr_scores_dict(vr_text)
-    assert vr_scores["iaa"] == 85
-    assert vr_scores["iqa"] == 90
-    assert vr_scores["ista"] == 80
-
-    # Test production scoring overall: services.scoring.calculate_overall_vr_score
+def test_adr05_scoreboard_parser_and_weighted_overall():
+    from services.ai_parser import parse_scoreboard_scores
     from services.scoring import calculate_overall_vr_score
-    overall = calculate_overall_vr_score(vr_scores["iaa"], vr_scores["iqa"], vr_scores["ista"])
+
+    scoreboard_text = (
+        "[6-Way 앙상블 비평 스코어보드]\n"
+        "- 최종 종합 평점: 86점 / 100점\n"
+        "- 미학 및 구도 (IAA): 85점\n"
+        "- 화질 및 선명도 (IQA): 90점\n"
+        "- 구조 및 질감 (ISTA): 80점\n\n"
+        "> **한 줄 총평**: 균형 잡힌 구도와 선예도가 돋보입니다."
+    )
+    parsed = parse_scoreboard_scores(scoreboard_text)
+    assert parsed == {"overall": 86.0, "iaa": 85.0, "iqa": 90.0, "ista": 80.0}
+
     # Mode D (0.55 * 85 + 0.30 * 90 + 0.15 * 80) = 46.75 + 27.0 + 12.0 = 85.75 -> round = 86
+    overall = calculate_overall_vr_score(85, 90, 80)
     assert overall == 86
 
 from services.unipercept_adapter import score2aestoken, AESTHETICS_TOKEN_LIST
@@ -185,91 +97,87 @@ def test_full_ensemble_6way_pipeline(monkeypatch):
     assert "pin-sharp optical clarity" in res["critique"]
     assert "rich surface textures" in res["critique"]
 
-def test_1point_perfect_score_upgrade_logic():
-    adapter = UniPerceptAdapter()
-
-    # Case 1: 'Image Aesthetic Score = 1 Perfect'
-    text_1 = (
-        "Visual storytelling beyond mere documentation—perfectly transcending ordinary photography realms!\n"
-        "Image Aesthetic Score = 1 Perfect\n"
-        "Quality Image Scores= perfect Structure Texture Interpretation"
-    )
-    score_1 = adapter._extract_score_from_text(text_1, ["Image Aesthetic Score", "Aesthetic Score"])
-    assert score_1 == 100, f"Expected 100 but got {score_1}"
-
-    scores_dict_1 = adapter._extract_all_scores_dict(text_1)
-    assert scores_dict_1["iaa"] == 100
-    assert scores_dict_1["iqa"] == 100
-
-    # Case 2: Standalone trailing '1' with high-praise keywords (e.g. surpassing excellence)
-    text_2 = (
-        "Strengths lies in realistic representation and breathtaking lighting.\n"
-        "Overall merit leans towards competent documentation surpassing average excellence:\n\n"
-        "1"
-    )
-    score_2 = adapter._extract_score_from_text(text_2, ["Overall Score", "Score"])
-    assert score_2 == 100, f"Expected 100 but got {score_2}"
-
-    # Case 3: Random artifact '1' without praise keywords -> Should be discarded (None)
-    text_3 = (
-        "This image is blurry and has severe exposure issues.\n"
-        "Score: 1"
-    )
-    score_3 = adapter._extract_score_from_text(text_3, ["Score"])
-    assert score_3 is None, f"Expected None (to trigger retry) but got {score_3}"
-
-def test_natural_flow_format_and_bracket_parsing():
-    adapter = UniPerceptAdapter()
-
-    # Case 1: Candidate B Natural Flow with brackets and omitted colon
-    natural_flow_text = (
-        "Overall Score: [98/100]\n"
-        "Aesthetic Score: [95/100]\n"
-        "Quality Score [97/100]\n"
-        "Structure Score[96/100]\n\n"
-        "This image excels in every conceivable aspect. It masterfully captures urban decay."
-    )
-    scores = adapter._extract_all_scores_dict(natural_flow_text)
-    assert scores["overall"] == 98
-    assert scores["iaa"] == 95
-    assert scores["iqa"] == 97
-    assert scores["ista"] == 96
-
-    single_overall = adapter._extract_score_from_text(natural_flow_text, ["Overall Score"])
-    assert single_overall == 98
-
-
-def test_unipercept_prompts_strict_fidelity_and_no_emoji():
+def test_adr05_prompts_strict_fidelity_and_no_emoji():
     from services.ai_parser import (
-        GEMMA_TRANSLATE_STEP1_SYSTEM_PROMPT,
-        GEMMA_TRANSLATE_STEP2_SYSTEM_PROMPT,
-        format_unipercept_translate_step1_user_prompt,
-        format_unipercept_translate_step2_user_prompt
+        GEMMA_PERCEPTUAL_CRITIQUE_SYSTEM_PROMPT,
+        UNIPERCEPT_VQA_SINGLE_PASS_PROMPT,
+        format_perceptual_critique_user_prompt,
     )
 
-    # 1. Step 1 system prompt fidelity & no emoji
-    assert "왜곡" in GEMMA_TRANSLATE_STEP1_SYSTEM_PROMPT
-    assert "이모티콘" in GEMMA_TRANSLATE_STEP1_SYSTEM_PROMPT
+    assert "이모티콘" in GEMMA_PERCEPTUAL_CRITIQUE_SYSTEM_PROMPT
+    assert "## 1. [시각적 미학 및 EXIF 광학 진단]" in GEMMA_PERCEPTUAL_CRITIQUE_SYSTEM_PROMPT
+    assert "## 2. [구도 및 화질 결함과 왜곡 위치 지적]" in GEMMA_PERCEPTUAL_CRITIQUE_SYSTEM_PROMPT
+    assert "## 3. [현장 재촬영 및 보정 실전 기술 조언]" in GEMMA_PERCEPTUAL_CRITIQUE_SYSTEM_PROMPT
+    assert "Aesthetics & Composition" in UNIPERCEPT_VQA_SINGLE_PASS_PROMPT
+    assert "Technical Quality & Distortions" in UNIPERCEPT_VQA_SINGLE_PASS_PROMPT
+    assert "Structure & Surface Textures" in UNIPERCEPT_VQA_SINGLE_PASS_PROMPT
 
-    # 2. Step 2 system prompt: strictly prohibits subjective intervention and hallucination
-    assert "무개입" in GEMMA_TRANSLATE_STEP2_SYSTEM_PROMPT
-    assert "학술 번역 감수자" in GEMMA_TRANSLATE_STEP2_SYSTEM_PROMPT
-    assert "## 1. [미학 및 구도 평가 (IAA)]" in GEMMA_TRANSLATE_STEP2_SYSTEM_PROMPT
-    assert "## 2. [화질 및 광학 기술 평가 (IQA)]" in GEMMA_TRANSLATE_STEP2_SYSTEM_PROMPT
-    assert "## 3. [구조 및 질감 분석 (ISTA)]" in GEMMA_TRANSLATE_STEP2_SYSTEM_PROMPT
-    assert "이모티콘" in GEMMA_TRANSLATE_STEP2_SYSTEM_PROMPT
-
-    # 3. User prompts have matching standard headers
     scores = {"overall": 90, "iaa": 92, "iqa": 88, "ista": 91}
-    step1_prompt = format_unipercept_translate_step1_user_prompt("Raw test critique", scores)
-    assert "## 1. [미학 및 구도 평가 (IAA)]" in step1_prompt
-    assert "## 2. [화질 및 광학 기술 평가 (IQA)]" in step1_prompt
-    assert "## 3. [구조 및 질감 분석 (ISTA)]" in step1_prompt
+    user_prompt = format_perceptual_critique_user_prompt("Balanced lighting.", scores_dict=scores)
+    assert "[6-Way 앙상블 비평 스코어보드]" in user_prompt
+    assert "Balanced lighting." in user_prompt
+    assert "이모티콘" in user_prompt
 
-    step2_prompt = format_unipercept_translate_step2_user_prompt("Draft ko critique", scores)
-    assert "## 1. [미학 및 구도 평가 (IAA)]" in step2_prompt
-    assert "한 줄 총평" in step2_prompt
-    assert "원문에 없는 새로운 조언" in step2_prompt
+
+@pytest.mark.asyncio
+async def test_adr05_pipeline_monotonic_progress_and_labels(monkeypatch, db_session):
+    """Verify REFACTOR-08: monotonic progress (5 -> 12 -> 22 -> 32 -> 50 -> 75 -> 100) with no [1/6] regressions."""
+    import os
+    from contextlib import contextmanager
+    import models
+    import schemas
+    from services.chat_service import ChatService
+    from services.critique_status import critique_status_manager
+
+    photo_id = "test_monotonic_progress_img"
+    img_path = os.path.abspath("backend/tests/fixtures/test_scenic.jpg")
+    db_session.add(models.Image(
+        id=photo_id, parent_dir="/test", file_path=img_path,
+        file_name="test_scenic.jpg", file_size=1000, file_mtime=1.0, mime_type="image/jpeg",
+    ))
+    db_session.commit()
+
+    @contextmanager
+    def mock_session_scope():
+        yield db_session
+
+    monkeypatch.setattr("services.chat_service.SessionLocal", mock_session_scope)
+
+    recorded_updates = []
+    original_update = critique_status_manager.update
+
+    def capture_update(pid, step, total_steps, message, progress, status="processing", **extra):
+        if pid == photo_id:
+            recorded_updates.append((step, message, progress, status))
+        return original_update(pid, step, total_steps, message, progress, status=status, **extra)
+
+    monkeypatch.setattr(critique_status_manager, "update", capture_update)
+
+    adapter = UniPerceptAdapter()
+    adapter.model = type("DummyUniModel", (), {"chat": lambda *a, **kw: "Clean composition."})()
+    adapter.tokenizer = type("DummyTok", (), {"convert_tokens_to_ids": lambda self, x: 1})()
+    adapter.compute_official_vr_score = lambda pixel_values, desc: 85.0
+    adapter._prepare_pixel_values = lambda pil_img, photo_id=None: None
+    adapter.unload_model = lambda: None
+
+    class DummyGemma:
+        active_requests = 0
+        def generate_perceptual_critique(self, image_path, perceptual_anchor, scores_dict=None, metadata=None, photo_id=None):
+            critique_status_manager.update(photo_id, 3, 4, "[Gemma] 지각 앵커 기반 심층 비평 작성 중...", 75)
+            return "[6-Way 앙상블 비평 스코어보드]\n- 최종 종합 평점: 85점 / 100점\n- 미학 및 구도 (IAA): 85점\n- 화질 및 선명도 (IQA): 85점\n- 구조 및 질감 (ISTA): 85점\n\n좋은 사진입니다."
+        def unload_model(self):
+            pass
+
+    monkeypatch.setattr("services.unipercept_adapter.get_unipercept_adapter", lambda: adapter)
+    monkeypatch.setattr("services.chat_service.get_gemma_adapter", lambda: DummyGemma())
+
+    result = await ChatService.generate_photo_critique(schemas.CritiqueRequest(photo_id=photo_id, engine="unipercept"))
+    assert result["status"] == "completed"
+    progress_values = [entry[2] for entry in recorded_updates]
+    assert progress_values == sorted(progress_values), f"Non-monotonic progress detected: {recorded_updates}"
+    assert progress_values[0] == 5 and progress_values[-1] == 100
+    assert all("/6]" not in entry[1] for entry in recorded_updates)
+    assert any("[1/3]" in entry[1] for entry in recorded_updates)
 
 
 @pytest.mark.asyncio
@@ -319,9 +227,6 @@ async def test_chat_service_unipercept_pipeline_isolation(monkeypatch, db_sessio
             nonlocal mock_perceptual_called
             mock_perceptual_called = True
             return "Perceptual critique based on anchor"
-
-        def translate_and_format_critique(self, *args, **kwargs):
-            return "Translated UniPercept critique"
 
         def format_and_structure_critique(self, *args, **kwargs):
             nonlocal mock_format_called
