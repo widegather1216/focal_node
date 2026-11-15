@@ -1,17 +1,17 @@
 # 🧭 Focal Node: Master Control Tower (Living Wiki Hub)
 
 > 외부 클라우드 전송 없이 Mac Native(Apple MLX & PyTorch MPS)로 구동되는 **프라이버시 보호 로컬 사진 관리 및 AI 시맨틱 검색/비평 데스크탑 플랫폼**입니다.
-> **최종 업데이트**: 2026-11-15 (by `systematic-debugger`)
+> **최종 업데이트**: 2026-11-15 (by `deep-bug-hunter`)
 
 ---
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
-- **Active 도메인**: [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) *(`04_studio_ui_analytics` `REFACTOR-01~02` 전수 해결 완료 / 전 도메인 `REFACTOR` 0건)*
-- **현재 단계 (Stage)**: `🛠️ Implementing (04_studio_ui_analytics 차트 드릴다운 Step 3~4 대기)`
-- **직전 완료 작업**: [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) 도메인 `REFACTOR-02` 해결 완료 (`src/types/analytics.ts`·`src/types/system.ts`·`PhotoSummary` 신설 및 `api.ts` 17개 `any` 제거, `PhotoGallery`/`PhotoCard`/`usePhotosQuery`/`FullscreenMetadataOverlay`/Analytics 차트·`exif.ts`·`useBackendInit`·`useModelDownloadStatus`·`ModelDownloadModal` `src/` 전역 `any` 0건 달성, `npx tsc --noEmit && npm run build`·`test_api_analytics.py` PASS)
+- **Active 도메인**: [`00_core_foundation`](./features/00_core_foundation/README.md) *(`deep-bug-hunter` 3-Lens 실증 점검 결과 P0 3건·P1 4건 총 `DEFECT-05~11` 발견)*
+- **현재 단계 (Stage)**: `🩹 Debugging (00_core_foundation DEFECT-05~11 해결 대기 / 04_studio_ui_analytics Step 3~4 대기)`
+- **직전 완료 작업**: [`00_core_foundation`](./features/00_core_foundation/README.md) 3-Lens 다각도 적대적 딥버그 헌팅 및 실증 마이크로 프로빙 완료 (macOS 비쓰기 `.app` 번들 사이드카 크래시 `DEFECT-05`, `tokenizer.json` 가중치 오인 `DEFECT-06`, `BaseKeepAliveModel.unload_model` `active_requests` 경합 크래시 `DEFECT-07`, `huggingface_hub==1.21.0` `force_download=False` 복구 실패 `DEFECT-08`, `chroma.py` Self-Healing `bindings` 크래시/동기화 단절 `DEFECT-09`, `GemmaAdapter` 예외 삼킴 `DEFECT-10`, Tauri `save_binary_file`/`csp: null` `DEFECT-11` 등록)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"04_studio_ui_analytics 도메인 Step 3 개발 진행해줘"` *(`clean-code-developer`로 차트 드릴다운 액션 구현 재개)*
+  > `"00_core_foundation 도메인의 DEFECT-05 티켓 해결해줘"` *(`systematic-debugger`로 P0 결함부터 순차 해결)*
 
 ---
 
@@ -19,7 +19,7 @@
 
 | 도메인 (Bounded Context) | 생명주기 상태 | 구현 진척도 (Active Step 1~4) | QA 인수 통과율 | 미해결 티켓 (`🚨D` / `🧐R`) | 최근 작업 요약 |
 | :--- | :--- :---: | :---: | :---: | :---: | :--- |
-| 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `5/5 (100%)` | `0 / 0` | DEFECT-01~04 전수 해결 완료 (손상 인덱스 valid=False, 실패 시 거짓 완료 차단, 1종 조기완료 차단, 중복 스레드/락 삭제 가드), Sign-Off 완료 |
+| 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `1/5 (20%)` | `7 / 0` | `deep-bug-hunter` 3-Lens 실증 점검 완료 (`DEFECT-05~11` 7건 OPEN — 번들 크래시, `tokenizer.json` 오인, `unload_model` 레이스, `hf_hub` 복구, Chroma Self-Healing 크래시 등) |
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `14/17 (82%)` | `0 / 0` | DEFECT-01~11·REFACTOR-01~02 전수 해결 완료(`folder_manager.py`·`photo_reindex.py` 분리, `ActionBar`/`Sidebar` 경량화), Active Step 1 대기 |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 0` | `REFACTOR-01` 해결 완료(SigLIP 폴백·`search.py` 로깅·`similar:` 버튼 연결), RRF·스마트 앨범 Step 1~4 대기 |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `15/15 (100%)` | `0 / 0` | `DEFECT-01~03`·`REFACTOR-01~08` 전수 해결 완료 (Headless MPS/MLX 가드·ADR-05 레거시 정리·300줄 이하 분할), Sign-Off 완료 |
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-15]` `[deep-bug-hunter]` [`00_core_foundation`]**: 3-Lens 다중 관점 적대적 딥버그 헌팅 및 비파괴 실증 마이크로 프로빙 완료 (macOS 비쓰기 `.app` 번들 `focal_node_backend` 즉시 크래시 `DEFECT-05`, `is_snapshot_weights_valid` `tokenizer.json` > 5MB 가중치 오인 `DEFECT-06`, `BaseKeepAliveModel.unload_model` `active_requests` 미검사 및 `force=True` 경합 크래시 `DEFECT-07`, `huggingface_hub==1.21.0` `force_download=False` 손상 캐시 복구 실패 `DEFECT-08`, `chroma.py` Self-Healing `SharedSystemClient` `bindings` 크래시 및 `/api/index/sync` 벡터 누락 `DEFECT-09`, `GemmaAdapter.generate_caption_and_tags` 예외 삼킴 `DEFECT-10`, Tauri `save_binary_file`/`csp: null` `DEFECT-11` 총 `DEFECT 7건` 등록 및 위키 헬스체크 통과).
 
 - **`[2026-11-15]` `[systematic-debugger]` [`04_studio_ui_analytics`]**: `REFACTOR-02` 리팩토링 티켓 해결 완료 (`bd92eb6`, `c095184` / `src/types/analytics.ts`·`src/types/system.ts` 신설 및 `src/types/photo.ts` `PhotoSummary` 추가로 `api.ts` 반환형 `Promise<any>`/`any[]` 전수 구체화, `usePhotosQuery`/`PhotoGallery`/`PhotoCard`/`FullscreenMetadataOverlay`/Analytics 차트/`exif.ts`/`useBackendInit`/`useModelDownloadStatus`/`ModelDownloadModal` 타입 엄격화로 `src/` 전역 `any` 0건 달성, `npx tsc --noEmit && npm run build`·`test_api_analytics.py` PASS 및 위키 헬스체크 통과).
 

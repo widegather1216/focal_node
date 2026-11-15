@@ -1,8 +1,8 @@
 # 🏛️ [00_core_foundation] Core Foundation & System Architecture
 
-- **현재 상태 (Lifecycle)**: `🟢 Sign-Off (전 계층 구현 완료 및 5대 인수조건 100% PASS)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (3-Lens 딥버그 헌팅 완료 — DEFECT-05~11 7건 해결 대기)`
 - **구현 진척도**: `[■■■■] 4/4 Steps`
-- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 7건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -29,15 +29,16 @@
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-11-07 / systematic-debugger / DEFECT-04 해결 (d596f7b / start_background_model_downloader alive 가드 적용으로 force=True 중복 스레드 증식 및 HF 파일 락 삭제 충돌 차단, TC-CF-05 단위 테스트 추가, 00_core_foundation 전수 Sign-Off)`
-- **생성/수정된 핵심 파일**:
-  - [`backend/app/services/model_downloader.py`](../../../backend/app/services/model_downloader.py): `start_background_model_downloader`에 `_downloader_thread and _downloader_thread.is_alive()` 가드 절 추가 및 스레드 중복 생성 방지
-  - [`backend/tests/test_model_downloader.py`](../../../backend/tests/test_model_downloader.py): `test_start_background_model_downloader_prevents_duplicate_threads_when_alive` 단위 테스트 추가 (`TC-CF-05` 검증)
-  - [`docs/features/00_core_foundation/verification.md`](./verification.md): `DEFECT-04` RESOLVED 및 `TC-CF-05` PASS 갱신
-- **검증 완료된 테스트 실행 명령어**:
-  - `./venv/bin/pytest backend/tests/test_model_downloader.py` (9 passed)
-  - `./venv/bin/pytest backend/tests/` (112 passed)
-  - `npm run build` (tsc & vite build PASS)
+- **직전 완료 작업**: `2026-11-15 / deep-bug-hunter / 00_core_foundation 3-Lens 다각도 적대적 딥버그 헌팅 및 실증 프로빙 완료 (DEFECT-05~11 총 7건 발권)`
+- **검증 및 실증된 핵심 결함**:
+  - `DEFECT-05` (🔴 P0): macOS 비쓰기 `.app` 번들에서 `lib.rs` 심볼릭 링크 실패로 `focal_node_backend` 즉시 크래시 (`encodings` 누락, `0o555` 프로브 `rc=1`)
+  - `DEFECT-06` (🔴 P0): `is_snapshot_weights_valid` 5MB 초과 폴백이 `tokenizer.json`을 가중치로 오인해 `"cached"` 거짓 성공 반환
+  - `DEFECT-07` (🔴 P0): `BaseKeepAliveModel.unload_model()`의 `active_requests` 미검사 및 `force=True` 언로드로 활성 VLM 추론 `NoneType` 크래시 유발
+  - `DEFECT-08` (🟠 P1): `huggingface_hub==1.21.0` `force_download=False` 단락으로 손상 인덱스/샤드 재다운로드 영구 실패
+  - `DEFECT-09` (🟠 P1): `chroma.py` Self-Healing 시 `SharedSystemClient` 캐시 오염으로 `AttributeError: bindings` 크래시 및 `/api/index/sync` 벡터 누락 스킵
+  - `DEFECT-10` (🟠 P1): `GemmaAdapter.generate_caption_and_tags` 예외 삼킴으로 빈 메타데이터 커밋 및 재인덱싱 영구 스킵
+  - `DEFECT-11` (🟠 P1): Tauri IPC `save_binary_file` 무검증 임의 파일 쓰기 및 `tauri.conf.json` `"csp": null`
+- **검증 명령어**: `./venv/bin/pytest backend/tests/test_model_downloader.py backend/tests/test_concurrency_hardening.py -v` (`19 passed` / Mock 구간 외 실증 프로브로 결함 확인)
 - **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - `00_core_foundation`의 5대 인수조건 100% 통과 및 잔여 결함 0건으로 `🟢 Sign-Off` 완료.
-  - 다음 작업으로 `03_ai_critique` 도메인의 런타임 결함 `DEFECT-02`(비평 취소 시 28GB 메모리 미해제) 해결 권장 (`"03_ai_critique 도메인의 DEFECT-02 티켓 해결해줘"`).
+  - `systematic-debugger`로 P0 티켓(`DEFECT-05`, `DEFECT-06`, `DEFECT-07`)부터 순차 해결 권장 (`"00_core_foundation 도메인의 DEFECT-05 티켓 해결해줘"`).
+  - (교차 도메인 참고) `01_indexing_storage`의 `folder_manager.py#L50-L65` `purge_photo_records_batch`도 `db.commit()` 전 썸네일/Chroma 선삭제 경합이 존재함.
