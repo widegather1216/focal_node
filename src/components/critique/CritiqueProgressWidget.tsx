@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { BarChart3, FileText, Languages, Sparkles, CheckCircle2, Loader2, Square } from 'lucide-react';
+import { BarChart3, Eye, Sparkles, CheckCircle2, Loader2, Square, PenTool } from 'lucide-react';
 import { CritiqueStatus } from '../../types/critique';
 
 interface CritiqueProgressWidgetProps {
@@ -11,14 +11,14 @@ interface CritiqueProgressWidgetProps {
 
 const STEPS = [
   { id: 1, label: '시각 채점', icon: BarChart3 },
-  { id: 2, label: '심층 비평', icon: FileText },
-  { id: 3, label: '한국어 번역', icon: Languages },
+  { id: 2, label: '지각 앵커', icon: Eye },
+  { id: 3, label: '심층 비평', icon: PenTool },
   { id: 4, label: '평론 완성', icon: Sparkles },
 ];
 
 export const CritiqueProgressWidget: React.FC<CritiqueProgressWidgetProps> = ({ status, onCancel }) => {
-  const currentStep = status?.step || 1;
-  const progress = status?.progress || 15;
+  const currentStep = status?.step && status.step > 0 ? status.step : 1;
+  const progress = status?.progress && status.progress > 0 ? status.progress : 5;
   const currentMessage = status?.message || '시각 점수 산출 중';
 
   return (

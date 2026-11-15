@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { HelpCircle } from 'lucide-react';
 import { ParsedScores } from '../../utils/critiqueParser';
+import { ScoringGuideModal } from './ScoringGuideModal';
 
 interface ScoreHudStripProps {
   scores: ParsedScores;
@@ -9,6 +11,8 @@ interface ScoreHudStripProps {
  * Camera LCD HUD style compact score strip (Clean Metric).
  */
 export const ScoreHudStrip: React.FC<ScoreHudStripProps> = ({ scores }) => {
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
+
   return (
     <div
       style={{
@@ -36,7 +40,7 @@ export const ScoreHudStrip: React.FC<ScoreHudStripProps> = ({ scores }) => {
         <span className="font-mono" style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>/ 100</span>
       </div>
 
-      {/* Detail Metrics Chips */}
+      {/* Detail Metrics Chips + Scoring Guide Trigger */}
       <div
         className="font-mono"
         style={{
@@ -71,7 +75,39 @@ export const ScoreHudStrip: React.FC<ScoreHudStripProps> = ({ scores }) => {
             <strong style={{ color: '#f4f4f5' }}>{scores.ista}</strong>
           </span>
         )}
+        <button
+          type="button"
+          onClick={() => setIsGuideOpen(true)}
+          title="점수 산출 가이드"
+          aria-label="점수 산출 가이드 열기"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: '20px',
+            height: '20px',
+            borderRadius: '4px',
+            backgroundColor: 'rgba(255, 255, 255, 0.05)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            color: 'var(--text-muted)',
+            cursor: 'pointer',
+            marginLeft: '2px',
+            padding: 0,
+            transition: 'color 0.15s ease, border-color 0.15s ease',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = '#fff';
+            e.currentTarget.style.borderColor = 'var(--accent-focal)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = 'var(--text-muted)';
+            e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.1)';
+          }}
+        >
+          <HelpCircle size={12} />
+        </button>
       </div>
+      <ScoringGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
     </div>
   );
 };

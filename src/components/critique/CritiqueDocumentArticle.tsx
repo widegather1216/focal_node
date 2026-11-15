@@ -1,8 +1,9 @@
-import React from 'react';
-import { Loader2, Info } from 'lucide-react';
+import React, { useState } from 'react';
+import { Loader2, Info, HelpCircle } from 'lucide-react';
 import { PhotoDetail } from '../../hooks/usePhotoDetail';
 import { CritiqueScores } from '../../utils/critiqueExporter';
 import { CritiqueContentRenderer } from './CritiqueContentRenderer';
+import { ScoringGuideModal } from './ScoringGuideModal';
 
 interface MastheadData {
   scores: CritiqueScores | null;
@@ -22,6 +23,8 @@ export const CritiqueDocumentArticle: React.FC<CritiqueDocumentArticleProps> = (
   critiqueText,
   mastheadData,
 }) => {
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
+
   return (
     <div
       className="print-paper"
@@ -127,9 +130,34 @@ export const CritiqueDocumentArticle: React.FC<CritiqueDocumentArticleProps> = (
                     <strong style={{ color: '#fff' }}>{mastheadData.scores.ista}</strong>
                   </span>
                 )}
+                <button
+                  type="button"
+                  onClick={() => setIsGuideOpen(true)}
+                  title="점수 산출 가이드"
+                  aria-label="점수 산출 가이드 열기"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '3px 8px',
+                    marginLeft: '4px',
+                    borderRadius: '6px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                    color: '#a1a1aa',
+                    fontSize: '11px',
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                  }}
+                >
+                  <HelpCircle size={12} />
+                  <span>점수 가이드</span>
+                </button>
               </div>
             </div>
           )}
+          <ScoringGuideModal isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
         </div>
 
         {/* Content Renderer or Empty State */}

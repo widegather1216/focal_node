@@ -65,7 +65,7 @@ export const GlobalCritiqueToast: React.FC = () => {
   if (!activeCritiqueJob) return null;
 
   const currentMessage = status?.message || '비평 생성 진행 중';
-  const progress = status?.progress || 15;
+  const progress = status?.progress && status.progress > 0 ? status.progress : 5;
   const isCompleted = status ? isTerminalCritiqueStatus(status) : false;
 
   const handleCloseOrCancel = async (e: React.MouseEvent) => {

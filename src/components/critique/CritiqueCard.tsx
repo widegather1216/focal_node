@@ -1,10 +1,11 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Camera, Calendar, Eye, Maximize2, Copy, Check, Trash2, FileText } from 'lucide-react';
+import { Maximize2, Copy, Check, Trash2, FileText } from 'lucide-react';
 import { CritiqueItem } from '../../types/critique';
 import { api } from '../../services/api';
 import { useAppStore } from '../../store/useAppStore';
 import { CritiqueContentRenderer } from './CritiqueContentRenderer';
+import { CritiqueCardHeader } from './CritiqueCardHeader';
 
 interface CritiqueCardProps {
   item: CritiqueItem;
@@ -29,7 +30,7 @@ const cardBtnStyle: React.CSSProperties = {
   alignItems: 'center',
   gap: '5px',
   whiteSpace: 'nowrap',
-  flexShrink: 0
+  flexShrink: 0,
 };
 
 export const CritiqueCard: React.FC<CritiqueCardProps> = ({
@@ -39,13 +40,17 @@ export const CritiqueCard: React.FC<CritiqueCardProps> = ({
   onSelectPhoto,
   onOpenFullscreen,
   onCopy,
-  onDelete
+  onDelete,
 }) => {
   const { openCritiqueDocument } = useAppStore();
   const thumbUrl = api.getPhotoThumbnailUrl(item.photo_id);
-  const formattedDate = item.critique_updated_at 
+  const formattedDate = item.critique_updated_at
     ? new Date(item.critique_updated_at).toLocaleDateString('ko-KR', {
-        year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit'
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
       })
     : null;
 
@@ -64,159 +69,38 @@ export const CritiqueCard: React.FC<CritiqueCardProps> = ({
         display: 'flex',
         flexDirection: 'column',
         boxShadow: '0 8px 30px rgba(0, 0, 0, 0.3)',
-        transition: 'border-color 0.2s ease, box-shadow 0.2s ease'
+        transition: 'border-color 0.2s ease, box-shadow 0.2s ease',
       }}
       whileHover={{
         borderColor: 'var(--accent-focal-glow)',
-        boxShadow: '0 12px 36px rgba(225, 29, 72, 0.12)'
+        boxShadow: '0 12px 36px rgba(225, 29, 72, 0.12)',
       }}
     >
-      {/* Top Thumbnail & Photo Info Bar */}
-      <div style={{
-        display: 'flex',
-        height: '140px',
-        background: '#121215',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
-        position: 'relative'
-      }}>
-        <div 
-          onClick={() => onSelectPhoto(item.photo_id)}
-          style={{
-            width: '140px',
-            height: '140px',
-            flexShrink: 0,
-            cursor: 'pointer',
-            position: 'relative',
-            overflow: 'hidden',
-            backgroundColor: '#18181b'
-          }}
-        >
-          <img
-            src={thumbUrl}
-            alt={item.file_name}
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              transition: 'transform 0.3s ease'
-            }}
-          />
-          <div 
-            style={{
-              position: 'absolute',
-              inset: 0,
-              background: 'rgba(0,0,0,0.3)',
-              opacity: 0,
-              transition: 'opacity 0.2s ease',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px'
-            }}
-            className="thumb-overlay"
-          >
-            <Eye size={20} color="#fff" />
-          </div>
-        </div>
+      <CritiqueCardHeader
+        item={item}
+        thumbUrl={thumbUrl}
+        formattedDate={formattedDate}
+        onSelectPhoto={onSelectPhoto}
+      />
 
-        <div style={{
+      <div
+        style={{
+          padding: '18px 20px',
           flex: 1,
-          padding: '14px 16px',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between',
-          overflow: 'hidden'
-        }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-              <h4 
-                onClick={() => onSelectPhoto(item.photo_id)}
-                style={{
-                  margin: '0 0 6px 0',
-                  fontSize: '14px',
-                  fontWeight: 600,
-                  color: '#f4f4f5',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  cursor: 'pointer',
-                  flex: 1
-                }}
-                title={item.file_name}
-              >
-                {item.file_name}
-              </h4>
-
-              {item.overall_score !== null && item.overall_score !== undefined && (
-                <div
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    background: 'rgba(225, 29, 72, 0.12)',
-                    border: '1px solid rgba(225, 29, 72, 0.3)',
-                    borderRadius: '6px',
-                    padding: '2px 7px',
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    color: 'var(--accent-focal-hover)',
-                    flexShrink: 0
-                  }}
-                  title={`종합 평점: ${item.overall_score}점${item.iaa_score != null ? ` (미학 IAA: ${item.iaa_score}점)` : ''}`}
-                >
-                  <span style={{ fontSize: '9px', color: 'var(--text-muted)', letterSpacing: '0.04em' }}>SCORE</span>
-                  <span className="font-mono">{Math.round(item.overall_score)}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Metadata Tags */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '11px', color: '#a1a1aa' }}>
-              {item.camera_model && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                  <Camera size={12} color="var(--accent-focal)" />
-                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {item.camera_model} {item.lens_model ? `• ${item.lens_model}` : ''}
-                  </span>
-                </div>
-              )}
-
-              {(item.f_number || item.shutter_speed || item.iso) && (
-                <div className="font-mono" style={{ display: 'flex', gap: '8px', color: '#71717a', whiteSpace: 'nowrap' }}>
-                  {item.f_number && <span>f/{item.f_number}</span>}
-                  {item.shutter_speed && <span>{item.shutter_speed}</span>}
-                  {item.iso && <span>ISO {item.iso}</span>}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {formattedDate && (
-            <div style={{ fontSize: '11px', color: '#71717a', display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <Calendar size={11} />
-              <span>{formattedDate} 생성</span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Critique Text Box */}
-      <div style={{
-        padding: '18px 20px',
-        flex: 1,
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'space-between',
-        gap: '16px'
-      }}>
-        <div 
+          gap: '16px',
+        }}
+      >
+        <div
           style={{
             fontSize: '13px',
             lineHeight: '1.65',
             color: '#e4e4e7',
             maxHeight: '200px',
             overflowY: 'auto',
-            paddingRight: '6px'
+            paddingRight: '6px',
           }}
         >
           <CritiqueContentRenderer
@@ -230,14 +114,15 @@ export const CritiqueCard: React.FC<CritiqueCardProps> = ({
           />
         </div>
 
-        {/* Card Action Footer */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingTop: '12px',
-          borderTop: '1px solid rgba(255, 255, 255, 0.06)'
-        }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingTop: '12px',
+            borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+          }}
+        >
           <div style={{ display: 'flex', gap: '8px' }}>
             <button
               onClick={() => openCritiqueDocument(item.photo_id)}
@@ -245,7 +130,7 @@ export const CritiqueCard: React.FC<CritiqueCardProps> = ({
                 ...cardBtnStyle,
                 background: 'var(--accent-focal-subtle)',
                 border: '1px solid rgba(225, 29, 72, 0.3)',
-                color: 'var(--accent-focal-hover)'
+                color: 'var(--accent-focal-hover)',
               }}
               title="리포트 문서 뷰어로 크게 보기"
             >
@@ -268,7 +153,7 @@ export const CritiqueCard: React.FC<CritiqueCardProps> = ({
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center'
+                justifyContent: 'center',
               }}
               title="비평 텍스트 복사"
             >
@@ -289,7 +174,7 @@ export const CritiqueCard: React.FC<CritiqueCardProps> = ({
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'center'
+                justifyContent: 'center',
               }}
               title="비평 삭제"
             >
