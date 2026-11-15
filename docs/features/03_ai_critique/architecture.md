@@ -31,32 +31,42 @@ backend/app/
 ├── database.py                        # [기존] run_migrations()에 EXIF 조인 기반 overall_score 적응형 일괄 재계산 백필 로직
 ├── api/chat.py                        # [기존] 비평 생성/Polling/취소/삭제/총평 및 평점 정렬 지원 전체 비평 목록 라우터
 ├── services/
+│   ├── base_model.py                  # [기존] GPU_LOCK 기반 어댑터 베이스 및 비-MPS 안전 캐시 가드(clear_mps_cache/clear_mlx_cache)
 │   ├── scoring.py                     # [기존] EXIF 적응형 4대 가중치, 미학적 탁월성 보너스 및 종합 평점 산출 순수 연산 모듈
-│   ├── chat_service.py                # [기존] UniPercept(VR+단일패스 지각앵커) -> Gemma 4(직접 심층비평) 하이브리드 파이프라인
-│   ├── critique_status.py             # [기존] 사진별 4단계 비평 진행률(step/progress), 취소 플래그 및 DB Self-Healing 조회
-│   ├── ai_parser.py                   # [기존] UniPercept 단일패스 통합 지각 프롬프트 및 Gemma 4 지각 앵커 기반 비평 프롬프트
-│   ├── mlx_adapters.py                # [기존] GemmaAdapter에 generate_perceptual_critique(지각 앵커 기반 직접 심층 비평)
-│   ├── unipercept_adapter.py          # [기존] 단일 패스 통합 지각 VQA 및 디코딩 파라미터 정상화 (Word Salad 방지)
+│   ├── critique_prompts.py            # [신규] ADR-05 Gemma 4/UniPercept 프롬프트 상수 및 EXIF 컨텍스트 포매터
+│   ├── critique_db_helpers.py         # [신규] 비평 DB 저장·메타데이터 조회·스코어보드 헤더 빌드 헬퍼
+│   ├── chat_service.py                # [기존] 하이브리드 비평 파이프라인 오케스트레이터 (364줄 경량화)
+│   ├── critique_status.py             # [기존] 사진별 4단계 비평 진행률(step/progress), 취소 플래그 및 DB Self-Healing 조회 (142줄)
+│   ├── ai_parser.py                   # [기존] Gemma JSON 출력 파서 및 활성 프롬프트 재노출 모듈 (137줄 경량화)
+│   ├── siglip_adapter.py              # [신규] SigLIP 2 임베딩/제로샷 태깅 전담 어댑터 (124줄)
+│   ├── mlx_adapters.py                # [기존] GemmaAdapter 직접 심층 비평/캡션/요약 어댑터 (377줄 경량화)
+│   ├── unipercept_runtime.py          # [신규] UniPercept 체크포인트 탐색, VQA 쿼리/응답 정제 및 텐서 추출 헬퍼 (226줄)
+│   ├── unipercept_adapter.py          # [기존] 3-Way VR 채점 및 단일 패스 통합 지각 VQA 어댑터 (516줄 경량화)
 │   └── unipercept_utils.py            # [기존] UniPercept 단일 패치(448x448) 이미지 전처리 및 점수 토큰 매핑 유틸리티
 
 src/
 ├── types/critique.ts                  # [기존] CritiqueItem(4종 점수, critique_en), CritiqueResponse/Cancel/Delete 응답 타입
 ├── utils/
 │   ├── activePhotoList.ts             # [신규] 활성 탭(비평 ['critiques'] prefix / 갤러리) 기반 사진 목록 캐시 추출 유틸
-│   ├── critiqueParser.tsx             # [기존] 마크다운 AST 파서, 6-Way 스코어보드 추출 및 인라인 스타일 렌더 유틸
-│   └── critiqueExporter.ts            # [기존] Markdown 직렬화, A4 인쇄 HTML 템플릿 및 html2canvas/jsPDF 엔진
+│   ├── critiqueMarkdownParser.ts      # [신규] 마크다운 AST 블록 파서, 6-Way 스코어보드 추출 및 텍스트 정제 유틸 (214줄)
+│   ├── critiqueParser.tsx             # [기존] 인라인 마크다운 강조 렌더러 및 AST 파서 재노출 모듈 (65줄 경량화)
+│   ├── critiquePrintTemplate.ts       # [신규] XSS 이스케이프 HTML 인쇄 템플릿 및 Markdown 내보내기 직렬화 (296줄)
+│   ├── critiqueExportHelpers.ts       # [신규] Tauri 저장 다이얼로그/IPC, 이미지 디코딩 대기 및 A4 캔버스 PDF 슬라이싱 (162줄)
+│   └── critiqueExporter.ts            # [기존] Markdown/PDF 내보내기 진입점 및 진행 상태 오케스트레이션 (222줄 경량화)
 ├── hooks/
 │   ├── useCritiqueStatusPolling.ts    # [신규] 단일 타이머 체인·inFlight/visibility 가드 통합 비평 상태 Polling & 복구 훅
+│   ├── useCritiqueDocumentModal.ts    # [신규] 문서 뷰어 모달 상태·단축키·내보내기/팝아웃 오케스트레이션 훅 (298줄)
 │   ├── usePhotoDetail.ts              # [기존] 상세 패널 상태, 비평 요청/취소/삭제 및 재분석 제어 훅 (285줄 경량화)
 │   ├── usePhotoDetailQuery.ts         # [기존] 단일 사진 상세 정보 TanStack Query 훅 (순환 참조 해소)
 │   └── useModalZoomPan.ts             # [기존] 모달 캔버스 휠 확대/축소 및 드래그 패닝 제어 훅
 └── components/
     ├── CritiqueView.tsx               # [기존] 전체 비평 아카이브 대시보드 탭 (헤더 분리 후 223줄 경량화)
     ├── detail/
-    │   ├── PhotoCritiqueView.tsx      # [기존] 우측 패널 내 비평 요청/취소 뷰 (ScoreHudStrip 분리)
+    │   ├── PhotoCritiqueView.tsx      # [기존] 우측 패널 내 비평 요청/취소 뷰 (ScoreHudStrip 분리, 288줄)
     │   └── PhotoAiAnalysisView.tsx    # [기존] AI 캡션 및 태그 수동 편집 폼
     └── critique/
-        ├── CritiqueCard.tsx           # [기존] 개별 비평 요약 카드 및 정규화 평점 배지 표시
+        ├── CritiqueCardHeader.tsx     # [신규] 비평 카드 상단 썸네일, 평점 배지 및 EXIF 메타데이터 헤더 (150줄)
+        ├── CritiqueCard.tsx           # [기존] 개별 비평 요약 카드 본문 및 액션 푸터 (188줄 경량화)
         ├── CritiqueSummaryCard.tsx    # [기존] 다중 사진 포트폴리오 종합 비평 카드
         ├── CritiqueHeader.tsx         # [기존] 비평 보관함 상단 타이틀, 통계 뱃지, 정렬 토글 및 요약 생성 헤더
         ├── CritiqueContentRenderer.tsx# [기존] 마크다운 본문 렌더러 (서브 컴포넌트 분할 후 109줄 경량화)
@@ -64,15 +74,17 @@ src/
         ├── ExecutiveSummaryCard.tsx   # [기존] 통합 한 줄 총평 인용구 카드
         ├── OriginalEnglishCritiqueCard.tsx # [기존] UniPercept 8B VQA 영문 원문 토글 카드
         ├── CritiqueBlockItem.tsx      # [기존] 단일 마크다운 AST 블록 렌더러
-        ├── ScoreHudStrip.tsx          # [기존] 카메라 LCD HUD 스타일 컴팩트 점수 스트립
-        ├── ScoringGuideModal.tsx      # [기존] 3대 지각 지표 정의, 4대 적응형 가중치 및 미학 보너스 안내 모달
-        ├── CritiqueProgressWidget.tsx # [기존] 4단계 비평 생성 프로그레스 위젯
-        ├── GlobalCritiqueToast.tsx    # [기존] 백그라운드 비평 진행 전역 플로팅 토스트
-        ├── CritiqueDocumentToolbar.tsx# [기존] 매거진 문서 뷰어 상단 툴바 (복사/MD/PDF/팝아웃/닫기)
+        ├── ScoreHudStrip.tsx          # [기존] 카메라 LCD HUD 스타일 컴팩트 점수 스트립 & [?] 가이드 연결 (113줄)
+        ├── ScoringGuideContent.tsx    # [신규] 3대 지각 지표, 4대 적응형 가중치 및 미학 보너스 본문 뷰 (231줄)
+        ├── ScoringGuideModal.tsx      # [기존] createPortal·캡처 단계 Escape 격리 점수 가이드 모달 쉘 (159줄 경량화)
+        ├── CritiqueProgressWidget.tsx # [기존] ADR-05 4단계 비평 생성 프로그레스 위젯 (217줄)
+        ├── GlobalCritiqueToast.tsx    # [기존] 백그라운드 비평 진행 전역 플로팅 토스트 (212줄)
+        ├── CritiqueToolbarExportMenu.tsx # [신규] 문서 뷰어 툴바 복사/MD/PDF/Finder 열기 액션 그룹 (129줄)
+        ├── CritiqueDocumentToolbar.tsx# [기존] 매거진 문서 뷰어 상단 툴바 헤더 (200줄 경량화)
         ├── CritiqueDocumentPhotoViewer.tsx # [기존] 매거진 문서 뷰어 좌측 사진 인스펙터 (줌/팬/EXIF HUD)
-        ├── CritiqueDocumentArticle.tsx# [기존] 매거진 문서 뷰어 우측 페이퍼 문서 아티클
+        ├── CritiqueDocumentArticle.tsx# [기존] 매거진 문서 뷰어 우측 페이퍼 문서 아티클 & 점수 가이드 트리거 (203줄)
         ├── CritiqueExportProgressOverlay.tsx # [기존] PDF/MD 내보내기 진행률 피드백 오버레이
-        └── CritiqueDocumentModal.tsx  # [기존] 매거진 뷰어 모달 본체 (1,766줄 -> 449줄 SRP 분할)
+        └── CritiqueDocumentModal.tsx  # [기존] 매거진 뷰어 모달 레이아웃 쉘 (143줄 경량화)
 ```
 
 ---

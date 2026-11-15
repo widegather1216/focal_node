@@ -1,17 +1,17 @@
 # 🧭 Focal Node: Master Control Tower (Living Wiki Hub)
 
 > 외부 클라우드 전송 없이 Mac Native(Apple MLX & PyTorch MPS)로 구동되는 **프라이버시 보호 로컬 사진 관리 및 AI 시맨틱 검색/비평 데스크탑 플랫폼**입니다.
-> **최종 업데이트**: 2026-11-14 (by `systematic-debugger`)
+> **최종 업데이트**: 2026-11-15 (by `systematic-debugger`)
 
 ---
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
-- **Active 도메인**: [`03_ai_critique`](./features/03_ai_critique/README.md) *(구현 4/4 완료, 마지막 잔여 `REFACTOR-08` 해결 시 즉시 `🟢 Sign-Off`)*
-- **현재 단계 (Stage)**: `🩹 Debugging (01_indexing_storage REFACTOR-02 해결 완료 / 전 도메인 REFACTOR 4건 잔여)`
-- **직전 완료 작업**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) 도메인 `REFACTOR-02` 해결 (`folder_manager.py`·`photo_reindex.py` SRP 분리로 `indexing_service.py` 494줄 경량화 및 `monkeypatch` 위임 래퍼 유지, `_commit_batch_with_retry`/`run_indexing_background`/`_stream_export_events` 헬퍼 분할, `ActionBar.tsx` 62줄·`Sidebar.tsx` 86줄 및 `usePhotoExport.ts`/`ExportActionControls.tsx`/사이드바 3분할, `IndexingProgressCard.tsx`·`SidebarFolderActions.tsx` `unknown` 예외 정리 및 `exportStream.ts#L69` `console.debug` 로깅 추가, `npx tsc --noEmit && npm run build` PASS 및 도메인 API/동시성/하드닝 테스트 55종 PASS)
+- **Active 도메인**: [`02_search_curation`](./features/02_search_curation/README.md) *(`03_ai_critique` `🟢 Sign-Off` 전환 완료 / 전 도메인 `REFACTOR` 3건 잔여)*
+- **현재 단계 (Stage)**: `🩹 Debugging (03_ai_critique Sign-Off 완료 / 02_search_curation REFACTOR-01·04_studio_ui_analytics REFACTOR-01~02 대기)`
+- **직전 완료 작업**: [`03_ai_critique`](./features/03_ai_critique/README.md) 도메인 `REFACTOR-08` 해결 완료 (`base_model.clear_mps_cache`·`clear_mlx_cache` 가드 및 `conftest.py` 헤드리스 `mlx_vlm` 스텁/`test_mps_guard.py` 5종으로 비-MPS Segfault 원천 차단, ADR-05 레거시·`MagicMock`·인자 순서 역전/중복 언로드 버그 제거 및 백엔드 SRP 분할 11개 파일 함수 `<=30줄` 달성, 프론트엔드 6대 비대 파일 `<=300줄` 분할, 진행률 역행·`ScoringGuideModal` `createPortal`·가이드 버튼 교정, 전체 `pytest 151 passed` 및 `tsc && vite build` PASS ➔ `🟢 Sign-Off`)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"03_ai_critique 도메인의 REFACTOR-08 티켓 해결해줘"` *(`1 티켓 = 1 격리 세션`으로 `systematic-debugger` 순차 해결)*
+  > `"02_search_curation 도메인의 REFACTOR-01 티켓 해결해줘"` *(`1 티켓 = 1 격리 세션`으로 `systematic-debugger` 순차 해결)*
 
 ---
 
@@ -22,7 +22,7 @@
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `5/5 (100%)` | `0 / 0` | DEFECT-01~04 전수 해결 완료 (손상 인덱스 valid=False, 실패 시 거짓 완료 차단, 1종 조기완료 차단, 중복 스레드/락 삭제 가드), Sign-Off 완료 |
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `14/17 (82%)` | `0 / 0` | DEFECT-01~11·REFACTOR-01~02 전수 해결 완료(`folder_manager.py`·`photo_reindex.py` 분리, `ActionBar`/`Sidebar` 경량화), Active Step 1 대기 |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 1` | 통합 감사 `REFACTOR-01` 최신화(SigLIP 폴백/`search.py` 로깅/`similar:` 버튼), RRF·스마트 앨범 Step 1~4 대기 |
-| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `13/13 (100%)` | `0 / 1` | `DEFECT-02~03`·`REFACTOR-03~07` 해결 완료, `REFACTOR-08`(Headless MPS 가드·비대 파일 경량화 포함) 1건 대기 |
+| 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `15/15 (100%)` | `0 / 0` | `DEFECT-01~03`·`REFACTOR-01~08` 전수 해결 완료 (Headless MPS/MLX 가드·ADR-05 레거시 정리·300줄 이하 분할), Sign-Off 완료 |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 🩹 Debugging | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 2` | 통합 감사 `REFACTOR-01`/`02` 최신화(`FullscreenViewer` 433줄·직접 `fetch`·`any` 타입 구체화), 차트 드릴다운 Step 3~4 대기 |
 
 *(※ 상태 범례: `📐 Planning` | `🛠️ Implementing` | `🧐 Auditing` | `🧪 QA Testing` | `🩹 Debugging` | `🟢 Sign-Off`)*
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-15]` `[systematic-debugger]` [`03_ai_critique`]**: `REFACTOR-08` 리팩토링 티켓 해결 및 `03_ai_critique` `🟢 Sign-Off` 전환 완료 (`80f7f0f`, `a92fb93`, `c35be11` / `base_model.clear_mps_cache`·`clear_mlx_cache` 가드로 비-MPS `torch.mps` Segfault 원천 차단 및 `conftest.py` `__spec__` 포함 헤드리스 `mlx_vlm` 스텁/`test_mps_guard.py` 5종 추가, `chat_service.py` `MagicMock` 분기·인자 순서 역전·`unipercept_adapter.py` 중복 언로드 버그·ADR-05 이전 2단계 번역/3-Way VQA/사문화 파서 제거, `critique_prompts.py`·`siglip_adapter.py`·`unipercept_runtime.py`·`critique_db_helpers.py` SRP 분할로 백엔드 11개 파일 함수 `<=30줄` 및 `data/info/temp/res`·`except: pass` 0건 달성, 프론트엔드 `critiquePrintTemplate.ts`·`critiqueExportHelpers.ts`·`critiqueMarkdownParser.ts`·`ScoringGuideContent.tsx`·`CritiqueCardHeader.tsx`·`CritiqueToolbarExportMenu.tsx`·`useCritiqueDocumentModal.ts` 분할로 모든 수정/신설 파일 `<=299줄` 경량화, `CritiqueProgressWidget`/`GlobalCritiqueToast` 진행률 역행(`15%->10%`) 및 `[1/6]` 라벨 교정, `ScoreHudStrip`/`CritiqueDocumentArticle` 점수 가이드 버튼 연결 및 `ScoringGuideModal` `createPortal`·캡처 `Escape` 격리 적용, 전체 `pytest 151 passed`·`tsc && vite build` PASS·위키 헬스체크 통과).
 
 - **`[2026-11-14]` `[systematic-debugger]` [`01_indexing_storage`]**: `REFACTOR-02` 리팩토링 티켓 해결 완료 (`e572898`, `b6ffc54` / `backend/app/services/folder_manager.py`·`photo_reindex.py` SRP 분리 및 호환 위임 래퍼 유지로 `indexing_service.py` 819줄 ➔ 494줄 경량화, `_commit_batch_with_retry`/`run_indexing_background`/`photos.py` `_stream_export_events` 30줄 이하 헬퍼 분할, `usePhotoExport.ts`·`ExportActionControls.tsx` 분리로 `ActionBar.tsx` 357줄 ➔ 62줄 경량화, `SidebarViewTabs.tsx`·`SidebarSearchControls.tsx`·`SidebarFolderActions.tsx` 분리로 `Sidebar.tsx` 359줄 ➔ 86줄 경량화, `IndexingProgressCard.tsx`·`SidebarFolderActions.tsx` `any` ➔ `unknown` 교정 및 `exportStream.ts#L69` `console.debug` 추가, `tsc && vite build` PASS 및 도메인 API/동시성/하드닝 테스트 55종 PASS, 위키 동기화).
 

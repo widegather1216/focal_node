@@ -1,8 +1,8 @@
 # 🤖 [03_ai_critique] On-Demand AI Critique & Editorial Export
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT 전수 해결 완료, REFACTOR-08 1건 해결 대기)`
+- **현재 상태 (Lifecycle)**: `🟢 Sign-Off (모든 구현 및 QA/리팩토링 100% 완료)`
 - **구현 진척도**: `[■■■■] 4/4 Steps (Active Iteration Step 1~4 구현 완료)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -36,6 +36,9 @@
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
 - **Recent Commits**:
+  - `c35be11` - `refactor(ui): split critique modals/exporters and fix progress labels`
+  - `a92fb93` - `test(critique): add mps guard tests, mlx stubs, and adr-05 assertions`
+  - `80f7f0f` - `refactor(critique): guard headless mps cache and modularize adapters`
   - `8231646` - `refactor(critique): unify status polling and enforce strict api types`
   - `3d9ddeb` - `test(critique): replace hollow tests with real scoring and chat api tests`
   - `e8a5e0f` - `docs(critique): mark REFACTOR-06 resolved and sync control tower`
@@ -56,22 +59,16 @@
   - `756e6be` - `refactor(critique): eliminate silent fail blocks and decompose long adapter methods`
   - `1f0151c` - `refactor(critique): decompose monolithic critique components for SRP conformance`
 - **Working Tree State**: 🟢 Clean (No uncommitted changes)
-- **직전 완료 작업**: `2026-11-14 / systematic-debugger / REFACTOR-03 해결 완료 (useCritiqueStatusPolling·activePhotoList 분리, 타이머 증식/레이스·빈 catch·any/fetch 우회·['critiques'] 키 불일치 해소 및 300줄 이하 경량화, REFACTOR-08 1건 대기)`
+- **직전 완료 작업**: `2026-11-15 / systematic-debugger / REFACTOR-08 해결 완료 (Headless 비-MPS torch.mps Segfault 가드·conftest.py mlx_vlm 스텁·ADR-05 레거시 제거·백엔드/프론트엔드 비대 파일 <=300줄 분할·진행률/점수 가이드 모달 교정, 03_ai_critique 🟢 Sign-Off 전환)`
 - **해결 완료 및 잔여 티켓 현황**:
-  1. **✅ `DEFECT-02~03` & `REFACTOR-03~07` 해결 완료 (`TC-CRT-10~13 PASS`, `13/13 100%`)**:
-     - `DEFECT-02`: `_acquire_model_for_request` 취소 가드로 28GB 디스크 재적재 및 로딩 중 취소 후 메모리 상주 원천 차단, 최외곽 `finally` 언로드 및 `_on_unload()` MPS 텐서 해제
-     - `DEFECT-03`: `_load_model_locked()`에서 `self.model.eval()` 명시 호출, `_generate_with_language_model` 헬퍼로 `InternVLChatModel.chat()`의 `return_dict` 시그니처 충돌을 우회하고 `self.model.language_model.generate(...)` 직접 호출 및 `<think>`/종료 토큰 정제, VQA 추론 실패 시 예외 전파(`raise`)
-     - `REFACTOR-03`: `useCritiqueStatusPolling`·`activePhotoList` 분리로 3중 Polling/`focus` 타이머 증식 및 3.5s/4s 토스트 레이스 차단, `['critiques']` 접두어 조회 및 `usePhotoDetail`↔`usePhotoDetailQuery` 순환 참조 해소, `useAppStore.cancelActiveCritique` `api.cancelCritique` 일원화, `api.ts` 비평/상세 타입 구체화, 빈 `catch` 3곳 제거 및 `PhotoCritiqueView`(288줄)·`usePhotoDetail`(285줄) 경량화
-     - `REFACTOR-04`: `CritiqueDocumentModal.tsx` Rules of Hooks 크래시 해소, 전역 키 가드, PDF XSS 이스케이프 및 다크 잉크 컬러 오버라이드
-     - `REFACTOR-05`: `AIAnalysis.to_dict()` 11개 필드 보존 반환, `critique_status_manager.clear()` 좀비 상태 차단, `ChatService._cancel_task_threadsafe`, `PhotoRepository` 캡슐화
-     - `REFACTOR-06`: `unipercept_utils`/`adapter`의 `torch`/`torchvision`/`transformers` Eager Import 제거(`_LazyTorchProxy`, `patch_transformers_tied_weights()`, Rule 2.5), `config.CONFIG_DIR` 격리(Rule 2.6), Gemma 추론 및 VQA 예외 삼킴 제거로 DB 오염 차단 및 `status="error"`/자율 폴백 보장, `load_pil_image`에 `min_dimension=1024` 및 `MAX_CONCURRENT_DECODES=3` 세마포어(Rule 2.3), `GemmaAdapter` CPU RAW 디코딩 `GPU_LOCK` 외부 분리(Rule 2.4), 1회 1024px 디코딩 공유, `task.add_done_callback` 누수 방지, `CritiqueStatusManager` 100개 상한 정책 적용
-     - `REFACTOR-07`: `test_ensemble_math.py`에서 `services.scoring` 실제 4대 광학 가중치/보너스/융합 실검증 전환, `test_unipercept.py`의 `app.services.*` 임포트 통일 및 `TC-CRT-12/13` 실제 어댑터 파이프라인/VQA 실패 시 Gemma 자율 폴백 실실행 검증, `test_critique_repository_and_api.py`에 `POST /api/chat/critique`, `GET /api/chat/critique/status/{id}`, `POST /api/chat/critique-summary` 3대 엔드포인트 커버리지 보강 (132 passed)
-  2. **🟡 Should Fix 리팩토링 (`REFACTOR-08` 1건 대기)**:
-     - `REFACTOR-08`: ADR-05 이전 레거시 코드(~560줄)·비대 파일(`unipercept_adapter.py` 1,212줄, `mlx_adapters.py` 758줄, `critiqueExporter.ts` 710줄 등) 경량화, Headless MPS `empty_cache` Segfault 가드/테스트 스텁 보강 및 프로그레스/`ScoringGuideModal` 개선
+  1. **✅ `DEFECT-01~03` & `REFACTOR-01~08` 전수 해결 완료 (`15/15 100%`, 미해결 0건)**:
+     - `DEFECT-02~03` & `REFACTOR-03~07`: 취소 시 28GB 누수·`return_dict` 충돌·Polling 타이머 증식·Hooks 크래시·메타데이터 보존·Eager Import·실검증 전환 완료
+     - `REFACTOR-08`: `base_model.clear_mps_cache`/`clear_mlx_cache` 가드 및 `conftest.py` 헤드리스 `mlx_vlm` 스텁/`test_mps_guard.py` 5종 추가, `chat_service.py` `MagicMock` 분기·인자 순서 버그 및 폐기된 2단계 번역/3-Way VQA/사문화 파서 제거, `critique_prompts.py`·`siglip_adapter.py`·`unipercept_runtime.py`·`critique_db_helpers.py` 분할(백엔드 수정/신설 11개 파일 함수 `<=30줄`·`data/info/temp/res` 0건), 프론트엔드 6대 비대 파일 `<=300줄` 분할(`critiquePrintTemplate.ts`·`critiqueExportHelpers.ts`·`critiqueMarkdownParser.ts`·`ScoringGuideContent.tsx`·`CritiqueCardHeader.tsx`·`CritiqueToolbarExportMenu.tsx`·`useCritiqueDocumentModal.ts`), 진행률 역행(`15%->10%`)/`[1/6]` 라벨 교정, `ScoreHudStrip`/`CritiqueDocumentArticle` 가이드 버튼 연결 및 `ScoringGuideModal` `createPortal`·캡처 `Escape` 격리 적용
 - **검증 완료된 테스트 실행 명령어**:
-  - `npx tsc --noEmit` (`PASS`)
-  - `npm run build` (`PASS`)
-  - `./venv/bin/pytest backend/tests/test_critique_repository_and_api.py backend/tests/test_critique_cancellation.py -q` (샌드박스 비-MPS no-op 호환, `24 passed`)
+  - `./venv/bin/pytest backend/tests/ -q` (`151 passed`)
+  - `./venv/bin/pytest backend/tests/test_mps_guard.py backend/tests/test_unipercept.py backend/tests/test_critique_cancellation.py backend/tests/test_refactor_06_hygiene.py -v` (`37 passed`)
+  - `npx tsc --noEmit && npm run build` (`PASS`)
+  - `python3 -B /Users/kimbeomjun/.gemini/config/skills/interactive-feature-planner/scripts/check_wiki_health.py docs` (`exit 0`)
 - **다음 세션 포커스 및 추천 실행 프롬프트**:
-  - `REFACTOR-03` 해결 완료로 마지막 잔여 티켓 `REFACTOR-08`만 해결하면 `03_ai_critique` 도메인을 `🟢 Sign-Off`로 전환할 수 있습니다 (`systematic-debugger`).
-  - 👉 추천 프롬프트: `"03_ai_critique 도메인의 REFACTOR-08 티켓 해결해줘"`
+  - `03_ai_critique` 도메인은 `🟢 Sign-Off` 상태입니다. 다음 잔여 리팩토링 도메인(`02_search_curation` `REFACTOR-01` 또는 `04_studio_ui_analytics` `REFACTOR-01`)을 진행하십시오.
+  - 👉 추천 프롬프트: `"02_search_curation 도메인의 REFACTOR-01 티켓 해결해줘"`

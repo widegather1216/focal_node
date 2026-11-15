@@ -1,8 +1,8 @@
 # 🧪 [03_ai_critique] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT 전수 해결 완료, REFACTOR-08 1건 대기)`
-- **인수 조건 통과율**: `13 / 13 (100%)`
-- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건`
+- **검증 상태**: `🟢 Sign-Off (모든 인수 조건 및 결함/리팩토링 티켓 해결 완료)`
+- **인수 조건 통과율**: `15 / 15 (100%)`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -65,6 +65,8 @@
 | **Happy** | `TC-CRT-11` | UniPercept 단일 패스 지각 앵커 추출 및 어휘 붕괴 방지 | 고해상도 테스트 사진 입력 | 150토큰 내외 지각 앵커 정상 영문 도출, 어휘 붕괴 0건 | `PASS (Fixed in DEFECT-03)` |
 | **Happy** | `TC-CRT-12` | Gemma 4 지각 앵커 기반 직결 심층 비평 생성 | 지각 앵커 + VR 점수 + EXIF 주입 | 3대 표준 헤더 + 한 줄 총평 + 실전 조언 한국어 완성 | `PASS` |
 | **Boundary**| `TC-CRT-13` | UniPercept VQA 오류 시 Gemma 4 자율 비평 폴백 | UniPercept VQA 예외 강제 발생 | Gemma 4 직접 심층 비평으로 정상 폴백 생성 완료 | `PASS` |
+| **Boundary**| `TC-CRT-14` | Headless 비-MPS `torch.mps` 가드 및 `mlx_vlm` 스텁 호환 | 비-MPS 환경 + `conftest.py` 헤드리스 스텁 | Segfault 없이 `clear_mps_cache`/`clear_mlx_cache` 안전 동작 & 모킹 계약 유지 | `PASS (Fixed in REFACTOR-08)` |
+| **Happy** | `TC-CRT-15` | 비평 진행률 단조 증가, 점수 가이드 버튼 및 포털 모달 동작 | 비평 파이프라인 진행 & `[?]` 가이드 클릭 | `5% -> 12% -> 22% -> 32%` 단조 진행 및 `createPortal` 모달/`Escape` 격리 | `PASS (Fixed in REFACTOR-08)` |
 
 ---
 
@@ -133,16 +135,8 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/ -v` (`132 passed`), `npx tsc --noEmit && npm run build` (`PASS`)
 
 ### [REFACTOR-08] ADR-05 레거시 코드·비대 파일 경량화, Headless MPS Segfault 방어 및 프로그레스/`ScoringGuideModal` 보강
-- **심각도**: 🟡 Should Fix (권장 조치)
-- **위치**: `backend/app/services/unipercept_adapter.py` (1,212줄), `backend/app/services/mlx_adapters.py` (758줄), `backend/app/services/chat_service.py` (472줄), `backend/app/services/ai_parser.py` (379줄), `backend/app/services/base_model.py#L84-L88`, `backend/app/database.py#L41-L206`, `backend/tests/conftest.py`, `src/utils/critiqueExporter.ts` (710줄), `src/components/critique/CritiqueDocumentModal.tsx` (481줄), `src/components/critique/ScoringGuideModal.tsx` (408줄), `src/utils/critiqueParser.tsx` (353줄), `src/components/critique/CritiqueDocumentToolbar.tsx` (319줄), `src/components/critique/CritiqueCard.tsx` (303줄), `src/components/critique/CritiqueProgressWidget.tsx#L8-L19`, `src/components/critique/ScoreHudStrip.tsx`, `src/hooks/usePhotoDetail.ts#L9-L44`
-- **위반 규칙**: Rule 4.1 (함수 <= 30줄, UI 파일 <= 300줄), Rule 4.2, Audit Matrix #1/#4/#5/#6 (사문화 코드 제거, 순환 참조 해소, 비-MPS 안전 가드)
-- **발견된 문제**:
-  - `chat_service.py`의 프로덕션 `MagicMock` 분기와 ADR-05 이전 폐기된 2단계 번역/3-Way VQA/정규식 파서(`~560줄`)가 잔존하며 `unipercept_adapter.py`(1,212줄)·`mlx_adapters.py`(758줄)·`critiqueExporter.ts`(710줄)·`CritiqueDocumentModal.tsx`(481줄)·`ScoringGuideModal.tsx`(408줄) 등이 비대함 (`usePhotoDetail`<->`usePhotoDetailQuery` 순환 참조 포함).
-  - `base_model.py#L84-L88`, `chat_service.py#L99-L102`, `unipercept_adapter.py#L102,L178,L224,L334,L680`에서 `torch.backends.mps.is_available()` 확인 없이 `torch.mps.empty_cache()`/`synchronize()`를 호출해 Headless/비-MPS 환경(`is_built=True, is_available=False`)에서 C++ Segmentation Fault가 발생함(실증됨). 또한 `conftest.py`에 헤드리스 `mlx_vlm` 스텁이 없어 Metal 미지원 세션에서 2건 실패함.
-  - 진행률 역행(`15% -> 10%`)·구형 `[1/6]`/`'한국어 번역'` 라벨, 상세 패널/문서 모달 `[?] 점수 산출 가이드` 버튼 누락 및 `ScoringGuideModal` `createPortal` 누락이 존재함.
-- **권장 개선안 (Suggested Diff)**:
-  ```text
-  - 레거시 번역/3-Way VQA 제거, `PhotoDetail` 타입·`critiquePrintTemplate.ts` 분리로 300줄 이하 경량화 및 프로그레스/포털 동기화
-  - MPS 캐시 정리에 `torch.backends.mps.is_available()` 가드 헬퍼 적용(모킹 호환 포함) 및 `conftest.py` 헤드리스 `mlx_vlm` 스텁 보강
-  ```
-- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정/신설 파일**: [`base_model.py`](../../../backend/app/services/base_model.py), [`critique_prompts.py`](../../../backend/app/services/critique_prompts.py), [`ai_parser.py`](../../../backend/app/services/ai_parser.py), [`siglip_adapter.py`](../../../backend/app/services/siglip_adapter.py), [`mlx_adapters.py`](../../../backend/app/services/mlx_adapters.py), [`unipercept_runtime.py`](../../../backend/app/services/unipercept_runtime.py), [`unipercept_adapter.py`](../../../backend/app/services/unipercept_adapter.py), [`critique_db_helpers.py`](../../../backend/app/services/critique_db_helpers.py), [`chat_service.py`](../../../backend/app/services/chat_service.py), [`critique_status.py`](../../../backend/app/services/critique_status.py), [`database.py`](../../../backend/app/database.py), [`conftest.py`](../../../backend/tests/conftest.py), [`test_mps_guard.py`](../../../backend/tests/test_mps_guard.py), [`test_unipercept.py`](../../../backend/tests/test_unipercept.py), [`critiquePrintTemplate.ts`](../../../src/utils/critiquePrintTemplate.ts), [`critiqueExportHelpers.ts`](../../../src/utils/critiqueExportHelpers.ts), [`critiqueExporter.ts`](../../../src/utils/critiqueExporter.ts), [`critiqueMarkdownParser.ts`](../../../src/utils/critiqueMarkdownParser.ts), [`critiqueParser.tsx`](../../../src/utils/critiqueParser.tsx), [`ScoringGuideContent.tsx`](../../../src/components/critique/ScoringGuideContent.tsx), [`ScoringGuideModal.tsx`](../../../src/components/critique/ScoringGuideModal.tsx), [`ScoreHudStrip.tsx`](../../../src/components/critique/ScoreHudStrip.tsx), [`CritiqueDocumentArticle.tsx`](../../../src/components/critique/CritiqueDocumentArticle.tsx), [`CritiqueProgressWidget.tsx`](../../../src/components/critique/CritiqueProgressWidget.tsx), [`GlobalCritiqueToast.tsx`](../../../src/components/critique/GlobalCritiqueToast.tsx), [`CritiqueCardHeader.tsx`](../../../src/components/critique/CritiqueCardHeader.tsx), [`CritiqueCard.tsx`](../../../src/components/critique/CritiqueCard.tsx), [`CritiqueToolbarExportMenu.tsx`](../../../src/components/critique/CritiqueToolbarExportMenu.tsx), [`CritiqueDocumentToolbar.tsx`](../../../src/components/critique/CritiqueDocumentToolbar.tsx), [`useCritiqueDocumentModal.ts`](../../../src/hooks/useCritiqueDocumentModal.ts), [`CritiqueDocumentModal.tsx`](../../../src/components/critique/CritiqueDocumentModal.tsx)
+  - **원인 및 조치**: ① `base_model.py`에 `clear_mps_cache(synchronize=False)`(`torch.backends.mps.is_available()` 가드) 및 `clear_mlx_cache()`를 신설해 `base_model.py`·`unipercept_adapter.py`·`mlx_adapters.py`·`chat_service.py` 전역을 일원화하고 `conftest.py`에 `__spec__` 포함 헤드리스 `mlx`/`mlx_vlm` 스텁과 `test_mps_guard.py` 5종을 보강해 비-MPS Segfault를 원천 차단함(기존 모킹 계약 100% 호환), ② `chat_service.py` `MagicMock` 분기·인자 순서 역전 버그 및 `unipercept_adapter.py` 중복 `_release_model_for_request` 호출·폐기된 2단계 번역/3-Way VQA/사문화 파서를 제거하고 `critique_prompts.py`·`siglip_adapter.py`·`unipercept_runtime.py`·`critique_db_helpers.py`로 SRP 분할(수정/신설 백엔드 11개 파일 함수 `<=30줄`·`data/info/temp/res`·`except: pass` 0건), ③ `critiqueExporter.ts`·`CritiqueDocumentModal.tsx`·`ScoringGuideModal.tsx`·`critiqueParser.tsx`·`CritiqueDocumentToolbar.tsx`·`CritiqueCard.tsx`를 모두 300줄 이하(`<= 298줄`)로 분할하고 `CritiqueProgressWidget`/`GlobalCritiqueToast`/`unipercept_adapter`의 `15%->10%` 역행 및 `[1/6]` 라벨 교정, `ScoreHudStrip`/`CritiqueDocumentArticle` 점수 가이드 버튼 연결 및 `ScoringGuideModal` `createPortal`·캡처 단계 `Escape` 격리·`'얕은 심도'` 오탈자 수정을 완료함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/ -q` (`151 passed`), `./venv/bin/pytest backend/tests/test_mps_guard.py backend/tests/test_unipercept.py backend/tests/test_critique_cancellation.py backend/tests/test_refactor_06_hygiene.py -v` (`37 passed`), `npx tsc --noEmit && npm run build` (`PASS`), `check_wiki_health.py docs` (`exit 0`)
