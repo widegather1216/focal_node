@@ -1,12 +1,13 @@
 import React from 'react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
 import { Camera, Focus } from 'lucide-react';
+import { ChartTooltipProps, GearStatItem } from '../../types/analytics';
 
 interface GearDonutChartsProps {
-  cameras: any[];
-  lenses: any[];
+  cameras: GearStatItem[];
+  lenses: GearStatItem[];
   colors: string[];
-  customTooltip: React.ComponentType<any>;
+  customTooltip: React.ComponentType<ChartTooltipProps>;
 }
 
 export const GearDonutCharts: React.FC<GearDonutChartsProps> = ({

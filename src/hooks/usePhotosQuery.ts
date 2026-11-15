@@ -1,6 +1,9 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { InfiniteData, useMutation, useQueryClient } from '@tanstack/react-query';
 import { SearchFilters } from '../store/useAppStore';
 import { api } from '../services/api';
+import { PhotoSummary } from '../types/photo';
+
+type PhotosCacheData = InfiniteData<PhotoSummary[]> | PhotoSummary[];
 
 export function useToggleFavoriteMutation(
   selectedFolder: string | null,
@@ -17,23 +20,23 @@ export function useToggleFavoriteMutation(
       const queryKey = ['photos', selectedFolder, searchQuery, searchFilters];
       await queryClient.cancelQueries({ queryKey });
 
-      const previousData = queryClient.getQueryData(queryKey);
+      const previousData = queryClient.getQueryData<PhotosCacheData>(queryKey);
 
-      queryClient.setQueryData(queryKey, (oldData: any) => {
+      queryClient.setQueryData<PhotosCacheData>(queryKey, (oldData) => {
         if (!oldData) return oldData;
-        if (oldData.pages) {
+        if ('pages' in oldData) {
           return {
             ...oldData,
-            pages: oldData.pages.map((page: any[]) =>
-              page.map((p: any) =>
-                p.id === photoId ? { ...p, is_favorite: !p.is_favorite } : p
+            pages: oldData.pages.map((page) =>
+              page.map((photo) =>
+                photo.id === photoId ? { ...photo, is_favorite: !photo.is_favorite } : photo
               )
             ),
           };
         }
         if (Array.isArray(oldData)) {
-          return oldData.map((p: any) =>
-            p.id === photoId ? { ...p, is_favorite: !p.is_favorite } : p
+          return oldData.map((photo) =>
+            photo.id === photoId ? { ...photo, is_favorite: !photo.is_favorite } : photo
           );
         }
         return oldData;

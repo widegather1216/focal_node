@@ -33,8 +33,8 @@ export const ModelDownloadModal: React.FC<ModelDownloadModalProps> = ({ isOverla
       setDownloadError(null);
       setDownloadProgress(0);
       await api.triggerModelDownload();
-    } catch (err: any) {
-      setDownloadError(err.message || '다시 시도 요청에 실패했습니다.');
+    } catch (err: unknown) {
+      setDownloadError(err instanceof Error && err.message ? err.message : '다시 시도 요청에 실패했습니다.');
     } finally {
       setIsRetrying(false);
     }

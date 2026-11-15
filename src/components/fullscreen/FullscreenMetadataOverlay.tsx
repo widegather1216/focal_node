@@ -1,9 +1,10 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Camera, Focus, Aperture, Clock, Zap } from 'lucide-react';
+import { PhotoDetail } from '../../types/photo';
 
 interface FullscreenMetadataOverlayProps {
-  photo: any;
+  photo: PhotoDetail | null | undefined;
   isVisible: boolean;
 }
 

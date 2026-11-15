@@ -16,7 +16,7 @@ export function useModelDownloadStatus() {
     if (!apiPort) return;
 
     let isMounted = true;
-    let timerId: any = null;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
 
     const checkStatus = async () => {
       try {

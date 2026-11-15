@@ -32,9 +32,9 @@ export function useBackendInit() {
         } else {
           setBackendStatus(`로컬 엔진 오류 (코드: ${response.status})`);
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("Failed to initialize backend:", err);
-        setBackendError(err.toString());
+        setBackendError(err instanceof Error ? err.message : String(err));
         setBackendStatus("로컬 엔진 연결 실패");
       } finally {
         setLoading(false);

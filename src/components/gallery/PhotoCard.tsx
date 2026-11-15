@@ -2,10 +2,10 @@ import React, { memo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Check, Heart } from 'lucide-react';
 import { api } from '../../services/api';
-import { Photo } from '../../types/photo';
+import { PhotoSummary } from '../../types/photo';
 
 interface PhotoCardProps {
-  photo: Photo;
+  photo: PhotoSummary;
   isSelected: boolean;
   onSelectPhoto: (id: string) => void;
   onToggleSelection: (id: string) => void;

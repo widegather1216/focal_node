@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
 import { Focus, Aperture } from 'lucide-react';
+import { ChartTooltipProps, GearStatItem } from '../../types/analytics';
 
 interface ExifBarChartsProps {
-  focal_lengths: any[];
-  focal_lengths_35mm: any[];
-  apertures: any[];
-  customTooltip: React.ComponentType<any>;
+  focal_lengths: GearStatItem[];
+  focal_lengths_35mm: GearStatItem[];
+  apertures: GearStatItem[];
+  customTooltip: React.ComponentType<ChartTooltipProps>;
 }
 
 export const ExifBarCharts: React.FC<ExifBarChartsProps> = ({

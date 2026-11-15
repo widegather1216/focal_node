@@ -1,8 +1,9 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { InfiniteData, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useAppStore } from '../store/useAppStore';
 import { api } from '../services/api';
+import { PhotoSummary } from '../types/photo';
 import { useDebounce } from '../hooks/useDebounce';
 import { PhotoCard } from './gallery/PhotoCard';
 import { LoadingSpinner } from './common/LoadingSpinner';
@@ -100,15 +101,15 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
     e.stopPropagation();
     try {
       const res = await api.toggleFavorite(photoId);
-      queryClient.setQueryData(
+      queryClient.setQueryData<InfiniteData<PhotoSummary[]>>(
         ['photos', selectedFolder, effectiveSearchQuery, searchFilters],
-        (oldData: any) => {
+        (oldData) => {
           if (!oldData) return oldData;
           return {
             ...oldData,
-            pages: oldData.pages.map((page: any[]) =>
-              page.map(p =>
-                p.id === photoId ? { ...p, is_favorite: res.is_favorite } : p
+            pages: oldData.pages.map((page) =>
+              page.map((photo) =>
+                photo.id === photoId ? { ...photo, is_favorite: res.is_favorite } : photo
               )
             )
           };

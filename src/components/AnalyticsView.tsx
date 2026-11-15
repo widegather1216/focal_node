@@ -1,5 +1,6 @@
 import { BarChart3 } from 'lucide-react';
 import { useAnalyticsQuery } from '../hooks/useAnalyticsQuery';
+import { ChartTooltipProps } from '../types/analytics';
 import { LoadingSpinner } from './common/LoadingSpinner';
 import { AnalyticsKpiGrid } from './analytics/AnalyticsKpiGrid';
 import { GearDonutCharts } from './analytics/GearDonutCharts';
@@ -10,7 +11,7 @@ const MONOCHROME_ACCENT_COLORS = [
   '#a1a1aa', '#71717a', '#52525b', '#3f3f46', '#27272a'
 ];
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+const CustomTooltip = ({ active, payload, label }: ChartTooltipProps) => {
   if (active && payload && payload.length) {
     const item = payload[0];
     return (

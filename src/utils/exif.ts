@@ -1,3 +1,5 @@
+import { PhotoDetail, PhotoMetadata } from '../types/photo';
+
 /**
  * Formatting utilities for EXIF camera metadata (aperture, shutter speed, ISO, focal length).
  */
@@ -53,7 +55,7 @@ export function formatFocalLength(focalLength?: number | null, focal35mm?: numbe
   return res;
 }
 
-export function formatExifSummary(metadata: any): string {
+export function formatExifSummary(metadata?: PhotoMetadata | PhotoDetail['metadata'] | null): string {
   if (!metadata) return '';
   const parts: string[] = [];
   if (metadata.f_number) parts.push(formatAperture(metadata.f_number));

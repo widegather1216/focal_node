@@ -1,14 +1,10 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Camera, Focus, Aperture, Image as ImageIcon } from 'lucide-react';
+import { GearStats } from '../../types/analytics';
 
 interface AnalyticsKpiGridProps {
-  stats: {
-    total_photos: number;
-    cameras: any[];
-    lenses: any[];
-    apertures: any[];
-  };
+  stats: Pick<GearStats, 'total_photos' | 'cameras' | 'lenses' | 'apertures'>;
 }
 
 export const AnalyticsKpiGrid: React.FC<AnalyticsKpiGridProps> = ({ stats }) => {
