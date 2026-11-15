@@ -22,6 +22,16 @@ export type { PhotoDetail, SearchFilters, UpdateMetadataResponse };
 export type { ExportResult };
 
 
+export class ApiHttpError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = 'ApiHttpError';
+  }
+}
+
 class ApiClient {
   private get baseUrl(): string {
     const port = useAppStore.getState().apiPort;
@@ -33,9 +43,13 @@ class ApiClient {
 
   private async parseError(res: Response, defaultMsg: string): Promise<string> {
     try {
-      const data = await res.json();
-      return data.detail || defaultMsg;
-    } catch {
+      const errorBody = await res.json();
+      if (errorBody?.detail) {
+        return String(errorBody.detail);
+      }
+      return res.statusText || defaultMsg;
+    } catch (error) {
+      console.debug('Failed to parse error response as JSON:', error);
       return res.statusText || defaultMsg;
     }
   }
@@ -164,7 +178,7 @@ class ApiClient {
     });
     if (!res.ok) {
       const err = await this.parseError(res, "Failed to remove folder");
-      throw new Error(err);
+      throw new ApiHttpError(err, res.status);
     }
   }
 

@@ -1,30 +1,6 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useAppStore, SearchFilters } from '../store/useAppStore';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { SearchFilters } from '../store/useAppStore';
 import { api } from '../services/api';
-
-export function usePhotosQuery(
-  selectedFolder: string | null,
-  searchQuery: string,
-  searchFilters: SearchFilters
-) {
-  const { apiPort } = useAppStore();
-
-  return useQuery({
-    queryKey: ['photos', selectedFolder, searchQuery, searchFilters],
-    queryFn: async () => {
-      if (!apiPort) return [];
-      const hasFilters = searchFilters && Object.keys(searchFilters).length > 0;
-      const hasQuery = searchQuery && searchQuery.trim() !== '';
-      if (hasQuery || hasFilters) {
-        return api.searchPhotos(searchQuery, searchFilters, 100, 0);
-      } else {
-        return api.fetchPhotos(100, 0, selectedFolder);
-      }
-    },
-    enabled: Boolean(apiPort),
-    staleTime: 1000 * 60 * 5, // 5 minutes cache validity
-  });
-}
 
 export function useToggleFavoriteMutation(
   selectedFolder: string | null,
