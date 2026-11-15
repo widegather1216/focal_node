@@ -19,6 +19,10 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
   const [columnCount, setColumnCount] = useState(4);
   
   const debouncedSearchQuery = useDebounce(searchQuery, 500);
+  const trimmedSearchQuery = searchQuery.trim();
+  const effectiveSearchQuery = trimmedSearchQuery.startsWith('similar:')
+    ? trimmedSearchQuery
+    : debouncedSearchQuery;
 
   // Measure container width and compute responsive column count (aiming for ~240px wide cards)
   useEffect(() => {
@@ -47,13 +51,13 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
     isFetchingNextPage,
     status
   } = useInfiniteQuery({
-    queryKey: ['photos', selectedFolder, debouncedSearchQuery, searchFilters],
+    queryKey: ['photos', selectedFolder, effectiveSearchQuery, searchFilters],
     queryFn: async ({ pageParam = 0 }) => {
       if (!apiPort) return [];
       const hasFilters = searchFilters && Object.keys(searchFilters).length > 0;
-      const hasQuery = debouncedSearchQuery && debouncedSearchQuery.trim() !== '';
+      const hasQuery = effectiveSearchQuery && effectiveSearchQuery.trim() !== '';
       if (hasQuery || hasFilters) {
-        return api.searchPhotos(debouncedSearchQuery, searchFilters, 50, (pageParam as number) * 50);
+        return api.searchPhotos(effectiveSearchQuery, searchFilters, 50, (pageParam as number) * 50);
       } else {
         return api.fetchPhotos(50, (pageParam as number) * 50, selectedFolder);
       }
@@ -97,7 +101,7 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
     try {
       const res = await api.toggleFavorite(photoId);
       queryClient.setQueryData(
-        ['photos', selectedFolder, debouncedSearchQuery, searchFilters],
+        ['photos', selectedFolder, effectiveSearchQuery, searchFilters],
         (oldData: any) => {
           if (!oldData) return oldData;
           return {
@@ -113,7 +117,7 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
     } catch (err) {
       console.error("Failed to toggle favorite:", err);
     }
-  }, [queryClient, selectedFolder, debouncedSearchQuery, searchFilters]);
+  }, [queryClient, selectedFolder, effectiveSearchQuery, searchFilters]);
 
   if (status === 'pending') {
     return (
@@ -127,8 +131,14 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
         height: '100%',
         backgroundColor: 'var(--bg-canvas)'
       }}>
-        {debouncedSearchQuery ? (
-          <LoadingSpinner message={`"${debouncedSearchQuery}" 시각 임베딩 분석 및 검색 중...`} />
+        {effectiveSearchQuery ? (
+          <LoadingSpinner
+            message={
+              effectiveSearchQuery.startsWith('similar:')
+                ? "유사한 무드 사진을 찾는 중..."
+                : `"${effectiveSearchQuery}" 시각 임베딩 분석 및 검색 중...`
+            }
+          />
         ) : (
           <LoadingSpinner message="사진 라이브러리를 불러오는 중..." />
         )}

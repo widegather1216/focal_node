@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, FolderOpen, Heart, Maximize2 } from 'lucide-react';
+import { X, FolderOpen, Heart, Maximize2, Images } from 'lucide-react';
 import { api } from '../services/api';
 import { usePhotoDetail } from '../hooks/usePhotoDetail';
 import { useAppStore } from '../store/useAppStore';
@@ -10,6 +10,7 @@ import { LoadingSpinner } from './common/LoadingSpinner';
 
 export function DetailPanel() {
   const openFullscreen = useAppStore(state => state.openFullscreen);
+  const findSimilarPhotos = useAppStore(state => state.findSimilarPhotos);
   const {
     selectedPhotoId,
     setSelectedPhotoId,
@@ -143,6 +144,26 @@ export function DetailPanel() {
                       <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-primary)' }}>전체화면으로 보기</span>
                     </motion.div>
                   </motion.div>
+
+                  {/* Similar Mood Search Trigger */}
+                  <button
+                    type="button"
+                    onClick={() => findSimilarPhotos(photo.id)}
+                    className="glass-button"
+                    style={{
+                      width: '100%',
+                      justifyContent: 'center',
+                      padding: '8px 12px',
+                      marginBottom: '16px',
+                      fontSize: '12px',
+                      fontWeight: 500,
+                      color: 'var(--text-primary)',
+                    }}
+                    title="선택한 사진과 시각적 무드가 비슷한 사진 검색"
+                  >
+                    <Images size={14} color="var(--accent-focal)" style={{ flexShrink: 0 }} />
+                    <span>유사한 무드 사진 찾기</span>
+                  </button>
 
                   {/* File Info */}
                   <div style={{ marginBottom: '18px' }}>

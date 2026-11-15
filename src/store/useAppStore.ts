@@ -34,6 +34,7 @@ interface AppState {
   searchFilters: SearchFilters;
   setSearchFilters: (filters: SearchFilters) => void;
   clearSearchFilters: () => void;
+  findSimilarPhotos: (photoId: string) => void;
 
   isIndexing: boolean;
   indexingState: 'idle' | 'processing' | 'paused' | 'cancelled' | 'error';
@@ -115,6 +116,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   searchFilters: {},
   setSearchFilters: (filters) => set({ searchFilters: filters }),
   clearSearchFilters: () => set({ searchFilters: {} }),
+  findSimilarPhotos: (photoId) => set({
+    searchQuery: `similar:${photoId}`,
+    searchFilters: {},
+    activeTab: 'gallery',
+    selectedPhotoId: null,
+  }),
 
   isIndexing: false,
   indexingState: 'idle',
