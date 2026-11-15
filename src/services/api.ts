@@ -1,5 +1,5 @@
 import { useAppStore } from '../store/useAppStore';
-import { PhotoDetail, SearchFilters, UpdateMetadataResponse } from '../types/photo';
+import { PhotoDetail, PhotoSummary, SearchFilters, UpdateMetadataResponse } from '../types/photo';
 import {
   CritiqueCancelResponse,
   CritiqueDeleteResponse,
@@ -8,6 +8,15 @@ import {
   CritiqueStatus,
   CritiqueSummaryResponse,
 } from '../types/critique';
+import { GearStatItem, GearStats } from '../types/analytics';
+import {
+  ApiMessageResponse,
+  FolderResponse,
+  HealthCheckResponse,
+  IndexingStatusResponse,
+  ModelDownloadStatusResponse,
+  TriggerModelDownloadResponse,
+} from '../types/system';
 import { ExportResult, parseExportSseStream } from '../utils/exportStream';
 
 export type {
@@ -18,7 +27,16 @@ export type {
   CritiqueStatus,
   CritiqueSummaryResponse,
 };
-export type { PhotoDetail, SearchFilters, UpdateMetadataResponse };
+export type { PhotoDetail, PhotoSummary, SearchFilters, UpdateMetadataResponse };
+export type { GearStatItem, GearStats };
+export type {
+  ApiMessageResponse,
+  FolderResponse,
+  HealthCheckResponse,
+  IndexingStatusResponse,
+  ModelDownloadStatusResponse,
+  TriggerModelDownloadResponse,
+};
 export type { ExportResult };
 
 
@@ -54,13 +72,13 @@ class ApiClient {
     }
   }
 
-  async healthCheck(): Promise<any> {
+  async healthCheck(): Promise<HealthCheckResponse> {
     const res = await fetch(`${this.baseUrl}/api/health`);
     if (!res.ok) throw new Error(`Health check failed: ${res.status}`);
     return res.json();
   }
 
-  async fetchPhotos(limit: number, offset: number, folder: string | null): Promise<any[]> {
+  async fetchPhotos(limit: number, offset: number, folder: string | null): Promise<PhotoSummary[]> {
     let url = `${this.baseUrl}/api/photos?limit=${limit}&offset=${offset}`;
     if (folder) {
       url += `&parent_dir=${encodeURIComponent(folder)}`;
@@ -73,7 +91,7 @@ class ApiClient {
     return res.json();
   }
 
-  async searchPhotos(query: string | undefined, filters: SearchFilters | undefined, limit: number, offset: number): Promise<any[]> {
+  async searchPhotos(query: string | undefined, filters: SearchFilters | undefined, limit: number, offset: number): Promise<PhotoSummary[]> {
     const cleanQuery = query ? query.trim() : undefined;
     
     // Check if it's a similar search
@@ -163,7 +181,7 @@ class ApiClient {
     return parseExportSseStream(response.body);
   }
 
-  async fetchFolders(): Promise<any[]> {
+  async fetchFolders(): Promise<FolderResponse[]> {
     const res = await fetch(`${this.baseUrl}/api/folders`);
     if (!res.ok) {
       const err = await this.parseError(res, "Failed to fetch folders");
@@ -182,7 +200,7 @@ class ApiClient {
     }
   }
 
-  async startIndexing(folderPaths: string[]): Promise<any> {
+  async startIndexing(folderPaths: string[]): Promise<ApiMessageResponse> {
     const res = await fetch(`${this.baseUrl}/api/index/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -195,7 +213,7 @@ class ApiClient {
     return res.json();
   }
 
-  async syncDatabase(): Promise<any> {
+  async syncDatabase(): Promise<ApiMessageResponse> {
     const res = await fetch(`${this.baseUrl}/api/index/sync`, { method: 'POST' });
     if (!res.ok) {
       const err = await this.parseError(res, "Sync failed");
@@ -204,7 +222,7 @@ class ApiClient {
     return res.json();
   }
 
-  async pauseIndexing(): Promise<any> {
+  async pauseIndexing(): Promise<ApiMessageResponse> {
     const res = await fetch(`${this.baseUrl}/api/index/pause`, { method: 'POST' });
     if (!res.ok) {
       const err = await this.parseError(res, "Failed to pause indexing");
@@ -213,7 +231,7 @@ class ApiClient {
     return res.json();
   }
 
-  async resumeIndexing(): Promise<any> {
+  async resumeIndexing(): Promise<ApiMessageResponse> {
     const res = await fetch(`${this.baseUrl}/api/index/resume`, { method: 'POST' });
     if (!res.ok) {
       const err = await this.parseError(res, "Failed to resume indexing");
@@ -222,7 +240,7 @@ class ApiClient {
     return res.json();
   }
 
-  async cancelIndexing(): Promise<any> {
+  async cancelIndexing(): Promise<ApiMessageResponse> {
     const res = await fetch(`${this.baseUrl}/api/index/cancel`, { method: 'POST' });
     if (!res.ok) {
       const err = await this.parseError(res, "Failed to cancel indexing");
@@ -231,7 +249,7 @@ class ApiClient {
     return res.json();
   }
 
-  async getIndexingStatus(): Promise<any> {
+  async getIndexingStatus(): Promise<IndexingStatusResponse> {
     const res = await fetch(`${this.baseUrl}/api/index/status`);
     if (!res.ok) {
       const err = await this.parseError(res, "Failed to fetch indexing status");
@@ -309,7 +327,7 @@ class ApiClient {
   }
 
 
-  async reindexPhoto(id: string): Promise<any> {
+  async reindexPhoto(id: string): Promise<PhotoDetail> {
     const res = await fetch(`${this.baseUrl}/api/photos/${id}/reindex`, {
       method: 'POST'
     });
@@ -339,52 +357,19 @@ class ApiClient {
     return `${this.baseUrl}/api/photos/${id}/original`;
   }
 
-  async getAnalyticsStats(): Promise<{
-    total_photos: number;
-    cameras: { name: string; count: number }[];
-    lenses: { name: string; count: number }[];
-    focal_lengths: { name: string; count: number }[];
-    focal_lengths_35mm: { name: string; count: number }[];
-    apertures: { name: string; count: number }[];
-  }> {
+  async getAnalyticsStats(): Promise<GearStats> {
     const res = await fetch(`${this.baseUrl}/api/analytics/stats`);
     if (!res.ok) throw new Error("Failed to fetch analytics stats");
     return res.json();
   }
 
-  async getModelDownloadStatus(): Promise<{
-    statuses: Record<string, {
-      repo_id: string;
-      label: string;
-      status: 'cached' | 'downloading' | 'completed' | 'error';
-      progress?: number;
-      downloaded_bytes?: number;
-      total_bytes?: number;
-      step?: number;
-      total_steps?: number;
-      error_message: string | null;
-      updated_at: number;
-    }>;
-    overall?: {
-      progress: number;
-      downloaded_bytes: number;
-      total_bytes: number;
-      current_label: string;
-      step: number;
-      total_steps: number;
-      is_all_done: boolean;
-    };
-  }> {
+  async getModelDownloadStatus(): Promise<ModelDownloadStatusResponse> {
     const res = await fetch(`${this.baseUrl}/api/system/models/status`);
     if (!res.ok) throw new Error("Failed to fetch model download status");
     return res.json();
   }
 
-  async triggerModelDownload(): Promise<{
-    started: boolean;
-    statuses: Record<string, any>;
-    overall: any;
-  }> {
+  async triggerModelDownload(): Promise<TriggerModelDownloadResponse> {
     const res = await fetch(`${this.baseUrl}/api/system/models/download`, {
       method: 'POST',
     });

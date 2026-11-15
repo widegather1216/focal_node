@@ -36,6 +36,18 @@ export interface PhotoMetadata {
   gps_altitude?: number | null;
 }
 
+export interface PhotoSummary {
+  id: string;
+  file_name: string;
+  file_path: string;
+  is_favorite: boolean;
+  capture_date?: string | null;
+  camera_model?: string | null;
+  width?: number | null;
+  height?: number | null;
+  metadata?: PhotoMetadata | null;
+}
+
 export interface Photo {
   id: string;
   file_path: string;
