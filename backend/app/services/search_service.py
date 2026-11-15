@@ -1,5 +1,6 @@
 import asyncio
-from typing import List
+import logging
+from typing import List, Optional
 from sqlalchemy.orm import Session
 import schemas
 import models
@@ -7,84 +8,104 @@ from repositories.photo_repository import PhotoRepository
 from repositories.vector_repository import VectorRepository
 from services.ai_factory import get_siglip_adapter
 
+logger = logging.getLogger(__name__)
+
+
 class SearchService:
     def __init__(self, db: Session):
         self.db = db
         self.photo_repo = PhotoRepository(db)
         self.vector_repo = VectorRepository()
 
-    async def search_photos(self, request: schemas.SearchRequest) -> List[models.Image]:
-        """
-        Executes hybrid search (SQLite text search + SigLIP 2 vector search + EXIF metadata filters).
-        """
-        photo_ids_from_chroma = None
-        
-        if request.query and request.query.strip():
-            query_str = request.query.strip()
-            # 1. Text Search in SQLite (AIAnalysis)
-            text_search_ids = await asyncio.to_thread(self.photo_repo.search_by_text, query_str)
+    def _extract_query_embedding_sync(self, query_text: str) -> Optional[List[float]]:
+        """Extracts a SigLIP 2 text embedding, returning None on model or inference failure."""
+        try:
+            siglip_adapter = get_siglip_adapter()
+            return siglip_adapter.get_text_embedding(query_text)
+        except Exception as exc:
+            logger.warning(
+                "[SearchService] SigLIP 2 embedding unavailable; falling back to SQLite text/EXIF search: %s",
+                exc,
+            )
+            return None
 
-            # 2. Get query embedding (CPU bound)
-            siglip = get_siglip_adapter()
-            query_embedding = await asyncio.to_thread(siglip.get_text_embedding, query_str)
-            
-            # 3. Search ChromaDB (I/O bound)
-            search_limit = request.offset + max(request.limit * 10, 500) if request.filters else max(1, request.limit + request.offset)
-            chroma_ids = await asyncio.to_thread(
+    @staticmethod
+    def _compute_search_limit(limit: int, offset: int, has_filters: bool, extra_buffer: int = 0) -> int:
+        if has_filters:
+            return offset + max(limit * 10, 500)
+        return max(1, limit + offset + extra_buffer)
+
+    async def _query_vector_ids(
+        self, query_text: str, request: schemas.SearchRequest
+    ) -> List[str]:
+        """Queries ChromaDB for text-similar photo IDs, returning empty list on failure."""
+        query_embedding = await asyncio.to_thread(self._extract_query_embedding_sync, query_text)
+        if not query_embedding:
+            return []
+
+        search_limit = self._compute_search_limit(request.limit, request.offset, bool(request.filters))
+        try:
+            return await asyncio.to_thread(
                 self.vector_repo.query_similar_by_embedding,
                 query_embedding,
-                search_limit
+                search_limit,
             )
-            
-            # 4. Combine IDs prioritizing text matches
-            combined_ids = []
-            seen = set()
-            for pid in text_search_ids + chroma_ids:
-                if pid not in seen:
-                    combined_ids.append(pid)
-                    seen.add(pid)
-                    
-            if not combined_ids:
+        except Exception as exc:
+            logger.warning(
+                "[SearchService] Vector similarity query failed; falling back to SQLite text/EXIF search: %s",
+                exc,
+            )
+            return []
+
+    async def _resolve_query_candidate_ids(
+        self, query_text: str, request: schemas.SearchRequest
+    ) -> List[str]:
+        """Combines SQLite text matches and vector matches, prioritizing text hits."""
+        text_search_ids = await asyncio.to_thread(self.photo_repo.search_by_text, query_text)
+        chroma_ids = await self._query_vector_ids(query_text, request)
+        return list(dict.fromkeys(text_search_ids + chroma_ids))
+
+    async def search_photos(self, request: schemas.SearchRequest) -> List[models.Image]:
+        """Executes hybrid search (SQLite text + SigLIP 2 vector + EXIF metadata filters)."""
+        candidate_ids = None
+        query_text = request.query.strip() if request.query else ""
+
+        if query_text:
+            candidate_ids = await self._resolve_query_candidate_ids(query_text, request)
+            if not candidate_ids:
                 return []
-            photo_ids_from_chroma = combined_ids
-            
-        # Execute query using PhotoRepository via worker thread
+
         return await asyncio.to_thread(
             self.photo_repo.filter_and_paginate,
-            photo_ids_from_chroma,
+            candidate_ids,
             request.filters,
             request.offset,
-            request.limit
+            request.limit,
         )
 
     async def search_similar_photos(self, request: schemas.SimilarSearchRequest) -> List[models.Image]:
-        """
-        Executes K-NN reference search using existing ChromaDB embedding.
-        """
+        """Executes K-NN reference search using existing ChromaDB embedding."""
         vector_count = await asyncio.to_thread(self.vector_repo.count)
         if vector_count == 0:
+            logger.warning("[SearchService] Vector index is empty; returning no similar photos.")
             return []
-            
+
         target_embedding = await asyncio.to_thread(self.vector_repo.get_embedding_by_id, request.photo_id)
         if target_embedding is None:
+            logger.warning("[SearchService] Photo embedding for %s not found.", request.photo_id)
             raise ValueError(f"Photo embedding for {request.photo_id} not found")
-        
-        search_limit = request.offset + max(request.limit * 10, 500) if request.filters else max(1, request.limit + request.offset + 1)
-        chroma_ids = await asyncio.to_thread(
-            self.vector_repo.query_similar_by_embedding,
-            target_embedding,
-            search_limit
+
+        search_limit = self._compute_search_limit(
+            request.limit, request.offset, bool(request.filters), extra_buffer=1
         )
-        
-        if not chroma_ids:
+        chroma_ids = await asyncio.to_thread(
+            self.vector_repo.query_similar_by_embedding, target_embedding, search_limit
+        )
+        similar_photo_ids = [photo_id for photo_id in chroma_ids if photo_id != request.photo_id]
+        if not similar_photo_ids:
             return []
-            
-        photo_ids_from_chroma = [pid for pid in chroma_ids if pid != request.photo_id]
-        
+
         return await asyncio.to_thread(
             self.photo_repo.filter_and_paginate,
-            photo_ids_from_chroma,
-            request.filters,
-            request.offset,
-            request.limit
+            similar_photo_ids, request.filters, request.offset, request.limit,
         )
