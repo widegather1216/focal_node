@@ -1,8 +1,8 @@
 # 🧪 [04_studio_ui_analytics] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (Baseline AC 완료 / REFACTOR 1건 대기 / 차트 드릴다운 AC 1건 대기)`
+- **검증 상태**: `🛠️ Implementing (Baseline AC 완료 / REFACTOR-01~02 전수 해결 / 차트 드릴다운 AC 1건 대기)`
 - **인수 조건 통과율**: `2 / 3 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -64,14 +64,14 @@
  
 ### [REFACTOR-02] API 클라이언트(`api.ts`, 368줄) 및 Analytics/Fullscreen/Gallery 훅·컴포넌트 내 `any` 타입 구체화
 - **심각도**: 🟡 Should Fix (권장 조치)
-- **위치**: `src/services/api.ts#L29-L358`, `src/hooks/useFullscreenControls.ts#L17,L25,L28,L40,L51`, `src/hooks/usePhotoDetail.ts#L82,L90,L93,L117,L124,L180,L245`, `src/components/analytics/AnalyticsKpiGrid.tsx#L8-L10`, `src/components/analytics/ExifBarCharts.tsx#L6-L9`, `src/components/analytics/GearDonutCharts.tsx#L6-L9`, `src/components/fullscreen/FullscreenMetadataOverlay.tsx#L6`, `src/components/PhotoGallery.tsx#L101,L105`
+- **위치**: `src/services/api.ts`, `src/types/photo.ts`, `src/types/analytics.ts`, `src/types/system.ts`, `src/hooks/usePhotosQuery.ts`, `src/components/analytics/AnalyticsKpiGrid.tsx`, `src/components/analytics/ExifBarCharts.tsx`, `src/components/analytics/GearDonutCharts.tsx`, `src/components/AnalyticsView.tsx`, `src/components/fullscreen/FullscreenMetadataOverlay.tsx`, `src/components/PhotoGallery.tsx`, `src/components/gallery/PhotoCard.tsx`
 - **위반 규칙**: Type Safety & Defensive Coding (무분별한 `any` 지양 및 명시적 모델 인터페이스 바인딩)
-- **발견된 문제**:
-  - `api.ts`(368줄)의 17개 메서드가 `Promise<any>` / `Promise<any[]>`로 정의되어 있어 하위 훅(`usePhotosQuery`, `usePhotoDetail`, `useFullscreenControls`)과 컴포넌트(`AnalyticsKpiGrid`, `PhotoGallery`) 전반으로 `any` 타입 누수가 전파됨.
-  - `FullscreenMetadataOverlay.tsx#L6`의 props가 `photo: any`로, `ExifBarCharts`/`GearDonutCharts`의 차트 데이터/툴팁 props가 `any[]`/`React.ComponentType<any>`로 단언되어 컴파일 타임 검증이 무력화됨.
-- **권장 개선안 (Suggested Diff)**:
-  ```text
-  - api.ts 메서드 반환형을 PhotoSummary[], PhotoDetail, FolderResponse[], GearStats 등 구체적 인터페이스로 지정
-  - Analytics/Fullscreen/Gallery 컴포넌트 및 훅의 props·캐시 제네릭을 PhotoDetail/GearStatItem/InfiniteData<PhotoSummary[]>로 엄격 바인딩
-  ```
-- **현재 상태**: 🟡 OPEN (`systematic-debugger` 위임 대기)
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정/신설 파일**: [`analytics.ts`](../../../src/types/analytics.ts), [`system.ts`](../../../src/types/system.ts), [`photo.ts`](../../../src/types/photo.ts), [`api.ts`](../../../src/services/api.ts), [`usePhotosQuery.ts`](../../../src/hooks/usePhotosQuery.ts), [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx), [`PhotoCard.tsx`](../../../src/components/gallery/PhotoCard.tsx), [`FullscreenMetadataOverlay.tsx`](../../../src/components/fullscreen/FullscreenMetadataOverlay.tsx), [`AnalyticsView.tsx`](../../../src/components/AnalyticsView.tsx), [`AnalyticsKpiGrid.tsx`](../../../src/components/analytics/AnalyticsKpiGrid.tsx), [`ExifBarCharts.tsx`](../../../src/components/analytics/ExifBarCharts.tsx), [`GearDonutCharts.tsx`](../../../src/components/analytics/GearDonutCharts.tsx), [`exif.ts`](../../../src/utils/exif.ts), [`useBackendInit.ts`](../../../src/hooks/useBackendInit.ts), [`useModelDownloadStatus.ts`](../../../src/hooks/useModelDownloadStatus.ts), [`ModelDownloadModal.tsx`](../../../src/components/ModelDownloadModal.tsx)
+  - **원인 및 조치**:
+    - 백엔드 스키마와 일치하는 `PhotoSummary`([`photo.ts`](../../../src/types/photo.ts)), `GearStatItem`/`GearStats`/`ChartTooltipProps`([`analytics.ts`](../../../src/types/analytics.ts)), `HealthCheckResponse`/`ApiMessageResponse`/`FolderResponse`/`IndexingStatusResponse`/`ModelDownloadStatusResponse`/`TriggerModelDownloadResponse`([`system.ts`](../../../src/types/system.ts)) 인터페이스를 정의하고 [`api.ts`](../../../src/services/api.ts)의 모든 `Promise<any>`/`any[]` 반환형을 구체화함.
+    - [`usePhotosQuery.ts`](../../../src/hooks/usePhotosQuery.ts)와 [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx)의 React Query 캐시 업데이트 제네릭을 `InfiniteData<PhotoSummary[]>`로 엄격 바인딩하고 [`PhotoCard.tsx`](../../../src/components/gallery/PhotoCard.tsx) props를 `PhotoSummary`로 정렬함.
+    - [`FullscreenMetadataOverlay.tsx`](../../../src/components/fullscreen/FullscreenMetadataOverlay.tsx)를 `PhotoDetail | null | undefined`로, [`AnalyticsView.tsx`](../../../src/components/AnalyticsView.tsx)·[`AnalyticsKpiGrid.tsx`](../../../src/components/analytics/AnalyticsKpiGrid.tsx)·[`ExifBarCharts.tsx`](../../../src/components/analytics/ExifBarCharts.tsx)·[`GearDonutCharts.tsx`](../../../src/components/analytics/GearDonutCharts.tsx)의 props 및 툴팁 타입을 `GearStatItem[]`/`ChartTooltipProps`로 구체화함.
+    - 잔여 `any`였던 [`exif.ts`](../../../src/utils/exif.ts), [`useBackendInit.ts`](../../../src/hooks/useBackendInit.ts), [`useModelDownloadStatus.ts`](../../../src/hooks/useModelDownloadStatus.ts), [`ModelDownloadModal.tsx`](../../../src/components/ModelDownloadModal.tsx)까지 `unknown` 및 명시 타입으로 교정하여 `src/` 전역 `any` 0건 달성.
+  - **회귀 테스트 결과**: `grep -rn "\bany\b" src/` (`ZERO_ANY_FOUND`), `npx tsc --noEmit && npm run build` (`PASS`), `./venv/bin/pytest backend/tests/test_api_analytics.py` (`1 passed`)

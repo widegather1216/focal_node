@@ -38,6 +38,11 @@ backend/app/
 
 src/
 ├── App.css                            # [기존] 전역 다크룸 CSS 변수(--bg-canvas, --accent-focal 등) 및 유틸리티
+├── types/
+│   ├── analytics.ts                   # [신규] GearStatItem, GearStats, ChartTooltipProps 인터페이스
+│   ├── photo.ts                       # [기존] PhotoSummary, PhotoDetail, SearchFilters 타입 정의
+│   └── system.ts                      # [신규] FolderResponse, IndexingStatusResponse, ModelDownloadStatusResponse 타입 정의
+├── services/api.ts                    # [기존] 강타입 FastAPI HTTP 클라이언트
 ├── store/useAppStore.ts               # [수정대상] activeTab, selectedPhotoId 및 applyAnalyticsDrilldown 액션 추가
 ├── utils/
 │   ├── exif.ts                        # [기존] EXIF 셔터스피드/조리개/화각 포맷팅 유틸리티

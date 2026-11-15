@@ -7,11 +7,11 @@
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
-- **Active 도메인**: [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) *(`04_studio_ui_analytics` `REFACTOR-01` 해결 완료 / 전 도메인 `REFACTOR` 1건 잔여)*
-- **현재 단계 (Stage)**: `🩹 Debugging (04_studio_ui_analytics REFACTOR-01 완료 / REFACTOR-02 대기)`
-- **직전 완료 작업**: [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) 도메인 `REFACTOR-01` 해결 완료 (`ApiHttpError` 도입 및 `useAppStore` `fetchFolders`/`removeFolder` `api.ts` 일원화·빈 `catch` 로깅 보강, `usePhotosQuery` Dead Code 제거, `useFullscreenControls` 중복 `getActivePhotoList` `activePhotoList.ts` 통합, `FullscreenToolbar`/`FullscreenNavigation` 분리로 `FullscreenViewer.tsx` 433줄 ➔ 232줄 경량화, `npx tsc --noEmit && npm run build`·`test_api_analytics.py` PASS)
+- **Active 도메인**: [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) *(`04_studio_ui_analytics` `REFACTOR-01~02` 전수 해결 완료 / 전 도메인 `REFACTOR` 0건)*
+- **현재 단계 (Stage)**: `🛠️ Implementing (04_studio_ui_analytics 차트 드릴다운 Step 3~4 대기)`
+- **직전 완료 작업**: [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) 도메인 `REFACTOR-02` 해결 완료 (`src/types/analytics.ts`·`src/types/system.ts`·`PhotoSummary` 신설 및 `api.ts` 17개 `any` 제거, `PhotoGallery`/`PhotoCard`/`usePhotosQuery`/`FullscreenMetadataOverlay`/Analytics 차트·`exif.ts`·`useBackendInit`·`useModelDownloadStatus`·`ModelDownloadModal` `src/` 전역 `any` 0건 달성, `npx tsc --noEmit && npm run build`·`test_api_analytics.py` PASS)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"04_studio_ui_analytics 도메인의 REFACTOR-02 티켓 해결해줘"` *(`1 티켓 = 1 격리 세션`으로 `systematic-debugger` 순차 해결)*
+  > `"04_studio_ui_analytics 도메인 Step 3 개발 진행해줘"` *(`clean-code-developer`로 차트 드릴다운 액션 구현 재개)*
 
 ---
 
@@ -23,7 +23,7 @@
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `14/17 (82%)` | `0 / 0` | DEFECT-01~11·REFACTOR-01~02 전수 해결 완료(`folder_manager.py`·`photo_reindex.py` 분리, `ActionBar`/`Sidebar` 경량화), Active Step 1 대기 |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 0` | `REFACTOR-01` 해결 완료(SigLIP 폴백·`search.py` 로깅·`similar:` 버튼 연결), RRF·스마트 앨범 Step 1~4 대기 |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `15/15 (100%)` | `0 / 0` | `DEFECT-01~03`·`REFACTOR-01~08` 전수 해결 완료 (Headless MPS/MLX 가드·ADR-05 레거시 정리·300줄 이하 분할), Sign-Off 완료 |
-| 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 🩹 Debugging | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 1` | `REFACTOR-01` 해결 완료(`useAppStore` `api.ts` 일원화·`FullscreenViewer` 232줄 경량화·`usePhotosQuery` 정리), `REFACTOR-02` 및 차트 드릴다운 Step 3~4 대기 |
+| 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 🛠️ Implementing | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 0` | `REFACTOR-01~02` 전수 해결 완료(`src/` 전역 `any` 0건·`api.ts`/훅/컴포넌트 타입 엄격화), 차트 드릴다운 Step 3~4 대기 |
 
 *(※ 상태 범례: `📐 Planning` | `🛠️ Implementing` | `🧐 Auditing` | `🧪 QA Testing` | `🩹 Debugging` | `🟢 Sign-Off`)*
 *(※ 미해결 티켓: `🚨D` = Open `DEFECT-xx` 개수, `🧐R` = Open `REFACTOR-xx` 개수)*
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-15]` `[systematic-debugger]` [`04_studio_ui_analytics`]**: `REFACTOR-02` 리팩토링 티켓 해결 완료 (`bd92eb6`, `c095184` / `src/types/analytics.ts`·`src/types/system.ts` 신설 및 `src/types/photo.ts` `PhotoSummary` 추가로 `api.ts` 반환형 `Promise<any>`/`any[]` 전수 구체화, `usePhotosQuery`/`PhotoGallery`/`PhotoCard`/`FullscreenMetadataOverlay`/Analytics 차트/`exif.ts`/`useBackendInit`/`useModelDownloadStatus`/`ModelDownloadModal` 타입 엄격화로 `src/` 전역 `any` 0건 달성, `npx tsc --noEmit && npm run build`·`test_api_analytics.py` PASS 및 위키 헬스체크 통과).
 
 - **`[2026-11-15]` `[systematic-debugger]` [`04_studio_ui_analytics`]**: `REFACTOR-01` 리팩토링 티켓 해결 완료 (`4ddbe98`, `d28a57e` / `ApiHttpError` 도입 및 `api.parseError` 비-JSON `console.debug` 로깅 보강, `useAppStore.ts` `fetchFolders`/`removeFolder` 직접 `fetch()` 및 빈 `catch`를 `api.fetchFolders()`/`api.removeFolder()`로 일원화·`404` 재동기화 보존, `usePhotosQuery.ts` 미사용 `usePhotosQuery` Dead Code 제거, `useFullscreenControls.ts` 중복 `getActivePhotoList`를 `activePhotoList.ts` 공통 유틸로 통합, `FullscreenToolbar.tsx`·`FullscreenNavigation.tsx` 분리 및 `getFitModeImageStyle` 추출로 `FullscreenViewer.tsx` 433줄 ➔ 232줄 경량화, `npx tsc --noEmit && npm run build`·`test_api_analytics.py` PASS 및 위키 헬스체크 통과).
 

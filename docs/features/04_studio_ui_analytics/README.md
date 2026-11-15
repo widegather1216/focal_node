@@ -1,8 +1,8 @@
 # 📊 [04_studio_ui_analytics] Studio UI, Design System & Gear Analytics
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (Baseline 완료 / REFACTOR-01 완료 / REFACTOR-02 대기 / 통계 차트 드릴다운 Step 3~4 대기)`
-- **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 1건` ([`verification.md`](./verification.md) 참조)
+- **현재 상태 (Lifecycle)**: `🛠️ Implementing (Baseline 완료 / REFACTOR-01~02 해결 / 통계 차트 드릴다운 Step 3~4 대기)`
+- **구현 진척도**: `[■■□□] 2/4 Steps (Active Iteration)`
+- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -35,15 +35,16 @@
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-11-15 / systematic-debugger / 04_studio_ui_analytics REFACTOR-01 해결 완료` (`4ddbe98`, `d28a57e`)
+- **직전 완료 작업**: `2026-11-15 / systematic-debugger / 04_studio_ui_analytics REFACTOR-02 해결 완료` (`bd92eb6`, `c095184`)
 - **생성/수정된 핵심 파일**:
-  - `src/services/api.ts`, `src/store/useAppStore.ts`: `ApiHttpError` 도입 및 `parseError` 비-JSON `console.debug` 로깅, `fetchFolders`/`removeFolder` 직접 `fetch()`·빈 `catch`를 `api.fetchFolders()`/`api.removeFolder()`로 일원화(`404` 재동기화 유지)
-  - `src/hooks/usePhotosQuery.ts`, `src/hooks/useFullscreenControls.ts`: 미사용 `usePhotosQuery` 제거 및 중복 `getActivePhotoList`를 `activePhotoList.ts` 공통 유틸로 통합
-  - `src/components/FullscreenViewer.tsx`, `src/components/fullscreen/FullscreenToolbar.tsx`, `src/components/fullscreen/FullscreenNavigation.tsx`: 툴바/네비게이션 분리 및 `getFitModeImageStyle` 추출로 `FullscreenViewer.tsx` 433줄 ➔ 232줄 경량화
+  - `src/types/analytics.ts`, `src/types/system.ts`, `src/types/photo.ts`: `GearStatItem`, `GearStats`, `ChartTooltipProps`, `PhotoSummary`, `FolderResponse`, `IndexingStatusResponse`, `ModelDownloadStatusResponse` 등 명시적 API/차트 인터페이스 신설
+  - `src/services/api.ts`: 17개 메서드의 `Promise<any>`/`any[]` 반환형을 구체적 도메인 타입으로 일괄 교체
+  - `src/hooks/usePhotosQuery.ts`, `src/components/PhotoGallery.tsx`, `src/components/gallery/PhotoCard.tsx`, `src/components/fullscreen/FullscreenMetadataOverlay.tsx`, `src/components/AnalyticsView.tsx`, `src/components/analytics/AnalyticsKpiGrid.tsx`, `src/components/analytics/ExifBarCharts.tsx`, `src/components/analytics/GearDonutCharts.tsx`, `src/utils/exif.ts`, `src/hooks/useBackendInit.ts`, `src/hooks/useModelDownloadStatus.ts`, `src/components/ModelDownloadModal.tsx`: 캐시 제네릭(`InfiniteData<PhotoSummary[]>`), 컴포넌트 props 및 예외(`unknown`) 타입 구체화로 `src/` 전역 `any` 0건 달성
 - **최근 커밋 (`Recent Commits`)**:
-  - `4ddbe98` - `refactor(store): unify folder api calls and remove unused query hook`
-  - `d28a57e` - `refactor(fullscreen): split viewer controls and share active photo list`
+  - `bd92eb6` - `refactor(api): define explicit domain response types in ApiClient`
+  - `c095184` - `refactor(ui): eliminate remaining any types across gallery, analytics, and hooks`
+- **Working Tree State**: 🟢 Clean (No uncommitted changes)
 - **검증 완료된 테스트 실행 명령어**:
-  - `./venv/bin/pytest backend/tests/test_api_analytics.py && npx tsc --noEmit && npm run build` (`PASS`)
+  - `npx tsc --noEmit && npm run build && ./venv/bin/pytest backend/tests/test_api_analytics.py` (`PASS`)
 - **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - `REFACTOR-02` 해결 권장 (`"04_studio_ui_analytics 도메인의 REFACTOR-02 티켓 해결해줘"`). 이후 Active Step 3~4 구현 시 `ExifBarCharts.tsx`에서 화각 막대(`"35mm"`) 클릭 시 숫자(`35`)를 파싱하여 `focal_length_min: 35, focal_length_max: 35, use_35mm_equivalent: is35mmMode`로 전달할 것.
+  - 미해결 티켓 0건으로 Active Step 3~4(`04_studio_ui_analytics 도메인 Step 3 개발 진행해줘`) 재개 가능. `ExifBarCharts.tsx`에서 화각 막대(`"35mm"`) 클릭 시 숫자(`35`)를 파싱하여 `focal_length_min: 35, focal_length_max: 35, use_35mm_equivalent: is35mmMode`로 전달할 것.
