@@ -1,758 +1,377 @@
-import os
+"""MLX-based Gemma 4 VLM adapter and SigLIP2Adapter compatibility re-export."""
+
 import gc
+import os
+import sys
 import time
-import threading
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
+
+from core.ports import ImageCaptioningPort
+from services.base_model import BaseKeepAliveModel, GPU_LOCK, clear_mlx_cache
+from services.siglip_adapter import SigLIP2Adapter
+
+__all__ = ["SigLIP2Adapter", "GemmaAdapter"]
 
 
-# For Gemma 4 (MLX)
-# We import mlx and mlx_lm dynamically to avoid importing them if Gemma is not loaded yet
-# or on systems where mlx/mlx_lm might fail if they are imported at startup.
-
-from core.ports import ImageEmbeddingPort, TextEmbeddingPort, ImageCaptioningPort
-from services.base_model import BaseKeepAliveModel, GPU_LOCK
-
-class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
-    def __init__(self):
-        import torch
-        self.device = "mps" if torch.backends.mps.is_available() else "cpu"
-        self.model_id = "google/siglip2-base-patch16-224"
-        self.model = None
-        self.processor = None
-        self.cached_taxonomy_embeddings = None
-        self.lock = threading.RLock()
-        
-        # SigLIP 2 is relatively lightweight and serves critical search path,
-        # so we keep it loaded in memory from startup/initialization.
-        self._load_model()
-
-    def _load_model(self):
-        if self.model is not None:
+def _configure_frozen_metal_path() -> None:
+    """Resolves bundled mlx.metallib path in frozen PyInstaller builds."""
+    if not getattr(sys, "frozen", False) or "MLX_METAL_PATH" in os.environ:
+        return
+    exe_dir = os.path.dirname(sys.executable)
+    candidates = (
+        os.path.join(exe_dir, "_internal", "mlx", "lib", "mlx.metallib"),
+        os.path.join(exe_dir, "_internal", "mlx.metallib"),
+        os.path.join(exe_dir, "mlx.metallib"),
+        os.path.join(exe_dir, "..", "Resources", "_internal", "mlx", "lib", "mlx.metallib"),
+        os.path.join(exe_dir, "..", "Resources", "binaries", "_internal", "mlx", "lib", "mlx.metallib"),
+    )
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            os.environ["MLX_METAL_PATH"] = candidate
             return
-        with GPU_LOCK:
-            with self.lock:
-                if self.model is None:
-                    import torch
-                    from transformers import AutoModel, AutoProcessor
-                    print(f"[SigLIP2Adapter] Loading model {self.model_id} on {self.device}...", flush=True)
-                    try:
-                        self.model = AutoModel.from_pretrained(
-                            self.model_id,
-                            attn_implementation="sdpa",
-                            local_files_only=True
-                        ).to(self.device)
-                        self.processor = AutoProcessor.from_pretrained(self.model_id, local_files_only=True)
-                    except Exception as local_load_err:
-                        print(f"[SigLIP2Adapter] Local cache miss, loading from hub: {local_load_err}", flush=True)
-                        self.model = AutoModel.from_pretrained(
-                            self.model_id,
-                            attn_implementation="sdpa"
-                        ).to(self.device)
-                        self.processor = AutoProcessor.from_pretrained(self.model_id)
-                    print("[SigLIP2Adapter] Model loaded successfully.", flush=True)
-            self._precompute_taxonomy_embeddings()
 
-    def _precompute_taxonomy_embeddings(self):
-        if self.cached_taxonomy_embeddings is not None:
-            return
-        try:
-            from services.taxonomy import SIGLIP_VISUAL_TAXONOMY
-            import torch
-            inputs = self.processor(text=SIGLIP_VISUAL_TAXONOMY, padding="max_length", return_tensors="pt").to(self.device)
-            with GPU_LOCK:
-                with torch.no_grad():
-                    feat = self.model.get_text_features(**inputs)
-                text_features = feat.pooler_output
-                text_features = text_features / text_features.norm(p=2, dim=-1, keepdim=True)
-                self.cached_taxonomy_embeddings = text_features.cpu().numpy()
-            print(f"[SigLIP2Adapter] Precomputed taxonomy embeddings for {len(SIGLIP_VISUAL_TAXONOMY)} visual concepts.", flush=True)
-        except Exception as e:
-            print(f"[SigLIP2Adapter] Failed to precompute taxonomy embeddings: {e}", flush=True)
-            self.cached_taxonomy_embeddings = None
 
-    def get_image_embedding(self, image_path: str) -> list[float]:
-        import torch
-        self._load_model()
-        
-        from utils.image import load_pil_image
-        image = load_pil_image(image_path)
-            
-        inputs = self.processor(images=image, return_tensors="pt")
-        with GPU_LOCK:
-            inputs = inputs.to(self.device)
-            with torch.no_grad():
-                feat = self.model.get_image_features(**inputs)
-                image_features = feat.pooler_output
-                # Normalize embedding
-                image_features = image_features / image_features.norm(p=2, dim=-1, keepdim=True)
-                embedding = image_features[0].tolist()
-        return embedding
+def _link_single_safetensor(src_path: str, dst_path: str) -> None:
+    import shutil
 
-    def get_text_embedding(self, text: str) -> list[float]:
-        import torch
-        self._load_model()
-        inputs = self.processor(text=[text], padding="max_length", return_tensors="pt")
-        with GPU_LOCK:
-            inputs = inputs.to(self.device)
-            with torch.no_grad():
-                feat = self.model.get_text_features(**inputs)
-            text_features = feat.pooler_output
-            # Normalize embedding
-            text_features = text_features / text_features.norm(p=2, dim=-1, keepdim=True)
-            embedding = text_features[0].tolist()
-        return embedding
+    if os.path.exists(dst_path):
+        return
+    try:
+        os.symlink(src_path, dst_path)
+    except Exception as symlink_err:
+        print(f"[GemmaAdapter] Symlink failed ({symlink_err}), copying file: {dst_path}", flush=True)
+        shutil.copy2(src_path, dst_path)
 
-    def get_zero_shot_hints(self, image_input: Any, top_k: int = 15, min_score: float = 0.22) -> list[str]:
-        """
-        Calculates cosine similarity between image embedding and precomputed taxonomy embeddings.
-        Returns matching visual keyword strings exceeding min_score threshold up to top_k.
-        """
-        import numpy as np
-        if self.cached_taxonomy_embeddings is None:
-            return []
-            
-        if isinstance(image_input, str):
-            image_emb = self.get_image_embedding(image_input)
-        else:
-            image_emb = image_input
-            
-        if not image_emb:
-            return []
-            
-        img_vec = np.array(image_emb)
-        img_vec = img_vec / np.linalg.norm(img_vec)
-        
-        scores = np.dot(self.cached_taxonomy_embeddings, img_vec)
-        sorted_indices = np.argsort(scores)[::-1]
-        
-        from services.taxonomy import SIGLIP_VISUAL_TAXONOMY
-        filtered_hints = [
-            SIGLIP_VISUAL_TAXONOMY[i] for i in sorted_indices
-            if scores[i] >= min_score
-        ][:top_k]
-        
-        # Fallback to top 3 if no terms pass min_score for very sparse/unique images
-        if not filtered_hints and len(sorted_indices) > 0:
-            filtered_hints = [SIGLIP_VISUAL_TAXONOMY[i] for i in sorted_indices[:3]]
-            
-        return filtered_hints
+
+def _link_subfolder_safetensors(model_id: str) -> None:
+    """Links nested *.safetensors files to top-level directory so mlx_vlm.load discovers them."""
+    import glob
+
+    try:
+        from huggingface_hub import snapshot_download
+
+        model_dir = model_id if os.path.exists(model_id) else snapshot_download(repo_id=model_id, local_files_only=True)
+        for src_path in glob.glob(os.path.join(model_dir, "**", "*.safetensors"), recursive=True):
+            rel_dir = os.path.relpath(os.path.dirname(src_path), model_dir)
+            if rel_dir == ".":
+                continue
+            prefixed_name = f"{os.path.basename(os.path.dirname(src_path))}_{os.path.basename(src_path)}"
+            _link_single_safetensor(src_path, os.path.join(model_dir, prefixed_name))
+            _link_single_safetensor(src_path, os.path.join(model_dir, os.path.basename(src_path)))
+    except Exception as link_err:
+        print(f"[GemmaAdapter] Subfolder safetensors link warning: {link_err}", flush=True)
+
+
+def _resolve_image_input(image_path: Any) -> Any:
+    """Decodes RAW photos or passes standard images/PIL objects outside GPU_LOCK (Rule 2.4)."""
+    from PIL import Image
+    from utils.image import decode_raw_to_pil, is_raw_image
+
+    if isinstance(image_path, Image.Image):
+        return image_path
+    if is_raw_image(image_path):
+        return decode_raw_to_pil(image_path, min_dimension=1024)
+    return image_path
 
 
 class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
+    """Lazy-loaded Gemma 4 12B MLX VLM adapter with 60s keep-alive cache."""
+
     def __init__(self):
         super().__init__("GemmaAdapter", keep_alive_timeout=60.0)
         self.model_id = "mlx-community/gemma-4-12B-it-8bit"
         self.model = None
         self.processor = None
 
-    def _load_model_locked(self):
-        """
-        Assumes both GPU_LOCK and self.lock are already acquired by the caller
-        in strict GPU_LOCK -> self.lock hierarchy order.
-        """
+    def _load_model_locked(self) -> None:
+        """Assumes caller holds GPU_LOCK -> self.lock in strict hierarchy order."""
         if self.model is not None:
             self.last_used_time = time.time()
             self._start_keep_alive_timer_locked()
             return
 
         print(f"[GemmaAdapter] Lazy loading model {self.model_id} via mlx_vlm...", flush=True)
-        import sys, os
-        if getattr(sys, 'frozen', False) and "MLX_METAL_PATH" not in os.environ:
-            exe_dir = os.path.dirname(sys.executable)
-            candidates = [
-                os.path.join(exe_dir, "_internal", "mlx", "lib", "mlx.metallib"),
-                os.path.join(exe_dir, "_internal", "mlx.metallib"),
-                os.path.join(exe_dir, "mlx.metallib"),
-                os.path.join(exe_dir, "..", "Resources", "_internal", "mlx", "lib", "mlx.metallib"),
-                os.path.join(exe_dir, "..", "Resources", "binaries", "_internal", "mlx", "lib", "mlx.metallib"),
-            ]
-            for c in candidates:
-                if os.path.exists(c):
-                    os.environ["MLX_METAL_PATH"] = c
-                    break
-        # mlx_vlm.load only searches top-level directory for *.safetensors.
-        # Auto-link any subfolder safetensors (e.g. optiq/optiq_vision.safetensors) to top-level.
-        try:
-            from huggingface_hub import snapshot_download
-            import glob, shutil
-            if os.path.exists(self.model_id):
-                model_dir = self.model_id
-            else:
-                model_dir = snapshot_download(repo_id=self.model_id, local_files_only=True)
-            
-            sub_safetensors = glob.glob(os.path.join(model_dir, "**", "*.safetensors"), recursive=True)
-            for s_path in sub_safetensors:
-                rel_dir = os.path.relpath(os.path.dirname(s_path), model_dir)
-                if rel_dir != ".":
-                    dst_name = f"{os.path.basename(os.path.dirname(s_path))}_{os.path.basename(s_path)}"
-                    top_dst = os.path.join(model_dir, dst_name)
-                    direct_dst = os.path.join(model_dir, os.path.basename(s_path))
-                    for dst in [top_dst, direct_dst]:
-                        if not os.path.exists(dst):
-                            try:
-                                os.symlink(s_path, dst)
-                            except Exception as symlink_err:
-                                print(f"[GemmaAdapter] Symlink failed ({symlink_err}), copying file: {dst}", flush=True)
-                                shutil.copy2(s_path, dst)
-        except Exception as link_err:
-            print(f"[GemmaAdapter] Subfolder safetensors link warning: {link_err}", flush=True)
+        _configure_frozen_metal_path()
+        _link_subfolder_safetensors(self.model_id)
 
         from mlx_vlm import load
+
         self.model, self.processor = load(self.model_id)
         print("[GemmaAdapter] Model loaded successfully.", flush=True)
         self.last_used_time = time.time()
         self._start_keep_alive_timer_locked()
 
-
-
-    def generate_caption_and_tags(self, image_path: str, metadata: dict = None, siglip_hints: list[str] = None) -> dict:
+    def _acquire_model_request(self) -> None:
         with GPU_LOCK:
             with self.lock:
                 self._load_model_locked()
-                self.active_requests += 1
-            
-        try:
-            from services.ai_parser import (
-                GEMMA_SYSTEM_PROMPT,
-                format_exif_text,
-                format_siglip_hints_text,
-                parse_gemma_json_output
-            )
-            exif_text = format_exif_text(metadata)
-            siglip_text = format_siglip_hints_text(siglip_hints)
-            messages = [
-                {
-                    "role": "system",
-                    "content": GEMMA_SYSTEM_PROMPT
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image"},
-                        {"type": "text", "text": f"{exif_text}{siglip_text}이 사진을 정밀 분석하여 JSON으로 출력하십시오."}
-                    ]
-                }
-            ]
-            
-            from utils.image import is_raw_image, decode_raw_to_pil
-            from PIL import Image
-            if isinstance(image_path, Image.Image):
-                image_input = image_path
-            elif is_raw_image(image_path):
-                image_input = decode_raw_to_pil(image_path, min_dimension=1024)
-            else:
-                image_input = image_path
-
-            with GPU_LOCK:
-                try:
-                    tokenizer = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
-                    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-                    
-                    from mlx_vlm import generate
-                    # In mlx_vlm, generate accepts `image` as a file path, URL, or PIL Image
-                    result = generate(self.model, self.processor, prompt=prompt, image=image_input, verbose=False)
-                    output = result.text if hasattr(result, "text") else str(result)
-                except RuntimeError as e:
-                    print(f"[GemmaAdapter] MLX OOM or RuntimeError during inference: {e}. Recovering...", flush=True)
-                    try:
-                        import mlx.core as mx
-                        mx.clear_cache()
-                    except Exception as clear_err:
-                        print(f"[GemmaAdapter] Cache clear note: {clear_err}", flush=True)
-                    gc.collect()
-                    return {"caption": "", "tags": [], "aesthetic_tags": []}
-                except Exception as e:
-                    print(f"[GemmaAdapter] Unexpected inference error: {e}", flush=True)
-                    return {"caption": "", "tags": [], "aesthetic_tags": []}
-            
-            # Return safely parsed dictionary
-            return parse_gemma_json_output(output)
-        finally:
-            with self.lock:
                 self.last_used_time = time.time()
-                self.active_requests -= 1
+                self.active_requests += 1
+
+    def _release_model_request(self) -> None:
+        with self.lock:
+            self.last_used_time = time.time()
+            self.active_requests -= 1
+
+    def _run_mlx_vlm_generation(
+        self,
+        messages: list,
+        image_input: Any = None,
+        max_tokens: Optional[int] = None,
+        clear_cache_before: bool = False,
+        photo_id: Optional[str] = None,
+    ) -> str:
+        from mlx_vlm import generate
+        from services.critique_status import critique_status_manager
+
+        with GPU_LOCK:
+            if photo_id:
+                critique_status_manager.check_cancelled(photo_id)
+            if clear_cache_before:
+                clear_mlx_cache()
+                gc.collect()
+
+            tokenizer = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
+            prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+            gen_kwargs: dict[str, Any] = {"prompt": prompt, "verbose": False}
+            if image_input is not None:
+                gen_kwargs["image"] = image_input
+            if max_tokens is not None:
+                gen_kwargs["max_tokens"] = max_tokens
+
+            generation_result = generate(self.model, self.processor, **gen_kwargs)
+            return generation_result.text if hasattr(generation_result, "text") else str(generation_result)
+
+    def generate_caption_and_tags(self, image_path: str, metadata: dict = None, siglip_hints: list[str] = None) -> dict:
+        from services.ai_parser import GEMMA_SYSTEM_PROMPT, format_exif_text, format_siglip_hints_text, parse_gemma_json_output
+
+        self._acquire_model_request()
+        try:
+            prompt_text = f"{format_exif_text(metadata)}{format_siglip_hints_text(siglip_hints)}이 사진을 정밀 분석하여 JSON으로 출력하십시오."
+            messages = [
+                {"role": "system", "content": GEMMA_SYSTEM_PROMPT},
+                {"role": "user", "content": [{"type": "image"}, {"type": "text", "text": prompt_text}]},
+            ]
+            raw_output = self._run_mlx_vlm_generation(messages, image_input=_resolve_image_input(image_path))
+            return parse_gemma_json_output(raw_output)
+        except RuntimeError as err:
+            print(f"[GemmaAdapter] MLX OOM or RuntimeError during inference: {err}. Recovering...", flush=True)
+            clear_mlx_cache()
+            gc.collect()
+            return {"caption": "", "tags": [], "aesthetic_tags": []}
+        except Exception as err:
+            print(f"[GemmaAdapter] Unexpected inference error: {err}", flush=True)
+            return {"caption": "", "tags": [], "aesthetic_tags": []}
+        finally:
+            self._release_model_request()
 
     def generate_deep_critique(self, image_path: str, metadata: dict = None, photo_id: str = None) -> str:
-        from services.critique_status import critique_status_manager, CritiqueCancelledException
+        from services.ai_parser import GEMMA_CRITIQUE_SYSTEM_PROMPT, format_exif_text
+        from services.critique_status import CritiqueCancelledException, critique_status_manager
+
         if photo_id:
             critique_status_manager.check_cancelled(photo_id)
             critique_status_manager.update(photo_id, 2, 4, "비평 작성 중", 50)
-
-        with GPU_LOCK:
-            with self.lock:
-                self._load_model_locked()
-                self.last_used_time = time.time()
-                self.active_requests += 1
-            
+        self._acquire_model_request()
         try:
             if photo_id:
                 critique_status_manager.check_cancelled(photo_id)
-
-            from services.ai_parser import GEMMA_CRITIQUE_SYSTEM_PROMPT, format_exif_text
-            exif_text = format_exif_text(metadata)
             messages = [
-                {
-                    "role": "system",
-                    "content": GEMMA_CRITIQUE_SYSTEM_PROMPT
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "image"},
-                        {"type": "text", "text": f"{exif_text}이 사진을 전문가의 시각에서 비평해주십시오."}
-                    ]
-                }
+                {"role": "system", "content": GEMMA_CRITIQUE_SYSTEM_PROMPT},
+                {"role": "user", "content": [{"type": "image"}, {"type": "text", "text": f"{format_exif_text(metadata)}이 사진을 전문가의 시각에서 비평해주십시오."}]},
             ]
-            
-            from utils.image import is_raw_image, decode_raw_to_pil
-            from PIL import Image
-            if isinstance(image_path, Image.Image):
-                image_input = image_path
-            elif is_raw_image(image_path):
-                image_input = decode_raw_to_pil(image_path, min_dimension=1024)
-            else:
-                image_input = image_path
-
-            with GPU_LOCK:
-                try:
-                    tokenizer = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
-                    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-                    
-                    from mlx_vlm import generate
-                    result = generate(self.model, self.processor, prompt=prompt, image=image_input, verbose=False)
-                    output = result.text if hasattr(result, "text") else str(result)
-                except RuntimeError as e:
-                    print(f"[GemmaAdapter] MLX OOM or RuntimeError during deep critique: {e}. Recovering...", flush=True)
-                    try:
-                        import mlx.core as mx
-                        mx.clear_cache()
-                    except Exception as clear_err:
-                        print(f"[GemmaAdapter] Cache clear note: {clear_err}", flush=True)
-                    gc.collect()
-                    raise
-                except Exception as e:
-                    print(f"[GemmaAdapter] Unexpected critique inference error: {e}", flush=True)
-                    raise
-            
-            return output.strip()
+            return self._run_mlx_vlm_generation(messages, image_input=_resolve_image_input(image_path), photo_id=photo_id).strip()
         except CritiqueCancelledException:
             raise
+        except RuntimeError as err:
+            print(f"[GemmaAdapter] MLX OOM or RuntimeError during deep critique: {err}. Recovering...", flush=True)
+            clear_mlx_cache()
+            gc.collect()
+            raise
         finally:
-            with self.lock:
-                self.last_used_time = time.time()
-                self.active_requests -= 1
+            self._release_model_request()
 
     @staticmethod
     def _build_perceptual_critique_messages(
         metadata: Optional[dict],
         scores_dict: Optional[dict],
-        perceptual_anchor: Optional[str]
+        perceptual_anchor: Optional[str],
     ) -> list:
-        from services.ai_parser import (
-            GEMMA_PERCEPTUAL_CRITIQUE_SYSTEM_PROMPT,
-            format_perceptual_critique_user_prompt
-        )
+        from services.ai_parser import GEMMA_PERCEPTUAL_CRITIQUE_SYSTEM_PROMPT, format_perceptual_critique_user_prompt
+
         user_prompt = format_perceptual_critique_user_prompt(
             perceptual_anchor=perceptual_anchor or "",
             scores_dict=scores_dict,
-            metadata=metadata
+            metadata=metadata,
         )
         return [
             {"role": "system", "content": GEMMA_PERCEPTUAL_CRITIQUE_SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image"},
-                    {"type": "text", "text": user_prompt}
-                ]
-            }
+            {"role": "user", "content": [{"type": "image"}, {"type": "text", "text": user_prompt}]},
         ]
 
     def _execute_perceptual_critique_generation(
-        self,
-        messages: list,
-        image_path: Any,
-        scores_dict: Optional[dict],
-        photo_id: Optional[str]
+        self, messages: list, image_path: Any, scores_dict: Optional[dict], photo_id: Optional[str],
     ) -> str:
-        from services.critique_status import critique_status_manager, CritiqueCancelledException
         from services.ai_parser import format_score_info_text
-        from utils.image import is_raw_image, decode_raw_to_pil
-        from PIL import Image
+        from services.critique_status import CritiqueCancelledException
 
-        # Decode image outside GPU_LOCK to prevent CPU decode blocking GPU per Rule 2.4
-        if isinstance(image_path, Image.Image):
-            image_input = image_path
-        elif is_raw_image(image_path):
-            image_input = decode_raw_to_pil(image_path, min_dimension=1024)
-        else:
-            image_input = image_path
-
-        with GPU_LOCK:
-            if photo_id:
-                critique_status_manager.check_cancelled(photo_id)
-            try:
-                import mlx.core as mx
-                mx.clear_cache()
-                gc.collect()
-
-                tokenizer = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
-                prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-
-                from mlx_vlm import generate
-                result = generate(self.model, self.processor, prompt=prompt, image=image_input, max_tokens=3072, verbose=False)
-                output = (result.text if hasattr(result, "text") else str(result)).strip()
-
-                if scores_dict and "앙상블 비평 스코어보드" not in output:
-                    output = f"{format_score_info_text(scores_dict)}{output}"
-                return output
-            except CritiqueCancelledException:
-                raise
-            except RuntimeError as e:
-                print(f"[GemmaAdapter] MLX OOM during perceptual critique: {e}. Recovering...", flush=True)
-                try:
-                    import mlx.core as mx
-                    mx.clear_cache()
-                except Exception as clear_err:
-                    print(f"[GemmaAdapter] Cache clear note: {clear_err}", flush=True)
-                gc.collect()
-                raise
-            except Exception as e:
-                print(f"[GemmaAdapter] Unexpected perceptual critique inference error: {e}", flush=True)
-                raise
+        image_input = _resolve_image_input(image_path)
+        try:
+            output = self._run_mlx_vlm_generation(
+                messages, image_input=image_input, max_tokens=3072, clear_cache_before=True, photo_id=photo_id,
+            ).strip()
+            if scores_dict and "앙상블 비평 스코어보드" not in output:
+                return f"{format_score_info_text(scores_dict)}{output}"
+            return output
+        except CritiqueCancelledException:
+            raise
+        except RuntimeError as err:
+            print(f"[GemmaAdapter] MLX OOM during perceptual critique: {err}. Recovering...", flush=True)
+            clear_mlx_cache()
+            gc.collect()
+            raise
+        except Exception as err:
+            print(f"[GemmaAdapter] Unexpected perceptual critique inference error: {err}", flush=True)
+            raise
 
     def generate_perceptual_critique(
         self,
-        image_path: str,
-        metadata: Optional[dict] = None,
+        image_path: Any,
+        perceptual_anchor: str,
         scores_dict: Optional[dict] = None,
-        perceptual_anchor: Optional[str] = None,
-        photo_id: Optional[str] = None
+        metadata: Optional[dict] = None,
+        photo_id: Optional[str] = None,
     ) -> str:
-        """
-        Directly generates deep Korean photo critique report grounded in
-        UniPercept's VR scores and single-pass perceptual anchor diagnosis,
-        combining photo visual features, EXIF data, and expert photography insights.
-        """
-        from services.critique_status import critique_status_manager, CritiqueCancelledException
+        """Generates Korean deep critique grounded in UniPercept perceptual anchor + EXIF."""
+        from services.critique_status import CritiqueCancelledException, critique_status_manager
+
         if photo_id:
             critique_status_manager.check_cancelled(photo_id)
             critique_status_manager.update(photo_id, 3, 4, "[Gemma] 지각 앵커 기반 심층 비평 작성 중...", 75)
 
-        with GPU_LOCK:
-            with self.lock:
-                self._load_model_locked()
-                self.last_used_time = time.time()
-                self.active_requests += 1
-
+        self._acquire_model_request()
         try:
             if photo_id:
                 critique_status_manager.check_cancelled(photo_id)
 
-            t_start = time.time()
+            started_at = time.time()
             messages = self._build_perceptual_critique_messages(metadata, scores_dict, perceptual_anchor)
             output = self._execute_perceptual_critique_generation(messages, image_path, scores_dict, photo_id)
-            elapsed = time.time() - t_start
+            elapsed = time.time() - started_at
             print(f"[GemmaAdapter] ✅ Direct perceptual critique generated ({len(output)} chars, {elapsed:.2f}s)", flush=True)
             return output
         except CritiqueCancelledException:
             raise
         finally:
-            with self.lock:
-                self.last_used_time = time.time()
-                self.active_requests -= 1
+            self._release_model_request()
+
+    @staticmethod
+    def _build_critique_summary_messages(critiques_list: list[dict]) -> list:
+        from services.ai_parser import GEMMA_CRITIQUE_SUMMARY_SYSTEM_PROMPT
+
+        critique_blocks = []
+        for i, item in enumerate(critiques_list, 1):
+            cam_label = ""
+            if item.get("camera_model"):
+                cam_label = f" (카메라: {item.get('camera_model', 'N/A')}, 렌즈: {item.get('lens_model', 'N/A')})"
+            critique_blocks.append(f"[사진 {i}: {item.get('file_name', '무제')}{cam_label}]\n비평: {item.get('critique', '')}")
+
+        combined = "\n\n".join(critique_blocks)
+        user_prompt = (
+            f"다음은 사용자가 수집한 총 {len(critiques_list)}개의 사진 비평 데이터입니다:\n\n"
+            f"{combined}\n\n"
+            "위 비평 데이터를 바탕으로 작성자의 사진 촬영 스타일, 주요 강점, 개선점, 촬영 습관 및 종합 조언을 리포트 형태로 작성해주십시오."
+        )
+        return [
+            {"role": "system", "content": GEMMA_CRITIQUE_SUMMARY_SYSTEM_PROMPT},
+            {"role": "user", "content": [{"type": "text", "text": user_prompt}]},
+        ]
 
     def generate_critique_summary(self, critiques_list: list[dict]) -> str:
-        with GPU_LOCK:
-            with self.lock:
-                self._load_model_locked()
-                self.last_used_time = time.time()
-                self.active_requests += 1
-
+        self._acquire_model_request()
         try:
-            from services.ai_parser import GEMMA_CRITIQUE_SUMMARY_SYSTEM_PROMPT
-
-            critique_blocks = []
-            for idx, item in enumerate(critiques_list, 1):
-                cam_info = f" (카메라: {item.get('camera_model', 'N/A')}, 렌즈: {item.get('lens_model', 'N/A')})" if item.get('camera_model') else ""
-                block = f"[사진 {idx}: {item.get('file_name', '무제')}{cam_info}]\n비평: {item.get('critique', '')}"
-                critique_blocks.append(block)
-
-            combined_critiques = "\n\n".join(critique_blocks)
-            user_prompt = f"다음은 사용자가 수집한 총 {len(critiques_list)}개의 사진 비평 데이터입니다:\n\n{combined_critiques}\n\n위 비평 데이터를 바탕으로 작성자의 사진 촬영 스타일, 주요 강점, 개선점, 촬영 습관 및 종합 조언을 리포트 형태로 작성해주십시오."
-
-            messages = [
-                {
-                    "role": "system",
-                    "content": GEMMA_CRITIQUE_SUMMARY_SYSTEM_PROMPT
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": user_prompt}
-                    ]
-                }
-            ]
-
-            with GPU_LOCK:
-                try:
-                    tokenizer = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
-                    prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-
-                    from mlx_vlm import generate
-                    result = generate(self.model, self.processor, prompt=prompt, max_tokens=1024, verbose=False)
-                    output = result.text if hasattr(result, "text") else str(result)
-                except RuntimeError as e:
-                    print(f"[GemmaAdapter] MLX OOM during critique summary: {e}. Recovering...", flush=True)
-                    try:
-                        import mlx.core as mx
-                        mx.clear_cache()
-                    except Exception as clear_err:
-                        print(f"[GemmaAdapter] Cache clear note: {clear_err}", flush=True)
-                    gc.collect()
-                    raise
-                except Exception as e:
-                    print(f"[GemmaAdapter] Unexpected critique summary error: {e}", flush=True)
-                    raise
-
+            messages = self._build_critique_summary_messages(critiques_list)
+            output = self._run_mlx_vlm_generation(messages, max_tokens=1024)
             return output.strip()
-        finally:
-            with self.lock:
-                self.last_used_time = time.time()
-                self.active_requests -= 1
-
-    def _run_translation_pass1(
-        self,
-        raw_en_critique: str,
-        scores_dict: Optional[dict],
-        quality_score: Optional[int],
-        photo_id: Optional[str]
-    ) -> Tuple[str, float]:
-        from services.ai_parser import (
-            GEMMA_TRANSLATE_STEP1_SYSTEM_PROMPT,
-            format_unipercept_translate_step1_user_prompt,
-        )
-        from services.critique_status import critique_status_manager
-        import mlx.core as mx
-        from mlx_vlm import generate
-
-        print("\n" + "-" * 60, flush=True)
-        print("[GemmaAdapter] ⏱️ [Gemma Step 1/2] 무왜곡 100% 한국어 직역 시작...", flush=True)
-        t_pass1 = time.time()
-        if photo_id:
-            critique_status_manager.update(photo_id, 3, 4, "[Gemma] 한국어 정밀 직역 중...", 85)
-
-        step1_prompt_text = format_unipercept_translate_step1_user_prompt(raw_en_critique, scores_dict, quality_score)
-        messages_step1 = [
-            {"role": "system", "content": GEMMA_TRANSLATE_STEP1_SYSTEM_PROMPT},
-            {"role": "user", "content": [{"type": "text", "text": step1_prompt_text}]}
-        ]
-
-        with GPU_LOCK:
-            if photo_id:
-                critique_status_manager.check_cancelled(photo_id)
-            mx.clear_cache()
+        except RuntimeError as err:
+            print(f"[GemmaAdapter] MLX OOM during critique summary: {err}. Recovering...", flush=True)
+            clear_mlx_cache()
             gc.collect()
-            tokenizer = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
-            prompt1 = tokenizer.apply_chat_template(messages_step1, tokenize=False, add_generation_prompt=True)
-            result1 = generate(self.model, self.processor, prompt=prompt1, max_tokens=4096, verbose=False)
-            step1_output = (result1.text if hasattr(result1, "text") else str(result1)).strip()
-            elapsed_pass1 = time.time() - t_pass1
-            print(f"[GemmaAdapter] ✅ [Gemma Step 1/2] 1차 직역 완료 ({len(step1_output)}자, 소요시간: {elapsed_pass1:.2f}초)", flush=True)
-            return step1_output, elapsed_pass1
-
-    def _run_translation_pass2(
-        self,
-        step1_output: str,
-        scores_dict: Optional[dict],
-        quality_score: Optional[int],
-        photo_id: Optional[str]
-    ) -> Tuple[str, float]:
-        from services.ai_parser import (
-            GEMMA_TRANSLATE_STEP2_SYSTEM_PROMPT,
-            format_unipercept_translate_step2_user_prompt,
-        )
-        from services.critique_status import critique_status_manager, CritiqueCancelledException
-        import mlx.core as mx
-        from mlx_vlm import generate
-
-        print("[GemmaAdapter] ⏱️ [Gemma Step 2/2] 학술 감수 및 리포트 양식 정돈 시작...", flush=True)
-        t_pass2 = time.time()
-        if photo_id:
-            critique_status_manager.update(photo_id, 4, 4, "[Gemma] 학술 리포트 양식 감수 및 정돈 중...", 95)
-
-        step2_prompt_text = format_unipercept_translate_step2_user_prompt(step1_output, scores_dict, quality_score)
-        messages_step2 = [
-            {"role": "system", "content": GEMMA_TRANSLATE_STEP2_SYSTEM_PROMPT},
-            {"role": "user", "content": [{"type": "text", "text": step2_prompt_text}]}
-        ]
-
-        try:
-            with GPU_LOCK:
-                if photo_id:
-                    critique_status_manager.check_cancelled(photo_id)
-                mx.clear_cache()
-                gc.collect()
-                tokenizer = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
-                prompt2 = tokenizer.apply_chat_template(messages_step2, tokenize=False, add_generation_prompt=True)
-                result2 = generate(self.model, self.processor, prompt=prompt2, max_tokens=4096, verbose=False)
-                step2_output = (result2.text if hasattr(result2, "text") else str(result2)).strip()
-                elapsed_pass2 = time.time() - t_pass2
-                print(f"[GemmaAdapter] ✅ [Gemma Step 2/2] 2차 정제 완료 ({len(step2_output)}자, 소요시간: {elapsed_pass2:.2f}초)", flush=True)
-                return step2_output, elapsed_pass2
-        except CritiqueCancelledException:
             raise
-        except Exception as pass2_err:
-            elapsed_pass2 = time.time() - t_pass2
-            print(f"[GemmaAdapter] ⚠️ [Gemma Step 2/2] Pass 2 정제 실패 ({pass2_err}), 1차 직역본 사용 (소요시간: {elapsed_pass2:.2f}초)", flush=True)
-            return step1_output, elapsed_pass2
-
-    def translate_and_format_critique(
-        self,
-        raw_en_critique: str,
-        scores_dict: Optional[dict] = None,
-        quality_score: Optional[int] = None,
-        photo_id: Optional[str] = None
-    ) -> str:
-        with GPU_LOCK:
-            with self.lock:
-                self._load_model_locked()
-                self.last_used_time = time.time()
-                self.active_requests += 1
-
-        try:
-            from services.critique_status import critique_status_manager, CritiqueCancelledException
-
-            if photo_id:
-                critique_status_manager.check_cancelled(photo_id)
-
-            step1_output, elapsed_pass1 = self._run_translation_pass1(
-                raw_en_critique, scores_dict, quality_score, photo_id
-            )
-
-            if photo_id:
-                critique_status_manager.check_cancelled(photo_id)
-
-            step2_output, elapsed_pass2 = self._run_translation_pass2(
-                step1_output, scores_dict, quality_score, photo_id
-            )
-
-            print(f"[GemmaAdapter] 🏁 Gemma 번역 파이프라인 전체 완료 (총 소요시간: {elapsed_pass1 + elapsed_pass2:.2f}초)", flush=True)
-            print("-" * 60 + "\n", flush=True)
-            return step2_output
-
-        except CritiqueCancelledException:
+        except Exception as err:
+            print(f"[GemmaAdapter] Unexpected critique summary error: {err}", flush=True)
             raise
-        except Exception as e:
-            print(f"[GemmaAdapter] 2-Pass Translation failed ({e}). Returning raw UniPercept critique.", flush=True)
-            return raw_en_critique
         finally:
-            try:
-                import mlx.core as mx
-                mx.clear_cache()
-            except Exception as clear_err:
-                print(f"[GemmaAdapter] Cache clear note: {clear_err}", flush=True)
-            gc.collect()
-            with self.lock:
-                self.last_used_time = time.time()
-                self.active_requests -= 1
+            self._release_model_request()
 
     @staticmethod
     def _build_document_structuring_messages(critique_draft: str, metadata: Optional[dict]) -> list:
-        from services.ai_parser import (
-            GEMMA_DOCUMENT_FORMATTING_SYSTEM_PROMPT,
-            format_critique_document_structuring_user_prompt
-        )
+        from services.ai_parser import GEMMA_DOCUMENT_FORMATTING_SYSTEM_PROMPT, format_critique_document_structuring_user_prompt
+
         user_prompt = format_critique_document_structuring_user_prompt(critique_draft, metadata)
         return [
             {"role": "system", "content": GEMMA_DOCUMENT_FORMATTING_SYSTEM_PROMPT},
-            {"role": "user", "content": [{"type": "text", "text": user_prompt}]}
+            {"role": "user", "content": [{"type": "text", "text": user_prompt}]},
         ]
 
     @staticmethod
     def _preserve_scoreboard_header(critique_draft: str, output: str) -> str:
         """Preserves ensemble scoreboard header if present in draft but omitted in LLM output."""
         if "앙상블 비평 스코어보드" in critique_draft and "앙상블 비평 스코어보드" not in output:
-            sb_match = critique_draft.split("\n\n## 1.")[0].split("\n\n1. ")[0]
-            if "앙상블 비평 스코어보드" in sb_match:
-                return f"{sb_match.strip()}\n\n{output}"
+            header_candidate = critique_draft.split("\n\n## 1.")[0].split("\n\n1. ")[0]
+            if "앙상블 비평 스코어보드" in header_candidate:
+                return f"{header_candidate.strip()}\n\n{output}"
         return output
 
     def _execute_document_structuring_generation(
         self,
         messages: list,
         critique_draft: str,
-        t_start: float,
-        photo_id: Optional[str]
+        started_at: float,
+        photo_id: Optional[str],
     ) -> str:
-        from services.critique_status import critique_status_manager, CritiqueCancelledException
-        with GPU_LOCK:
-            if photo_id:
-                critique_status_manager.check_cancelled(photo_id)
-            try:
-                import mlx.core as mx
-                mx.clear_cache()
-                gc.collect()
+        from services.critique_status import CritiqueCancelledException
 
-                tokenizer = self.processor.tokenizer if hasattr(self.processor, "tokenizer") else self.processor
-                prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-
-                from mlx_vlm import generate
-                result = generate(self.model, self.processor, prompt=prompt, max_tokens=2048, verbose=False)
-                output = (result.text if hasattr(result, "text") else str(result)).strip()
-
-                elapsed = time.time() - t_start
-                print(f"[GemmaAdapter] ✅ [Gemma Document Polish] 문서 양식 정돈 완료 ({len(output)}자, 소요시간: {elapsed:.2f}초)", flush=True)
-
-                output = self._preserve_scoreboard_header(critique_draft, output)
-                return output if output and len(output) > 30 else critique_draft
-            except CritiqueCancelledException:
-                raise
-            except RuntimeError as e:
-                print(f"[GemmaAdapter] MLX OOM during document structuring: {e}. Falling back to draft...", flush=True)
-                try:
-                    import mlx.core as mx
-                    mx.clear_cache()
-                except Exception as clear_err:
-                    print(f"[GemmaAdapter] Cache clear note: {clear_err}", flush=True)
-                gc.collect()
-                return critique_draft
-            except Exception as e:
-                print(f"[GemmaAdapter] Unexpected document structuring error: {e}. Falling back to draft...", flush=True)
-                return critique_draft
+        try:
+            output = self._run_mlx_vlm_generation(
+                messages,
+                max_tokens=2048,
+                clear_cache_before=True,
+                photo_id=photo_id,
+            ).strip()
+            elapsed = time.time() - started_at
+            print(f"[GemmaAdapter] ✅ [Gemma Document Polish] 문서 양식 정돈 완료 ({len(output)}자, 소요시간: {elapsed:.2f}초)", flush=True)
+            output = self._preserve_scoreboard_header(critique_draft, output)
+            return output if output and len(output) > 30 else critique_draft
+        except CritiqueCancelledException:
+            raise
+        except RuntimeError as err:
+            print(f"[GemmaAdapter] MLX OOM during document structuring: {err}. Falling back to draft...", flush=True)
+            clear_mlx_cache()
+            gc.collect()
+            return critique_draft
+        except Exception as err:
+            print(f"[GemmaAdapter] Unexpected document structuring error: {err}. Falling back to draft...", flush=True)
+            return critique_draft
 
     def format_and_structure_critique(self, critique_draft: str, metadata: dict = None, photo_id: str = None) -> str:
-        """
-        Pass 2: Uses Gemma LLM (pure text completion) to restructure and polish draft critique
-        into official photo critique magazine report format without content distortion.
-        """
+        """Restructures and polishes draft critique into official magazine report format."""
         if not critique_draft or len(critique_draft.strip()) < 20:
             return critique_draft
 
-        with GPU_LOCK:
-            with self.lock:
-                self._load_model_locked()
-                self.last_used_time = time.time()
-                self.active_requests += 1
+        from services.critique_status import CritiqueCancelledException, critique_status_manager
 
+        self._acquire_model_request()
         try:
-            from services.critique_status import critique_status_manager, CritiqueCancelledException
-
             if photo_id:
                 critique_status_manager.check_cancelled(photo_id)
                 critique_status_manager.update(photo_id, 3, 4, "[Gemma] 리포트 문서 양식 다듬는 중...", 75)
 
             print("[GemmaAdapter] ⏱️ [Gemma Document Polish] 비평 문서 구조화 및 양식 정돈 시작...", flush=True)
-            t_start = time.time()
-
+            started_at = time.time()
             messages = self._build_document_structuring_messages(critique_draft, metadata)
-            return self._execute_document_structuring_generation(messages, critique_draft, t_start, photo_id)
+            return self._execute_document_structuring_generation(messages, critique_draft, started_at, photo_id)
         except CritiqueCancelledException:
             raise
         finally:
-            with self.lock:
-                self.last_used_time = time.time()
-                self.active_requests -= 1
-
-
-
+            self._release_model_request()

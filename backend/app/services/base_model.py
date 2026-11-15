@@ -10,6 +10,49 @@ logger = logging.getLogger("focal_node.base_model")
 GPU_LOCK = threading.RLock()
 
 
+def clear_mps_cache(synchronize: bool = False) -> bool:
+    """Safely clear PyTorch MPS cache only when an MPS backend device is available."""
+    try:
+        import torch
+    except Exception as import_err:
+        logger.debug("PyTorch import skipped during MPS cache clear: %s", import_err)
+        return False
+
+    mps_backend = getattr(getattr(torch, "backends", None), "mps", None)
+    is_available_fn = getattr(mps_backend, "is_available", None)
+    if not callable(is_available_fn) or not is_available_fn():
+        return False
+
+    mps_module = getattr(torch, "mps", None)
+    if mps_module is None:
+        return False
+
+    try:
+        sync_fn = getattr(mps_module, "synchronize", None)
+        if synchronize and callable(sync_fn):
+            sync_fn()
+        empty_cache_fn = getattr(mps_module, "empty_cache", None)
+        if callable(empty_cache_fn):
+            empty_cache_fn()
+            return True
+    except Exception as mps_err:
+        logger.debug("torch.mps memory clearing failed: %s", mps_err)
+    return False
+
+
+def clear_mlx_cache() -> bool:
+    """Safely clear MLX cache when Metal is available, suppressing headless runtime errors."""
+    try:
+        import mlx.core as mx
+        clear_fn = getattr(mx, "clear_cache", None)
+        if callable(clear_fn):
+            clear_fn()
+            return True
+    except Exception as mlx_err:
+        logger.debug("mx.clear_cache failed or mlx unavailable: %s", mlx_err)
+    return False
+
+
 class BaseKeepAliveModel:
     """
     Base class for AI model adapters requiring lazy loading, 
@@ -79,21 +122,10 @@ class BaseKeepAliveModel:
         self.timer_active = False
 
         gc.collect()
-        try:
-            import torch
-            if hasattr(torch, "mps") and hasattr(torch.mps, "synchronize"):
-                torch.mps.synchronize()
-            if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
-                torch.mps.empty_cache()
-        except Exception as e:
-            logger.debug(f"[{self.model_name}] torch.mps memory clearing failed: {e}")
+        clear_mps_cache(synchronize=True)
 
         gc.collect()
-        try:
-            import mlx.core as mx
-            mx.clear_cache()
-        except Exception as e:
-            logger.debug(f"[{self.model_name}] mx.clear_cache failed or mlx unavailable: {e}")
+        clear_mlx_cache()
 
     def _on_unload(self):
         """Override in subclass for custom unload steps if necessary."""
