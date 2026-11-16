@@ -1,9 +1,85 @@
 use std::io::{BufRead, BufReader};
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio, Child};
 use std::sync::{Arc, Mutex, Condvar};
 use std::thread;
 use regex::Regex;
 use tauri::{Manager, Emitter};
+
+fn resolve_dev_sidecar_command() -> (String, Vec<String>) {
+    let current_dir = std::env::current_dir().unwrap_or_default();
+    let mut script_path = current_dir.join("backend/app/main.py");
+    let mut venv_python_path = None;
+
+    for prefix in &["", "../", "../../"] {
+        let candidate_script = current_dir.join(prefix).join("backend/app/main.py");
+        if !candidate_script.exists() {
+            continue;
+        }
+        script_path = candidate_script;
+        let venv_dir = current_dir.join(prefix).join("venv");
+        let py_exe = if cfg!(target_os = "windows") {
+            venv_dir.join("Scripts").join("python.exe")
+        } else {
+            venv_dir.join("bin").join("python3")
+        };
+        if py_exe.exists() {
+            venv_python_path = Some(py_exe);
+        }
+        break;
+    }
+
+    let py_program = match venv_python_path {
+        Some(p) => p.to_string_lossy().to_string(),
+        None => "python3".to_string(),
+    };
+    (py_program, vec![script_path.to_string_lossy().to_string()])
+}
+
+fn resolve_release_sidecar_path(resource_dir: Option<&Path>, exe_path: &Path) -> Result<PathBuf, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut candidates: Vec<PathBuf> = Vec::new();
+        if let Some(res_dir) = resource_dir {
+            candidates.push(res_dir.join("binaries").join("focal_node_backend"));
+        }
+        if let Some(contents_dir) = exe_path.parent().and_then(|macos| macos.parent()) {
+            candidates.push(contents_dir.join("Resources").join("binaries").join("focal_node_backend"));
+        }
+        if let Some(exe_dir) = exe_path.parent() {
+            candidates.push(exe_dir.join("focal_node_backend"));
+        }
+        for candidate in &candidates {
+            if candidate.is_file() {
+                return Ok(candidate.clone());
+            }
+        }
+        return Err(format!("Backend sidecar binary not found. Checked: {:?}", candidates));
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = resource_dir;
+        let sidecar_name = if cfg!(target_os = "windows") {
+            "focal_node_backend.exe"
+        } else {
+            "focal_node_backend"
+        };
+        let parent_dir = exe_path
+            .parent()
+            .ok_or_else(|| format!("Failed to resolve executable parent directory for {:?}", exe_path))?;
+        Ok(parent_dir.join(sidecar_name))
+    }
+}
+
+fn notify_sidecar_error(state: &AppState, err_msg: String) {
+    eprintln!("[Tauri Rust] {}", err_msg);
+    if let Ok(mut err_guard) = state.error.lock() {
+        *err_guard = Some(err_msg);
+    }
+    let _port_guard = state.port.lock();
+    state.condvar.notify_all();
+}
 
 pub struct AppState {
     port: Mutex<Option<u16>>,
@@ -85,126 +161,39 @@ pub fn run() {
             let state_for_thread = state_clone.clone();
 
             thread::spawn(move || {
-                let current_dir = std::env::current_dir().unwrap_or_default();
-                
                 // 개발 환경인 경우 backend/app/main.py 기동
                 // 릴리즈 환경인 경우 sidecar 바이너리 기동
                 let (program, args) = if cfg!(debug_assertions) {
-                    let mut script_path = current_dir.join("backend/app/main.py");
-                    let mut venv_python_path = None;
-                    for prefix in &["", "../", "../../"] {
-                        let path = current_dir.join(prefix).join("backend/app/main.py");
-                        if path.exists() {
-                            script_path = path;
-                            
-                            // venv 경로도 함께 탐색
-                            let venv_dir = current_dir.join(prefix).join("venv");
-                            let py_exe = if cfg!(target_os = "windows") {
-                                venv_dir.join("Scripts").join("python.exe")
-                            } else {
-                                venv_dir.join("bin").join("python3")
-                            };
-                            if py_exe.exists() {
-                                venv_python_path = Some(py_exe);
-                            }
-                            break;
-                        }
-                    }
-                    
-                    let py_program = match venv_python_path {
-                        Some(p) => p.to_string_lossy().to_string(),
-                        None => "python3".to_string(),
-                    };
-                    
-                    (py_program, vec![script_path.to_string_lossy().to_string()])
+                    resolve_dev_sidecar_command()
                 } else {
-                    let exe_path = std::env::current_exe().unwrap();
-                    let sidecar_name = if cfg!(target_os = "windows") {
-                        "focal_node_backend.exe"
-                    } else {
-                        "focal_node_backend"
-                    };
-                    let parent_dir = exe_path.parent().unwrap();
-                    let sidecar_path = parent_dir.join(sidecar_name);
-                    
-                    #[cfg(target_os = "macos")]
-                    {
-                        let macos_dir = parent_dir; // Contents/MacOS
-                        let contents_dir = macos_dir.parent().unwrap(); // Contents
-                        
-                        let res_internal_candidates = [
-                            contents_dir.join("Resources/_internal"),
-                            contents_dir.join("Resources/binaries/_internal"),
-                            macos_dir.join("_internal")
-                        ];
-                        
-                        let mut found_internal = None;
-                        for cand in &res_internal_candidates {
-                            if cand.exists() {
-                                found_internal = Some(cand.clone());
-                                break;
-                            }
+                    let exe_path = match std::env::current_exe() {
+                        Ok(path) => path,
+                        Err(err) => {
+                            notify_sidecar_error(&state_for_thread, format!("Failed to resolve current executable: {}", err));
+                            return;
                         }
-                        
-                        if let Some(ref internal_path) = found_internal {
-                            let macos_internal = macos_dir.join("_internal");
-                            if !macos_internal.exists() {
-                                let _ = std::os::unix::fs::symlink(internal_path, &macos_internal);
-                            }
-                            
-                            let frameworks_dir = contents_dir.join("Frameworks");
-                            if !frameworks_dir.exists() {
-                                let _ = std::os::unix::fs::symlink(internal_path, &frameworks_dir);
-                            }
-                            
-                            let mlx_metallib = internal_path.join("mlx").join("lib").join("mlx.metallib");
-                            if mlx_metallib.exists() {
-                                let macos_metallib = macos_dir.join("mlx.metallib");
-                                let macos_default_metallib = macos_dir.join("default.metallib");
-                                if !macos_metallib.exists() {
-                                    let _ = std::os::unix::fs::symlink(&mlx_metallib, &macos_metallib);
-                                }
-                                if !macos_default_metallib.exists() {
-                                    let _ = std::os::unix::fs::symlink(&mlx_metallib, &macos_default_metallib);
-                                }
-                            }
-                            
-                            let internal_str = internal_path.to_string_lossy().to_string();
-                            let macos_str = macos_dir.to_string_lossy().to_string();
-                            let combined_path = format!("{}:{}", internal_str, macos_str);
-                            std::env::set_var("DYLD_LIBRARY_PATH", &combined_path);
-                            std::env::set_var("DYLD_FALLBACK_LIBRARY_PATH", &combined_path);
+                    };
+                    let resource_dir = app_handle.path().resource_dir().ok();
+                    match resolve_release_sidecar_path(resource_dir.as_deref(), &exe_path) {
+                        Ok(sidecar_path) => (sidecar_path.to_string_lossy().to_string(), vec![]),
+                        Err(err_msg) => {
+                            notify_sidecar_error(&state_for_thread, err_msg);
+                            return;
                         }
                     }
-
-                    (sidecar_path.to_string_lossy().to_string(), vec![])
                 };
 
                 println!("[Tauri Rust] Spawning backend: {} {:?}", program, args);
 
                 let mut cmd = Command::new(&program);
                 cmd.args(&args);
-                #[cfg(target_os = "macos")]
-                {
-                    if let Ok(path) = std::env::var("DYLD_LIBRARY_PATH") {
-                        cmd.env("DYLD_LIBRARY_PATH", &path);
-                        cmd.env("DYLD_FALLBACK_LIBRARY_PATH", &path);
-                    }
-                }
                 cmd.stdout(Stdio::piped());
                 cmd.stderr(Stdio::piped());
 
                 let mut child = match cmd.spawn() {
                     Ok(c) => c,
                     Err(e) => {
-                        let err_msg = format!("Failed to spawn backend process: {}", e);
-                        eprintln!("[Tauri Rust] {}", err_msg);
-                        {
-                            let mut err_guard = state_for_thread.error.lock().unwrap();
-                            *err_guard = Some(err_msg);
-                        }
-                        let _port_guard = state_for_thread.port.lock().unwrap();
-                        state_for_thread.condvar.notify_all();
+                        notify_sidecar_error(&state_for_thread, format!("Failed to spawn backend process: {}", e));
                         return;
                     }
                 };
@@ -511,5 +500,38 @@ mod tests {
         } else {
             Err(String::from_utf8_lossy(&output.stderr).to_string())
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_resolve_release_sidecar_path_prefers_resources_binaries() {
+        let base = std::env::temp_dir().join(format!("focal_node_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let macos_dir = base.join("Focal Node.app/Contents/MacOS");
+        let res_dir = base.join("Focal Node.app/Contents/Resources");
+        let res_bin = res_dir.join("binaries/focal_node_backend");
+        std::fs::create_dir_all(&macos_dir).unwrap();
+        std::fs::create_dir_all(res_bin.parent().unwrap()).unwrap();
+        std::fs::write(&res_bin, b"sidecar").unwrap();
+
+        let exe_path = macos_dir.join("focal_node");
+        let resolved = resolve_release_sidecar_path(Some(&res_dir), &exe_path).unwrap();
+        assert_eq!(resolved, res_bin);
+
+        // Fallback when resource_dir is None still resolves Contents/Resources/binaries/
+        let fallback = resolve_release_sidecar_path(None, &exe_path).unwrap();
+        assert_eq!(fallback, res_bin);
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_resolve_release_sidecar_path_errors_when_missing() {
+        let base = std::env::temp_dir().join(format!("focal_node_missing_{}", std::process::id()));
+        let exe_path = base.join("Focal Node.app/Contents/MacOS/focal_node");
+        let res_dir = base.join("Focal Node.app/Contents/Resources");
+        let err = resolve_release_sidecar_path(Some(&res_dir), &exe_path).unwrap_err();
+        assert!(err.contains("Backend sidecar binary not found"));
     }
 }

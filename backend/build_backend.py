@@ -122,8 +122,9 @@ def build():
     machine = platform.machine()
     system = platform.system().lower()
     if system == "darwin":
-        triple_arch = "aarch64" if machine in ("arm64", "aarch64") else "x86_64"
-        target_name = f"focal_node_backend-{triple_arch}-apple-darwin"
+        # macOS bundles place both the executable and _internal under Contents/Resources/binaries/
+        # so PyInstaller's onedir bootloader does not require Contents/Frameworks or runtime symlinks.
+        target_name = "focal_node_backend"
     elif system == "windows":
         target_name = f"focal_node_backend-{machine}-pc-windows-msvc.exe"
     else:
@@ -131,6 +132,13 @@ def build():
 
     src_binary = os.path.join(built_backend_dir, "focal_node_backend.exe" if system == "windows" else "focal_node_backend")
     dst_binary = os.path.join(tauri_binaries_dir, target_name)
+
+    if system == "darwin":
+        for entry in os.listdir(tauri_binaries_dir):
+            if entry.startswith("focal_node_backend-") and entry.endswith("-apple-darwin"):
+                stale_path = os.path.join(tauri_binaries_dir, entry)
+                print(f"[Build] Removing legacy macOS externalBin artifact: {stale_path}")
+                os.remove(stale_path)
 
     print(f"[Build] Copying binary from {src_binary} to {dst_binary}")
     shutil.copy2(src_binary, dst_binary)
