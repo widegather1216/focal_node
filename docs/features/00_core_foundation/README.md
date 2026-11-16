@@ -1,8 +1,8 @@
 # 🏛️ [00_core_foundation] Core Foundation & System Architecture
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (3-Lens 딥버그 헌팅 완료 — DEFECT-05~11 7건 해결 대기)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-05 해결 완료 — DEFECT-06~11 6건 해결 대기)`
 - **구현 진척도**: `[■■■■] 4/4 Steps`
-- **미해결 티켓 현황**: `🚨 DEFECT: 7건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 6건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -29,16 +29,18 @@
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-11-15 / deep-bug-hunter / 00_core_foundation 3-Lens 다각도 적대적 딥버그 헌팅 및 실증 프로빙 완료 (DEFECT-05~11 총 7건 발권)`
-- **검증 및 실증된 핵심 결함**:
-  - `DEFECT-05` (🔴 P0): macOS 비쓰기 `.app` 번들에서 `lib.rs` 심볼릭 링크 실패로 `focal_node_backend` 즉시 크래시 (`encodings` 누락, `0o555` 프로브 `rc=1`)
+- **직전 완료 작업**: `2026-11-16 / systematic-debugger / 00_core_foundation DEFECT-05 해결 및 회귀 검증 완료 (72d746e)`
+- **조치 요약 (`DEFECT-05` RESOLVED)**:
+  - `src-tauri/tauri.macos.conf.json` 신설(`externalBin: []`, `resources: ["binaries/focal_node_backend", "binaries/_internal/**/*"]`), `backend/build_backend.py` macOS `focal_node_backend`(`0o755`) 출력 정합화, `src-tauri/src/lib.rs` `resolve_release_sidecar_path`(`app.path().resource_dir()`) 적용 및 런타임 심볼릭 링크/`DYLD_*` 제거.
+  - PyInstaller 재빌드(`build_backend.py`) + `tauri build --bundles app` + `0o555` 비쓰기 `.app`(`no_dyld`/`with_dyld`) `/api/health` 200 OK & `codesign --verify --deep --strict` 실증 완료.
+- **남은 핵심 결함 (`DEFECT-06~11`, 6건)**:
   - `DEFECT-06` (🔴 P0): `is_snapshot_weights_valid` 5MB 초과 폴백이 `tokenizer.json`을 가중치로 오인해 `"cached"` 거짓 성공 반환
   - `DEFECT-07` (🔴 P0): `BaseKeepAliveModel.unload_model()`의 `active_requests` 미검사 및 `force=True` 언로드로 활성 VLM 추론 `NoneType` 크래시 유발
   - `DEFECT-08` (🟠 P1): `huggingface_hub==1.21.0` `force_download=False` 단락으로 손상 인덱스/샤드 재다운로드 영구 실패
   - `DEFECT-09` (🟠 P1): `chroma.py` Self-Healing 시 `SharedSystemClient` 캐시 오염으로 `AttributeError: bindings` 크래시 및 `/api/index/sync` 벡터 누락 스킵
   - `DEFECT-10` (🟠 P1): `GemmaAdapter.generate_caption_and_tags` 예외 삼킴으로 빈 메타데이터 커밋 및 재인덱싱 영구 스킵
   - `DEFECT-11` (🟠 P1): Tauri IPC `save_binary_file` 무검증 임의 파일 쓰기 및 `tauri.conf.json` `"csp": null`
-- **검증 명령어**: `./venv/bin/pytest backend/tests/test_model_downloader.py backend/tests/test_concurrency_hardening.py -v` (`19 passed` / Mock 구간 외 실증 프로브로 결함 확인)
+- **검증 명령어**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -q` (`35 passed`), `cargo test --manifest-path src-tauri/Cargo.toml --lib` (`3 passed`), `npx tsc --noEmit && npm run build` (`PASS`)
 - **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - `systematic-debugger`로 P0 티켓(`DEFECT-05`, `DEFECT-06`, `DEFECT-07`)부터 순차 해결 권장 (`"00_core_foundation 도메인의 DEFECT-05 티켓 해결해줘"`).
+  - `systematic-debugger`로 다음 P0 티켓 `DEFECT-06` 해결 진행 권장 (`"00_core_foundation 도메인의 DEFECT-06 티켓 해결해줘"`).
   - (교차 도메인 참고) `01_indexing_storage`의 `folder_manager.py#L50-L65` `purge_photo_records_batch`도 `db.commit()` 전 썸네일/Chroma 선삭제 경합이 존재함.

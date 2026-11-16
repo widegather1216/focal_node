@@ -1,8 +1,8 @@
 # 🧪 [00_core_foundation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (3-Lens 딥버그 헌팅 완료 — DEFECT-05~11 7건 발견)`
-- **인수 조건 통과율**: `1 / 5 (20%)`
-- **미해결 티켓**: `🚨 DEFECT: 7건` | `🧐 REFACTOR: 0건`
+- **검증 상태**: `🩹 Debugging (DEFECT-05 해결 완료 — DEFECT-06~11 6건 해결 대기)`
+- **인수 조건 통과율**: `6 / 12 (50%)`
+- **미해결 티켓**: `🚨 DEFECT: 6건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -29,7 +29,7 @@
 | **Negative**| `TC-CF-03` | 모델 미다운로드 상태 기동 | 로컬 HF 캐시 미존재 | `ModelDownloadModal` 노출 및 진행률 표시 | `PASS (Fixed in DEFECT-03)` |
 | **Boundary**| `TC-CF-04` | 모델 인덱스 손상 시 가중치 무결성 검증 | 손상된 index.json 주입 | 정상 가중치 오판 차단 및 재다운로드 유도 | `PASS (Fixed in DEFECT-01)` |
 | **Boundary**| `TC-CF-05` | 다운로드 재시도 시 동시성 및 파일 락 정합성 | 다운로드 중 POST /download | 중복 스레드 및 락 삭제 충돌 방지 | `PASS (Fixed in DEFECT-04)` |
-| **Negative**| `TC-CF-06` | 비쓰기 macOS 릴리즈 `.app` 번들 사이드카 부팅 | `0o555` 읽기전용 `.app` 실행 | 심볼릭 링크 없이 `_internal` 정상 기동 | `FAIL (DEFECT-05)` |
+| **Negative**| `TC-CF-06` | 비쓰기 macOS 릴리즈 `.app` 번들 사이드카 부팅 | `0o555` 읽기전용 `.app` 실행 | 심볼릭 링크 없이 `_internal` 정상 기동 | `PASS (Fixed in DEFECT-05)` |
 | **Negative**| `TC-CF-07` | 부분 다운로드 스냅샷(`tokenizer.json` > 5MB) 검증 | 가중치 없이 `tokenizer.json`만 존재 | `is_snapshot_weights_valid() == False` 반환 | `FAIL (DEFECT-06)` |
 | **Boundary**| `TC-CF-08` | 활성 VLM 요청 중 동시 비평 취소/언로드 경합 | `active_requests == 1` 중 `unload_model` | 활성 추론 보호 및 `NoneType` 크래시 방지 | `FAIL (DEFECT-07)` |
 | **Negative**| `TC-CF-09` | `huggingface_hub==1.21.0` 손상 인덱스/샤드 재복구 | 손상된 `index.json` 로컬 캐시 잔존 | `force_download=True`로 정상 덮어쓰기 복구 | `FAIL (DEFECT-08)` |
@@ -58,11 +58,11 @@
 - **현재 상태**: 🟢 RESOLVED
 
 ### [DEFECT-05] macOS 릴리즈 `.app` 번들 비쓰기 환경에서 PyInstaller 사이드카 즉시 크래시
-- **심각도**: 🔴 P0 Critical (`Crash / Packaging & Runtime Layout Mismatch`) | **실증**: `✅ Empirical Probe Reproduced`
-- **위치**: [`src-tauri/src/lib.rs#L121-L181`](../../../src-tauri/src/lib.rs#L121-L181), [`src-tauri/tauri.conf.json#L34-L39`](../../../src-tauri/tauri.conf.json#L34-L39), [`backend/build_backend.py#L56-L65`](../../../backend/build_backend.py#L56-L65)
-- **근본 원인 및 증거**: `tauri.conf.json`이 `_internal`을 `Contents/Resources/binaries/_internal/`에 배치하고 `lib.rs#L149-L170`이 런타임에 `Contents/MacOS/_internal` 및 `Contents/Frameworks` 심볼릭 링크를 생성하며 실패를 묵인(`let _ = ...`)함. `/Applications`·DMG·App Translocation·서명 번들 등 비쓰기 환경(`0o555`)에서 실바이너리(`focal_node_backend-aarch64-apple-darwin`) 실행 시 `returncode: 1`, `Fatal Python error: init_fs_encoding ... ModuleNotFoundError: No module named 'encodings'`로 즉시 종료됨.
-- **최소 수정 설계**: 번들 빌드 시점에 `_internal`을 PyInstaller가 기대하는 `Contents/Frameworks`(또는 `Contents/MacOS/_internal`)에 정적 배치해 런타임 번들 변조 의존 제거.
-- **현재 상태**: 🟡 OPEN
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`src-tauri/tauri.macos.conf.json`](../../../src-tauri/tauri.macos.conf.json), [`src-tauri/src/lib.rs`](../../../src-tauri/src/lib.rs#L9-L77), [`backend/build_backend.py`](../../../backend/build_backend.py#L122-L148)
+  - **원인 및 조치**: PyInstaller 6.21 `--onedir` 바이너리가 `.app/Contents/MacOS/` 하위에 있으면 `--contents-directory=.` 옵션까지 무시하고 `Contents/Frameworks/`를 강제 참조하며, raw `_internal`은 점(`.`) 포함 디렉터리(`.dist-info`, `.dylibs`) 63개로 인해 `Contents/Frameworks/` 배치 시 `codesign`이 실패(`bundle format unrecognized`)함을 실증함. 이에 [`tauri.macos.conf.json`](../../../src-tauri/tauri.macos.conf.json)에서 macOS 번들의 `externalBin: []`로 전환하고 `focal_node_backend`와 `_internal`을 함께 `Contents/Resources/binaries/`에 정적 배치했으며, [`build_backend.py`](../../../backend/build_backend.py#L122-L148)에서 macOS용 `focal_node_backend`(`0o755`)를 출력하도록 정합화하고 [`lib.rs`](../../../src-tauri/src/lib.rs#L40-L77)가 `app.path().resource_dir()` 기반으로 실행하며 런타임 심볼릭 링크·`DYLD_*` 변조 코드를 완전 제거함(향후 Developer ID + Notarization 도입 시 `Contents/Resources/binaries/` 내 Mach-O 일괄 사전 서명 필요).
+  - **회귀 테스트 결과**: `./venv/bin/python backend/build_backend.py` & `./node_modules/.bin/tauri build --bundles app` & `codesign --verify --deep --strict` & `0o555` 비쓰기 `.app` (`no_dyld`/`with_dyld`) `/api/health` 200 OK & `cargo test --lib` (`3 passed`) & `./venv/bin/pytest backend/tests/test_backend_hardening.py` (`35 passed`) & `npx tsc --noEmit && npm run build` (`PASS`)
 
 ### [DEFECT-06] 부분 다운로드 스냅샷의 비가중치 파일(`tokenizer.json` > 5MB)을 가중치로 오인해 `"cached"` 거짓 성공 반환
 - **심각도**: 🔴 P0 Critical (`Silent Degradation / False Validation`) | **실증**: `✅ Empirical Probe Reproduced`

@@ -1,17 +1,17 @@
 # 🧭 Focal Node: Master Control Tower (Living Wiki Hub)
 
 > 외부 클라우드 전송 없이 Mac Native(Apple MLX & PyTorch MPS)로 구동되는 **프라이버시 보호 로컬 사진 관리 및 AI 시맨틱 검색/비평 데스크탑 플랫폼**입니다.
-> **최종 업데이트**: 2026-11-15 (by `deep-bug-hunter`)
+> **최종 업데이트**: 2026-11-16 (by `systematic-debugger`)
 
 ---
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
-- **Active 도메인**: [`00_core_foundation`](./features/00_core_foundation/README.md) *(`deep-bug-hunter` 3-Lens 실증 점검 결과 P0 3건·P1 4건 총 `DEFECT-05~11` 발견)*
-- **현재 단계 (Stage)**: `🩹 Debugging (00_core_foundation DEFECT-05~11 해결 대기 / 04_studio_ui_analytics Step 3~4 대기)`
-- **직전 완료 작업**: [`00_core_foundation`](./features/00_core_foundation/README.md) 3-Lens 다각도 적대적 딥버그 헌팅 및 실증 마이크로 프로빙 완료 (macOS 비쓰기 `.app` 번들 사이드카 크래시 `DEFECT-05`, `tokenizer.json` 가중치 오인 `DEFECT-06`, `BaseKeepAliveModel.unload_model` `active_requests` 경합 크래시 `DEFECT-07`, `huggingface_hub==1.21.0` `force_download=False` 복구 실패 `DEFECT-08`, `chroma.py` Self-Healing `bindings` 크래시/동기화 단절 `DEFECT-09`, `GemmaAdapter` 예외 삼킴 `DEFECT-10`, Tauri `save_binary_file`/`csp: null` `DEFECT-11` 등록)
+- **Active 도메인**: [`00_core_foundation`](./features/00_core_foundation/README.md) *(`DEFECT-05` 해결 완료 / P0 2건·P1 4건 총 `DEFECT-06~11` 해결 대기)*
+- **현재 단계 (Stage)**: `🩹 Debugging (00_core_foundation DEFECT-06~11 해결 대기 / 04_studio_ui_analytics Step 3~4 대기)`
+- **직전 완료 작업**: [`00_core_foundation`](./features/00_core_foundation/README.md) `DEFECT-05` 해결 완료 (`tauri.macos.conf.json` 신설 및 `build_backend.py`·`lib.rs` 정합화로 macOS 번들 `Contents/Resources/binaries/` 정적 배치, 런타임 심볼릭 링크·`DYLD_*` 제거, `0o555` 비쓰기 `.app` 및 `codesign` 회귀 검증 통과)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"00_core_foundation 도메인의 DEFECT-05 티켓 해결해줘"` *(`systematic-debugger`로 P0 결함부터 순차 해결)*
+  > `"00_core_foundation 도메인의 DEFECT-06 티켓 해결해줘"` *(`systematic-debugger`로 다음 P0 결함 해결)*
 
 ---
 
@@ -19,7 +19,7 @@
 
 | 도메인 (Bounded Context) | 생명주기 상태 | 구현 진척도 (Active Step 1~4) | QA 인수 통과율 | 미해결 티켓 (`🚨D` / `🧐R`) | 최근 작업 요약 |
 | :--- | :--- :---: | :---: | :---: | :---: | :--- |
-| 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `1/5 (20%)` | `7 / 0` | `deep-bug-hunter` 3-Lens 실증 점검 완료 (`DEFECT-05~11` 7건 OPEN — 번들 크래시, `tokenizer.json` 오인, `unload_model` 레이스, `hf_hub` 복구, Chroma Self-Healing 크래시 등) |
+| 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `6/12 (50%)` | `6 / 0` | `DEFECT-05` 해결 완료(macOS 번들 `Contents/Resources/binaries/` 정적 배치·`0o555` 검증 PASS), `DEFECT-06~11` 6건 대기 |
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `14/17 (82%)` | `0 / 0` | DEFECT-01~11·REFACTOR-01~02 전수 해결 완료(`folder_manager.py`·`photo_reindex.py` 분리, `ActionBar`/`Sidebar` 경량화), Active Step 1 대기 |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 0` | `REFACTOR-01` 해결 완료(SigLIP 폴백·`search.py` 로깅·`similar:` 버튼 연결), RRF·스마트 앨범 Step 1~4 대기 |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `15/15 (100%)` | `0 / 0` | `DEFECT-01~03`·`REFACTOR-01~08` 전수 해결 완료 (Headless MPS/MLX 가드·ADR-05 레거시 정리·300줄 이하 분할), Sign-Off 완료 |
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-16]` `[systematic-debugger]` [`00_core_foundation`]**: `DEFECT-05` 결함 해결 완료 (`72d746e` / `src-tauri/tauri.macos.conf.json` 신설로 macOS 번들 `externalBin: []` 및 `binaries/focal_node_backend`+`binaries/_internal/**/*` 정적 배치, `backend/build_backend.py` macOS `focal_node_backend` `0o755` 출력 및 레거시 `-apple-darwin` 바이너리 정리, `src-tauri/src/lib.rs` `resolve_release_sidecar_path`로 `app.path().resource_dir()` 기반 실행 및 런타임 심볼릭 링크·`DYLD_*` 제거, `decisions.md` `ADR-03` 기록; `build_backend.py`·`tauri build --bundles app`·`codesign --verify --deep --strict`·`0o555` 비쓰기 `.app`(`no_dyld`/`with_dyld`) `/api/health` 200 OK·`cargo test --lib`(`3 passed`)·`test_backend_hardening.py`(`35 passed`)·`tsc && vite build` 전수 PASS).
 
 - **`[2026-11-15]` `[deep-bug-hunter]` [`00_core_foundation`]**: 3-Lens 다중 관점 적대적 딥버그 헌팅 및 비파괴 실증 마이크로 프로빙 완료 (macOS 비쓰기 `.app` 번들 `focal_node_backend` 즉시 크래시 `DEFECT-05`, `is_snapshot_weights_valid` `tokenizer.json` > 5MB 가중치 오인 `DEFECT-06`, `BaseKeepAliveModel.unload_model` `active_requests` 미검사 및 `force=True` 경합 크래시 `DEFECT-07`, `huggingface_hub==1.21.0` `force_download=False` 손상 캐시 복구 실패 `DEFECT-08`, `chroma.py` Self-Healing `SharedSystemClient` `bindings` 크래시 및 `/api/index/sync` 벡터 누락 `DEFECT-09`, `GemmaAdapter.generate_caption_and_tags` 예외 삼킴 `DEFECT-10`, Tauri `save_binary_file`/`csp: null` `DEFECT-11` 총 `DEFECT 7건` 등록 및 위키 헬스체크 통과).
 
