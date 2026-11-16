@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import json
 import logging
@@ -6,6 +7,11 @@ import threading
 from typing import Dict, Any, Optional
 
 logger = logging.getLogger("focal_node.model_downloader")
+
+_WEIGHT_EXTENSIONS = (".safetensors", ".bin", ".npz", ".pth", ".pt")
+_INDEX_SUFFIXES = (".safetensors.index.json", ".bin.index.json", ".npz.index.json")
+_SHARD_FILENAME_RE = re.compile(r"-\d+-of-\d+\.(?:safetensors|bin|npz|pth|pt)$", re.IGNORECASE)
+_MIN_WEIGHT_BYTES = 1024 * 1024
 
 KNOWN_MODEL_SIZES: Dict[str, int] = {
     "google/siglip2-base-patch16-224": 1539458338,
@@ -148,16 +154,15 @@ def get_missing_sharded_files(snapshot_dir: str) -> list[str]:
     """Returns a list of missing or incomplete sharded weight filenames from model index."""
     if not snapshot_dir or not os.path.isdir(snapshot_dir):
         return []
-    index_filenames = ["model.safetensors.index.json", "pytorch_model.bin.index.json"]
     missing = []
     for root, _, files in os.walk(snapshot_dir):
-        for idx_file in index_filenames:
-            if idx_file not in files:
+        for idx_file in files:
+            if not idx_file.endswith(_INDEX_SUFFIXES):
                 continue
             idx_path = os.path.join(root, idx_file)
             try:
-                with open(idx_path, "r", encoding="utf-8") as f:
-                    idx_data = json.load(f)
+                with open(idx_path, "r", encoding="utf-8") as index_fp:
+                    idx_data = json.load(index_fp)
                 if not isinstance(idx_data, dict):
                     logger.warning(f"[Downloader] Corrupted index format in {idx_path}: expected dict, got {type(idx_data)}")
                     if idx_file not in missing:
@@ -174,7 +179,7 @@ def get_missing_sharded_files(snapshot_dir: str) -> list[str]:
                 sharded_files = set(weight_map.values())
                 for s_file in sorted(sharded_files):
                     s_path = os.path.join(root, s_file)
-                    if not (os.path.exists(s_path) and os.path.getsize(s_path) > 1024 * 1024):
+                    if not (os.path.exists(s_path) and os.path.getsize(s_path) > _MIN_WEIGHT_BYTES):
                         if s_file not in missing:
                             missing.append(s_file)
             except Exception as err:
@@ -184,41 +189,56 @@ def get_missing_sharded_files(snapshot_dir: str) -> list[str]:
                     missing.append(idx_file)
     return missing
 
+
+def _is_valid_single_weight_file(file_path: str, filename: str) -> bool:
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in _WEIGHT_EXTENSIONS:
+        return False
+    try:
+        return os.path.getsize(file_path) > _MIN_WEIGHT_BYTES
+    except OSError as err:
+        logger.debug(f"[Downloader] Failed to inspect file size for {file_path}: {err}")
+        return False
+
+
+def _inspect_snapshot_directory(snapshot_dir: str) -> tuple[bool, bool, bool]:
+    has_shard_file = False
+    has_single_weight = False
+    for root, _, files in os.walk(snapshot_dir):
+        if any(name.endswith(_INDEX_SUFFIXES) for name in files):
+            return True, has_shard_file, has_single_weight
+        for filename in files:
+            if _SHARD_FILENAME_RE.search(filename):
+                has_shard_file = True
+                continue
+            file_path = os.path.join(root, filename)
+            if not has_single_weight and _is_valid_single_weight_file(file_path, filename):
+                has_single_weight = True
+    return False, has_shard_file, has_single_weight
+
+
 def is_snapshot_weights_valid(snapshot_dir: str) -> bool:
     """
     Validates if a snapshot directory contains complete model weight files.
-    If an index file (e.g. model.safetensors.index.json or pytorch_model.bin.index.json) exists,
-    checks that EVERY sharded weight file referenced in the index is present and >1MB.
-    Otherwise, checks that at least one weight file (>1MB or .safetensors/.bin/.npz) exists.
+    - If a weight index file (*.index.json) exists, checks that every sharded file is present and >1MB.
+    - If sharded weight files (*-of-*) exist without an index file, returns False (incomplete snapshot).
+    - Otherwise, checks that at least one valid weight file (.safetensors/.bin/.npz/.pth/.pt) >1MB exists.
     """
     if not snapshot_dir or not os.path.isdir(snapshot_dir):
         return False
 
-    index_filenames = ["model.safetensors.index.json", "pytorch_model.bin.index.json"]
-    for root, _, files in os.walk(snapshot_dir):
-        for idx_file in index_filenames:
-            if idx_file in files:
-                try:
-                    missing_shards = get_missing_sharded_files(snapshot_dir)
-                    return len(missing_shards) == 0
-                except Exception as err:
-                    logger.warning(f"[Downloader] Error validating sharded weights for {snapshot_dir}: {err}")
-                    return False
+    has_index, has_shard_file, has_single_weight = _inspect_snapshot_directory(snapshot_dir)
+    if has_index:
+        try:
+            return len(get_missing_sharded_files(snapshot_dir)) == 0
+        except Exception as err:
+            logger.warning(f"[Downloader] Error validating sharded weights for {snapshot_dir}: {err}")
+            return False
 
-    # Fallback check for single-file models (like SigLIP 2)
-    for root, _, files in os.walk(snapshot_dir):
-        for f in files:
-            f_path = os.path.join(root, f)
-            try:
-                ext = os.path.splitext(f)[1].lower()
-                size = os.path.getsize(f_path)
-                if ext in [".safetensors", ".bin", ".npz", ".pth", ".pt"] and size > 1024 * 1024:
-                    return True
-                if size > 5 * 1024 * 1024:  # Any file larger than 5MB
-                    return True
-            except OSError as e:
-                logger.debug(f"[Downloader] Failed to inspect file size for {f_path}: {e}")
-    return False
+    if has_shard_file:
+        return False
+
+    return has_single_weight
 
 def ensure_nested_safetensors_linked(snapshot_dir: str):
     """Auto-link any subfolder safetensors (e.g. optiq/optiq_vision.safetensors) to top-level."""

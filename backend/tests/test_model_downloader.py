@@ -263,4 +263,68 @@ def test_start_background_model_downloader_prevents_duplicate_threads_when_alive
             md._downloader_thread = None
 
 
+def test_tc_cf_07_is_snapshot_weights_valid_rejects_partial_non_weight_and_unindexed_shards(tmp_path, monkeypatch):
+    """TC-CF-07 / DEFECT-06: Reject >5MB non-weight files (tokenizer.json) and unindexed shards while accepting valid single/nested/sharded weights."""
+    from services.model_downloader import (
+        is_snapshot_weights_valid,
+        _is_model_cached,
+        get_model_download_tracker,
+    )
+
+    payload_6mb = b"x" * (6 * 1024 * 1024)
+    payload_2mb = b"w" * (2 * 1024 * 1024)
+
+    # 1. Partial snapshot with config.json + 6MB tokenizer.json + ignored format >5MB (no weight file)
+    partial_tok_dir = tmp_path / "partial_tokenizer_only"
+    partial_tok_dir.mkdir()
+    (partial_tok_dir / "config.json").write_text('{"model_type": "siglip"}')
+    (partial_tok_dir / "tokenizer.json").write_bytes(payload_6mb)
+    (partial_tok_dir / "model.onnx").write_bytes(payload_6mb)
+    assert is_snapshot_weights_valid(str(partial_tok_dir)) is False
+
+    # _is_model_cached must also return False and leave status as pending (not "cached")
+    tracker = get_model_download_tracker()
+    tracker.reset_statuses()
+    monkeypatch.setattr("services.model_downloader.download_hf_smart", lambda *args, **kwargs: str(partial_tok_dir))
+    assert _is_model_cached("google/siglip2-base-patch16-224", "SigLIP 2", [], tracker) is False
+    assert tracker.get_all_statuses()["google/siglip2-base-patch16-224"]["status"] == "pending"
+
+    # 2. Partial sharded snapshot without index.json
+    unindexed_safetensors_dir = tmp_path / "unindexed_safetensors"
+    unindexed_safetensors_dir.mkdir()
+    (unindexed_safetensors_dir / "config.json").write_text("{}")
+    (unindexed_safetensors_dir / "model-00001-of-00003.safetensors").write_bytes(payload_2mb)
+    assert is_snapshot_weights_valid(str(unindexed_safetensors_dir)) is False
+
+    unindexed_bin_dir = tmp_path / "unindexed_bin"
+    unindexed_bin_dir.mkdir()
+    (unindexed_bin_dir / "pytorch_model-00001-of-00002.bin").write_bytes(payload_2mb)
+    assert is_snapshot_weights_valid(str(unindexed_bin_dir)) is False
+
+    # 3. Valid single-file weight formats (.safetensors, .bin, .npz) with large tokenizer.json
+    for idx, filename in enumerate(["model.safetensors", "pytorch_model.bin", "weights.npz"]):
+        valid_single = tmp_path / f"valid_single_{idx}"
+        valid_single.mkdir()
+        (valid_single / "tokenizer.json").write_bytes(payload_6mb)
+        (valid_single / filename).write_bytes(payload_2mb)
+        assert is_snapshot_weights_valid(str(valid_single)) is True
+
+    # 4. Valid nested safetensors model
+    nested_dir = tmp_path / "valid_nested"
+    (nested_dir / "optiq").mkdir(parents=True)
+    (nested_dir / "optiq" / "optiq_vision.safetensors").write_bytes(payload_2mb)
+    assert is_snapshot_weights_valid(str(nested_dir)) is True
+
+    # 5. Valid sharded model with index.json
+    sharded_dir = tmp_path / "valid_sharded"
+    sharded_dir.mkdir()
+    (sharded_dir / "model.safetensors.index.json").write_text(
+        '{"weight_map": {"a": "model-00001-of-00002.safetensors", "b": "model-00002-of-00002.safetensors"}}'
+    )
+    (sharded_dir / "model-00001-of-00002.safetensors").write_bytes(payload_2mb)
+    (sharded_dir / "model-00002-of-00002.safetensors").write_bytes(payload_2mb)
+    assert is_snapshot_weights_valid(str(sharded_dir)) is True
+
+
+
 
