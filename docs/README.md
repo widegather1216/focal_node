@@ -7,11 +7,11 @@
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
-- **Active 도메인**: [`00_core_foundation`](./features/00_core_foundation/README.md) *(`DEFECT-05` 해결 완료 / P0 2건·P1 4건 총 `DEFECT-06~11` 해결 대기)*
-- **현재 단계 (Stage)**: `🩹 Debugging (00_core_foundation DEFECT-06~11 해결 대기 / 04_studio_ui_analytics Step 3~4 대기)`
-- **직전 완료 작업**: [`00_core_foundation`](./features/00_core_foundation/README.md) `DEFECT-05` 해결 완료 (`tauri.macos.conf.json` 신설 및 `build_backend.py`·`lib.rs` 정합화로 macOS 번들 `Contents/Resources/binaries/` 정적 배치, 런타임 심볼릭 링크·`DYLD_*` 제거, `0o555` 비쓰기 `.app` 및 `codesign` 회귀 검증 통과)
+- **Active 도메인**: [`00_core_foundation`](./features/00_core_foundation/README.md) *(`DEFECT-06` 해결 완료 / P0 1건·P1 4건 총 `DEFECT-07~11` 해결 대기)*
+- **현재 단계 (Stage)**: `🩹 Debugging (00_core_foundation DEFECT-07~11 해결 대기 / 04_studio_ui_analytics Step 3~4 대기)`
+- **직전 완료 작업**: [`00_core_foundation`](./features/00_core_foundation/README.md) `DEFECT-06` 해결 완료 (`is_snapshot_weights_valid`의 확장자 무관 `>5MB` 폴백 제거로 `tokenizer.json`·무시 확장자 가중치 오인 차단, `*.index.json` 누락 샤드 거부, `TC-CF-07`·`pytest 155 passed`·`tsc && vite build` PASS)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"00_core_foundation 도메인의 DEFECT-06 티켓 해결해줘"` *(`systematic-debugger`로 다음 P0 결함 해결)*
+  > `"00_core_foundation 도메인의 DEFECT-07 티켓 해결해줘"` *(`systematic-debugger`로 다음 P0 결함 해결)*
 
 ---
 
@@ -19,7 +19,7 @@
 
 | 도메인 (Bounded Context) | 생명주기 상태 | 구현 진척도 (Active Step 1~4) | QA 인수 통과율 | 미해결 티켓 (`🚨D` / `🧐R`) | 최근 작업 요약 |
 | :--- | :--- :---: | :---: | :---: | :---: | :--- |
-| 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `6/12 (50%)` | `6 / 0` | `DEFECT-05` 해결 완료(macOS 번들 `Contents/Resources/binaries/` 정적 배치·`0o555` 검증 PASS), `DEFECT-06~11` 6건 대기 |
+| 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `7/12 (58%)` | `5 / 0` | `DEFECT-06` 해결 완료(`is_snapshot_weights_valid` 5MB 폴백 제거·무인덱스 샤드 차단), `DEFECT-07~11` 5건 대기 |
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `14/17 (82%)` | `0 / 0` | DEFECT-01~11·REFACTOR-01~02 전수 해결 완료(`folder_manager.py`·`photo_reindex.py` 분리, `ActionBar`/`Sidebar` 경량화), Active Step 1 대기 |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 0` | `REFACTOR-01` 해결 완료(SigLIP 폴백·`search.py` 로깅·`similar:` 버튼 연결), RRF·스마트 앨범 Step 1~4 대기 |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `15/15 (100%)` | `0 / 0` | `DEFECT-01~03`·`REFACTOR-01~08` 전수 해결 완료 (Headless MPS/MLX 가드·ADR-05 레거시 정리·300줄 이하 분할), Sign-Off 완료 |
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-16]` `[systematic-debugger]` [`00_core_foundation`]**: `DEFECT-06` 결함 해결 완료 (`94a47c7` / `backend/app/services/model_downloader.py`의 `is_snapshot_weights_valid`에서 확장자 무관 `size > 5MB` 폴백을 제거해 `tokenizer.json`·무시 확장자 오판을 차단하고, `_inspect_snapshot_directory`·`_is_valid_single_weight_file`·`_INDEX_SUFFIXES`·`_SHARD_FILENAME_RE`를 도입해 실제 가중치 확장자(`.safetensors`, `.bin`, `.npz`, `.pth`, `.pt` > 1MB) 검증 및 `*.index.json` 누락 샤드(`-\d+-of-\d+\.`) 거부를 구현; 로컬 HF 캐시 3종 정상 통과 확인 및 `test_model_downloader.py`(`10 passed`, `TC-CF-07` Red ➔ Green)·전체 `pytest`(`155 passed`)·`tsc && vite build` 전수 PASS).
 
 - **`[2026-11-16]` `[systematic-debugger]` [`00_core_foundation`]**: `DEFECT-05` 결함 해결 완료 (`72d746e` / `src-tauri/tauri.macos.conf.json` 신설로 macOS 번들 `externalBin: []` 및 `binaries/focal_node_backend`+`binaries/_internal/**/*` 정적 배치, `backend/build_backend.py` macOS `focal_node_backend` `0o755` 출력 및 레거시 `-apple-darwin` 바이너리 정리, `src-tauri/src/lib.rs` `resolve_release_sidecar_path`로 `app.path().resource_dir()` 기반 실행 및 런타임 심볼릭 링크·`DYLD_*` 제거, `decisions.md` `ADR-03` 기록; `build_backend.py`·`tauri build --bundles app`·`codesign --verify --deep --strict`·`0o555` 비쓰기 `.app`(`no_dyld`/`with_dyld`) `/api/health` 200 OK·`cargo test --lib`(`3 passed`)·`test_backend_hardening.py`(`35 passed`)·`tsc && vite build` 전수 PASS).
 

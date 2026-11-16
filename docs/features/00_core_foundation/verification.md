@@ -1,8 +1,8 @@
 # 🧪 [00_core_foundation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-05 해결 완료 — DEFECT-06~11 6건 해결 대기)`
-- **인수 조건 통과율**: `6 / 12 (50%)`
-- **미해결 티켓**: `🚨 DEFECT: 6건` | `🧐 REFACTOR: 0건`
+- **검증 상태**: `🩹 Debugging (DEFECT-06 해결 완료 — DEFECT-07~11 5건 해결 대기)`
+- **인수 조건 통과율**: `7 / 12 (58%)`
+- **미해결 티켓**: `🚨 DEFECT: 5건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -30,7 +30,7 @@
 | **Boundary**| `TC-CF-04` | 모델 인덱스 손상 시 가중치 무결성 검증 | 손상된 index.json 주입 | 정상 가중치 오판 차단 및 재다운로드 유도 | `PASS (Fixed in DEFECT-01)` |
 | **Boundary**| `TC-CF-05` | 다운로드 재시도 시 동시성 및 파일 락 정합성 | 다운로드 중 POST /download | 중복 스레드 및 락 삭제 충돌 방지 | `PASS (Fixed in DEFECT-04)` |
 | **Negative**| `TC-CF-06` | 비쓰기 macOS 릴리즈 `.app` 번들 사이드카 부팅 | `0o555` 읽기전용 `.app` 실행 | 심볼릭 링크 없이 `_internal` 정상 기동 | `PASS (Fixed in DEFECT-05)` |
-| **Negative**| `TC-CF-07` | 부분 다운로드 스냅샷(`tokenizer.json` > 5MB) 검증 | 가중치 없이 `tokenizer.json`만 존재 | `is_snapshot_weights_valid() == False` 반환 | `FAIL (DEFECT-06)` |
+| **Negative**| `TC-CF-07` | 부분 다운로드 스냅샷(`tokenizer.json` > 5MB) 검증 | 가중치 없이 `tokenizer.json`만 존재 | `is_snapshot_weights_valid() == False` 반환 | `PASS (Fixed in DEFECT-06)` |
 | **Boundary**| `TC-CF-08` | 활성 VLM 요청 중 동시 비평 취소/언로드 경합 | `active_requests == 1` 중 `unload_model` | 활성 추론 보호 및 `NoneType` 크래시 방지 | `FAIL (DEFECT-07)` |
 | **Negative**| `TC-CF-09` | `huggingface_hub==1.21.0` 손상 인덱스/샤드 재복구 | 손상된 `index.json` 로컬 캐시 잔존 | `force_download=True`로 정상 덮어쓰기 복구 | `FAIL (DEFECT-08)` |
 | **Negative**| `TC-CF-10` | ChromaDB Self-Healing 복구 및 벡터 재동기화 | 손상된 `chroma.sqlite3` 주입 후 기동/sync | 크래시 없이 초기화 및 누락 벡터 재임베딩 | `FAIL (DEFECT-09)` |
@@ -65,11 +65,11 @@
   - **회귀 테스트 결과**: `./venv/bin/python backend/build_backend.py` & `./node_modules/.bin/tauri build --bundles app` & `codesign --verify --deep --strict` & `0o555` 비쓰기 `.app` (`no_dyld`/`with_dyld`) `/api/health` 200 OK & `cargo test --lib` (`3 passed`) & `./venv/bin/pytest backend/tests/test_backend_hardening.py` (`35 passed`) & `npx tsc --noEmit && npm run build` (`PASS`)
 
 ### [DEFECT-06] 부분 다운로드 스냅샷의 비가중치 파일(`tokenizer.json` > 5MB)을 가중치로 오인해 `"cached"` 거짓 성공 반환
-- **심각도**: 🔴 P0 Critical (`Silent Degradation / False Validation`) | **실증**: `✅ Empirical Probe Reproduced`
-- **위치**: [`backend/app/services/model_downloader.py#L187-L221`](../../../backend/app/services/model_downloader.py#L187-L221), [`model_downloader.py#L291-L305`](../../../backend/app/services/model_downloader.py#L291-L305)
-- **근본 원인 및 증거**: `is_snapshot_weights_valid()` L217 폴백(`if size > 5 * 1024 * 1024: return True`)이 확장자 검증 없이 5MB 초과 파일만 존재해도 `True`를 반환함. 3종 모델 모두 `tokenizer.json`이 11~33MB이므로 가중치 파일 없이 `config.json` + 6MB `tokenizer.json`만 있는 임시 디렉토리 프로브에서 `is_snapshot_weights_valid() == True` 재현됨.
-- **최소 수정 설계**: 확장자 무관 `size > 5MB` 분기 제거, 가중치 확장자(`.safetensors`/`.bin`/`.npz`/`.pth`/`.pt`)만 허용하며 샤드 파일 존재 시 `*.index.json` 누락이면 `False` 반환.
-- **현재 상태**: 🟡 OPEN
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`backend/app/services/model_downloader.py`](../../../backend/app/services/model_downloader.py#L10-L15), [`model_downloader.py#L153-L241`](../../../backend/app/services/model_downloader.py#L153-L241), [`backend/tests/test_model_downloader.py`](../../../backend/tests/test_model_downloader.py#L266-L327)
+  - **원인 및 조치**: `is_snapshot_weights_valid()`의 확장자 무관 `size > 5 * 1024 * 1024` 폴백이 11~33MB `tokenizer.json` 및 무시 확장자(`.onnx` 등)를 유효 가중치로 오판하던 결함을 제거함. `_inspect_snapshot_directory` 및 `_is_valid_single_weight_file`를 분리해 실제 가중치 확장자(`.safetensors`, `.bin`, `.npz`, `.pth`, `.pt` > 1MB)만 허용하고, 샤드 파일(`-\d+-of-\d+\.`)이 존재하면서 `*.index.json`이 누락된 경우 `False`를 반환하도록 교정함. 로컬 HF 캐시 3종(`siglip2`, `gemma-4`, `unipercept-mirror`) 정상 통과(`True`) 실증.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_model_downloader.py -v` (`10 passed`, `TC-CF-07` Red ➔ Green) & `./venv/bin/pytest backend/tests/ -q` (`155 passed`) & `npx tsc --noEmit && npm run build` (`PASS`)
 
 ### [DEFECT-07] `BaseKeepAliveModel.unload_model()`의 `active_requests` 미검사 및 `force=True` 강제 언로드로 인한 활성 추론 크래시
 - **심각도**: 🔴 P0 Critical (`Concurrency Race / Crash & Silent Degradation`) | **실증**: `✅ Empirical Probe Reproduced`
