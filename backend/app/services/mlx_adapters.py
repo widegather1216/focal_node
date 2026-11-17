@@ -85,7 +85,7 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
 
     def _load_model_locked(self) -> None:
         """Assumes caller holds GPU_LOCK -> self.lock in strict hierarchy order."""
-        if self.model is not None:
+        if self.model is not None and self.processor is not None:
             self.last_used_time = time.time()
             self._start_keep_alive_timer_locked()
             return
@@ -105,13 +105,18 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
         with GPU_LOCK:
             with self.lock:
                 self._load_model_locked()
+                self.pending_unload = False
                 self.last_used_time = time.time()
                 self.active_requests += 1
 
     def _release_model_request(self) -> None:
+        should_unload = False
         with self.lock:
             self.last_used_time = time.time()
-            self.active_requests -= 1
+            self.active_requests = max(0, self.active_requests - 1)
+            should_unload = self.active_requests == 0 and self.pending_unload
+        if should_unload:
+            self.unload_model()
 
     def _run_mlx_vlm_generation(
         self,
@@ -127,6 +132,9 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
         with GPU_LOCK:
             if photo_id:
                 critique_status_manager.check_cancelled(photo_id)
+            if self.model is None or self.processor is None:
+                with self.lock:
+                    self._load_model_locked()
             if clear_cache_before:
                 clear_mlx_cache()
                 gc.collect()

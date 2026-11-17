@@ -140,20 +140,28 @@ class UniPerceptAdapter(BaseKeepAliveModel):
                     critique_status_manager.check_cancelled(photo_id)
                 self._load_model_locked()
                 if photo_id and critique_status_manager.is_cancelled(photo_id):
-                    self._unload_model_locked()
+                    if self.active_requests == 0:
+                        self._unload_model_locked()
+                    else:
+                        self.pending_unload = True
                     critique_status_manager.check_cancelled(photo_id)
+                self.pending_unload = False
                 self.active_requests += 1
 
     def _release_model_for_request(self, photo_id: Optional[str] = None) -> None:
-        """Decrements active_requests and unloads model if the request was cancelled."""
+        """Decrements active_requests and unloads model if cancelled or unload was deferred."""
         should_unload = False
         with self.lock:
             self.last_used_time = time.time()
             self.active_requests = max(0, self.active_requests - 1)
+            is_cancelled = False
             if photo_id:
                 from services.critique_status import critique_status_manager
 
-                should_unload = critique_status_manager.is_cancelled(photo_id)
+                is_cancelled = critique_status_manager.is_cancelled(photo_id)
+            if self.active_requests > 0 and is_cancelled:
+                self.pending_unload = True
+            should_unload = self.active_requests == 0 and (self.pending_unload or is_cancelled)
         if should_unload:
             self.unload_model()
 
@@ -497,10 +505,7 @@ class UniPerceptAdapter(BaseKeepAliveModel):
             return self._run_ensemble_stages(image_path, pil_img, pixel_values, metadata, photo_id, f_number, iso)
         finally:
             self._release_pixel_values(pixel_values)
-            with GPU_LOCK:
-                with self.lock:
-                    if self.active_requests <= 0:
-                        self.unload_model()
+            self.unload_model()
 
 
 _unipercept_adapter_instance = None

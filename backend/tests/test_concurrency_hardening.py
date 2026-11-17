@@ -362,3 +362,168 @@ def test_indexing_service_deletion_order():
         assert call_order == ["chroma_delete", "sqlite_commit"]
 
 
+def test_tc_cf_08_gemma_defers_unload_while_active_and_unloads_on_last_release(monkeypatch):
+    """
+    TC-CF-08 (DEFECT-07):
+    Verifies that GemmaAdapter protects model/processor while active_requests > 0 when
+    unload_model() or _unload_critique_models(force=True) is called concurrently,
+    runs inference safely, and executes the deferred unload when the last active request finishes.
+    """
+    from services.mlx_adapters import GemmaAdapter
+    from services.chat_service import _unload_critique_models
+
+    gemma = GemmaAdapter()
+    mock_model = MagicMock(name="GemmaModel")
+    mock_processor = MagicMock(name="GemmaProcessor")
+    mock_processor.tokenizer.apply_chat_template.return_value = "<prompt>"
+    monkeypatch.setattr(gemma, "_load_model_locked", lambda: setattr(gemma, "model", mock_model) or setattr(gemma, "processor", mock_processor))
+
+    # 1. Request 1 & Request 2 acquire Gemma concurrently
+    gemma._acquire_model_request()
+    gemma._acquire_model_request()
+    assert gemma.active_requests == 2
+    assert gemma.pending_unload is False
+
+    # 2. Concurrent force unload during GPU_LOCK-free prep must defer, NOT destroy model/processor
+    with patch("services.chat_service.get_gemma_adapter", return_value=gemma), \
+         patch("services.unipercept_adapter.get_unipercept_adapter", return_value=MagicMock(active_requests=0)):
+        _unload_critique_models(force=True)
+
+    assert gemma.model is mock_model
+    assert gemma.processor is mock_processor
+    assert gemma.pending_unload is True
+
+    # 3. Active request can still run _run_mlx_vlm_generation without NoneType crash
+    with patch("mlx_vlm.generate", return_value=MagicMock(text="ok")):
+        output = gemma._run_mlx_vlm_generation([{"role": "user", "content": "hi"}])
+    assert output == "ok"
+
+    # 4. Releasing 1st request keeps model alive because 2nd request is still active
+    gemma._release_model_request()
+    assert gemma.active_requests == 1
+    assert gemma.model is mock_model
+    assert gemma.pending_unload is True
+
+    # 5. Releasing last active request triggers deferred unload automatically
+    gemma._release_model_request()
+    assert gemma.active_requests == 0
+    assert gemma.model is None
+    assert gemma.processor is None
+    assert gemma.pending_unload is False
+
+
+def test_tc_cf_08_gemma_generation_reloads_if_unloaded_before_gpu_lock(monkeypatch):
+    """
+    TC-CF-08 (DEFECT-07 defense-in-depth):
+    Verifies _run_mlx_vlm_generation safely reloads model/processor under GPU_LOCK -> self.lock
+    if either reference is None before generation.
+    """
+    from services.mlx_adapters import GemmaAdapter
+
+    gemma = GemmaAdapter()
+    reloaded_model = MagicMock(name="ReloadedGemmaModel")
+    reloaded_processor = MagicMock(name="ReloadedGemmaProcessor")
+    reloaded_processor.tokenizer.apply_chat_template.return_value = "<reloaded_prompt>"
+    load_calls = 0
+
+    def fake_reload():
+        nonlocal load_calls
+        load_calls += 1
+        gemma.model = reloaded_model
+        gemma.processor = reloaded_processor
+
+    monkeypatch.setattr(gemma, "_load_model_locked", fake_reload)
+    with patch("mlx_vlm.generate", return_value=MagicMock(text="recovered")):
+        result = gemma._run_mlx_vlm_generation([{"role": "user", "content": "test"}])
+
+    assert result == "recovered"
+    assert load_calls == 1
+    assert gemma.model is reloaded_model
+    assert gemma.processor is reloaded_processor
+
+
+def test_tc_cf_08_unipercept_defers_unload_and_protects_active_request(monkeypatch):
+    """
+    TC-CF-08 (DEFECT-07):
+    Verifies UniPerceptAdapter defers unload_model() while active_requests > 0, protects active
+    requests even if a second cancelled request enters _acquire_model_for_request, and unloads 28GB
+    weights automatically when the last active request releases.
+    """
+    from services.unipercept_adapter import UniPerceptAdapter
+    from services.critique_status import CritiqueCancelledException, critique_status_manager
+
+    active_photo = "tc_cf_08_uni_active"
+    cancelled_photo = "tc_cf_08_uni_cancelled"
+    critique_status_manager.reset(active_photo)
+    critique_status_manager.reset(cancelled_photo)
+
+    adapter = UniPerceptAdapter()
+    mock_model = MagicMock(name="UniPercept28GB")
+    mock_tokenizer = MagicMock(name="UniTokenizer")
+    monkeypatch.setattr(
+        adapter,
+        "_load_model_locked",
+        lambda: setattr(adapter, "model", mock_model) or setattr(adapter, "tokenizer", mock_tokenizer),
+    )
+
+    # 1. Active request acquires model
+    adapter._acquire_model_for_request(active_photo)
+    assert adapter.active_requests == 1
+
+    # 2. Concurrent unload_model() defers instead of clearing model/tokenizer
+    adapter.unload_model()
+    assert adapter.model is mock_model
+    assert adapter.tokenizer is mock_tokenizer
+    assert adapter.pending_unload is True
+
+    # 3. Another cancelled request entering _acquire_model_for_request must not destroy active model
+    def fake_load_and_cancel_other():
+        critique_status_manager.request_cancel(cancelled_photo)
+
+    monkeypatch.setattr(adapter, "_load_model_locked", fake_load_and_cancel_other)
+    with pytest.raises(CritiqueCancelledException):
+        adapter._acquire_model_for_request(cancelled_photo)
+    assert adapter.model is mock_model
+    assert adapter.active_requests == 1
+
+    # 4. Active request finishes -> deferred unload frees 28GB model immediately
+    adapter._release_model_for_request(active_photo)
+    assert adapter.active_requests == 0
+    assert adapter.model is None
+    assert adapter.tokenizer is None
+    assert adapter.pending_unload is False
+
+
+def test_tc_cf_08_immediate_unload_when_active_requests_zero():
+    """
+    TC-CF-08 (DEFECT-07):
+    Verifies that when active_requests == 0, unload_model() and _unload_critique_models(force=True)
+    immediately unload both Gemma and UniPercept without deferral.
+    """
+    from services.mlx_adapters import GemmaAdapter
+    from services.unipercept_adapter import UniPerceptAdapter
+    from services.chat_service import _unload_critique_models
+
+    gemma = GemmaAdapter()
+    gemma.model = MagicMock(name="IdleGemma")
+    gemma.processor = MagicMock(name="IdleGemmaProcessor")
+    gemma.active_requests = 0
+
+    uni = UniPerceptAdapter()
+    uni.model = MagicMock(name="IdleUniPercept")
+    uni.tokenizer = MagicMock(name="IdleUniTokenizer")
+    uni.active_requests = 0
+
+    with patch("services.chat_service.get_gemma_adapter", return_value=gemma), \
+         patch("services.unipercept_adapter.get_unipercept_adapter", return_value=uni):
+        _unload_critique_models(force=True)
+
+    assert gemma.model is None
+    assert gemma.processor is None
+    assert gemma.pending_unload is False
+    assert uni.model is None
+    assert uni.tokenizer is None
+    assert uni.pending_unload is False
+
+
+

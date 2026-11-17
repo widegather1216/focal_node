@@ -42,27 +42,35 @@ def _clear_device_caches() -> None:
         gc.collect()
 
 
+def _has_active_requests(model_adapter: Any) -> bool:
+    active_reqs = getattr(model_adapter, "active_requests", 0)
+    return isinstance(active_reqs, int) and not isinstance(active_reqs, bool) and active_reqs > 0
+
+
 def _unload_critique_models(force: bool = False) -> None:
     """Safely unloads UniPercept and Gemma adapters and frees GPU caches."""
+    uni_adapter = None
+    gemma_adapter = None
     try:
         from services.unipercept_adapter import get_unipercept_adapter
 
-        adapter = get_unipercept_adapter()
-        if hasattr(adapter, "unload_model"):
-            adapter.unload_model()
+        uni_adapter = get_unipercept_adapter()
+        if hasattr(uni_adapter, "unload_model"):
+            uni_adapter.unload_model()
     except Exception as err:
         print(f"[ChatService] Error unloading UniPercept model: {err}", flush=True)
 
     try:
-        gemma = get_gemma_adapter()
-        active_reqs = getattr(gemma, "active_requests", 0)
+        gemma_adapter = get_gemma_adapter()
+        active_reqs = getattr(gemma_adapter, "active_requests", 0)
         should_unload = force or not isinstance(active_reqs, int) or active_reqs <= 0
-        if should_unload and hasattr(gemma, "unload_model"):
-            gemma.unload_model()
+        if should_unload and hasattr(gemma_adapter, "unload_model"):
+            gemma_adapter.unload_model()
     except Exception as err:
         print(f"[ChatService] Error unloading Gemma model: {err}", flush=True)
 
-    _clear_device_caches()
+    if not _has_active_requests(uni_adapter) and not _has_active_requests(gemma_adapter):
+        _clear_device_caches()
 
 
 def _fetch_critiques_from_db(photo_ids: Optional[List[str]]) -> List[Dict[str, Any]]:

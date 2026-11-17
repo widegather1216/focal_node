@@ -69,6 +69,7 @@ class BaseKeepAliveModel:
 
         self.last_used_time: float = 0.0
         self.active_requests: int = 0
+        self.pending_unload: bool = False
         self.lock = threading.RLock()
         self.timer_thread: Optional[threading.Thread] = None
         self.timer_active: bool = False
@@ -120,6 +121,7 @@ class BaseKeepAliveModel:
         self.processor = None
         self.tokenizer = None
         self.timer_active = False
+        self.pending_unload = False
 
         gc.collect()
         clear_mps_cache(synchronize=True)
@@ -131,11 +133,30 @@ class BaseKeepAliveModel:
         """Override in subclass for custom unload steps if necessary."""
         pass
 
+    def _defer_or_skip_unload_locked(self) -> bool:
+        """Marks unload pending if requests are active; returns True if immediate unload must skip."""
+        if self.model is None:
+            self.pending_unload = False
+            return True
+        if self.active_requests > 0:
+            self.pending_unload = True
+            print(
+                f"[{self.model_name}] Deferring unload while {self.active_requests} request(s) remain active.",
+                flush=True,
+            )
+            return True
+        return False
+
     def unload_model(self):
-        """Explicitly unload model from memory and clear GPU cache immediately."""
+        """Explicitly unload model from memory, deferring safely while active requests run."""
+        with self.lock:
+            if self._defer_or_skip_unload_locked():
+                return
+
         with GPU_LOCK:
             with self.lock:
-                if self.model is not None:
-                    print(f"[{self.model_name}] Explicitly unloading model to free memory...", flush=True)
-                    self._unload_model_locked()
-                    print(f"[{self.model_name}] Model explicitly unloaded.", flush=True)
+                if self._defer_or_skip_unload_locked():
+                    return
+                print(f"[{self.model_name}] Explicitly unloading model to free memory...", flush=True)
+                self._unload_model_locked()
+                print(f"[{self.model_name}] Model explicitly unloaded.", flush=True)
