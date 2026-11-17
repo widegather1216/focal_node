@@ -1,8 +1,8 @@
 # 💾 [01_indexing_storage] Indexing Pipeline, Storage & RAW Media
 
-- **현재 상태 (Lifecycle)**: `🛠️ Implementing (DEFECT-01~11 및 REFACTOR-01~02 해결 완료 / Active Step 1 대기)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-12~17 해결 대기)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 6건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -35,8 +35,8 @@
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-11-14 / systematic-debugger / REFACTOR-02 해결 완료 (indexing_service.py SRP 분리·경량화 494줄, ActionBar 62줄·Sidebar 86줄 분할, 빈 catch/any 정리)`
-- **Working Tree State**: 🟢 Clean (No uncommitted changes)
+- **직전 완료 작업**: `2026-11-17 / deep-bug-hunter / 01_indexing_storage 3-Lens 적대적 딥버그 헌팅 완료 (DEFECT-12~17 6건 발권)`
+- **Working Tree State**: 🟡 Modified (위키 티켓 등록 중)
 - **Recent Commits (2026-11-14 23:31)**:
   - `b6ffc54` - `refactor(ui): decompose ActionBar and Sidebar and sanitize error handling`
   - `e572898` - `refactor(indexing): decompose indexing_service into folder_manager and photo_reindex`
@@ -71,4 +71,4 @@
   - `npx tsc --noEmit && npm run build` (`PASS`, `0 Errors`)
   - `python3 -B ~/.gemini/config/skills/interactive-feature-planner/scripts/check_wiki_health.py docs` (`exit 0`)
 - **다음 세션 포커스 및 추천 프롬프트**:
-  - 미해결 티켓 0건으로 `Active Iteration` Step 1 착수 가능: `"01_indexing_storage 도메인 Step 1 개발 진행해줘"`
+  - `DEFECT-12~17` 순차 해결 (`systematic-debugger`): `"01_indexing_storage 도메인의 DEFECT-12 티켓 해결해줘"`

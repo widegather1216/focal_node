@@ -1,8 +1,8 @@
 # 🧪 [01_indexing_storage] Verification & Ticket Logs
 
-- **검증 상태**: `🛠️ Implementing (DEFECT-01~11 및 REFACTOR-01~02 해결 완료 / Active Step 1 대기)`
+- **검증 상태**: `🩹 Debugging (DEFECT-12~17 해결 대기)`
 - **인수 조건 통과율**: `1 / 4 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 6건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -60,6 +60,12 @@
 | **Boundary**| `TC-IDX-15` | IndexingStateManager 크로스 스레드 루프 바인딩 | 백그라운드 스레드 pause/resume | call_soon_threadsafe 안전 전달 | `PASS (Fixed in DEFECT-09)` |
 | **Negative**| `TC-IDX-16` | 사진 내보내기 실패 시 에러 보존 및 UI 피드백 | 0장 내보내기 에러 응답 수신 | 허위 녹색 완료 차단 및 실패 안내 | `PASS (Fixed in DEFECT-10)` |
 | **Security**| `TC-IDX-17` | 폴더 삭제 시 미등록 상위 경로 재귀 삭제 차단 | DELETE /api/folders?path=/ | 미등록 상위 경로 요청 거부 및 데이터 보호 | `PASS (Fixed in DEFECT-11)` |
+| **Boundary**| `TC-IDX-18` | 인덱싱 취소 직후 폴더 삭제 및 재시작 동시성 격리 | 워커 스레드 실행 중 cancel ➔ delete/start | 인플라이트 워커 종료 전 삭제/재시작 차단 및 좀비 방지 | `FAIL (DEFECT-12)` |
+| **Happy** | `TC-IDX-19` | 폴더 필터 조회 시 하위 디렉터리 및 NFD/NFC 정규화 | 하위 폴더/한글 NFD 포함 폴더 선택 | 하위 디렉터리 및 NFD/NFC 사진 정상 조회 | `FAIL (DEFECT-13)` |
+| **Boundary**| `TC-IDX-20` | 단일 사진 재분석 캐시 동기화 및 사진 전환 격리 | 상세 재분석 중 타 사진 선택 또는 완료 대기 | `photoDetail` 캐시 즉시 갱신 및 전환 후 버퍼 오염 차단 | `FAIL (DEFECT-14)` |
+| **Boundary**| `TC-IDX-21` | 상세 패널/갤러리 즐겨찾기 토글 양방향 캐시 동기화 | 폴더 선택 중 상세 패널 하트 토글 | `photos` 및 `photoDetail` 캐시 모두 서버 상태와 일치 | `FAIL (DEFECT-15)` |
+| **Boundary**| `TC-IDX-22` | 내보내기 중 전체 선택 해제 시 피드백 누수 차단 | SSE 내보내기 진행 중 선택 해제 후 새 사진 선택 | 진행 중 요청 중단 및 이전 실패/완료 배너 잔류 차단 | `FAIL (DEFECT-16)` |
+| **Boundary**| `TC-IDX-23` | 초장축 세로 파노라마 썸네일 JPEG 65,500px 상한 방어 | 10x5000 또는 100x20000 이미지 썸네일 생성 | libjpeg 65,500px 초과 OSError 없이 썸네일 생성 | `FAIL (DEFECT-17)` |
 
 ---
 
@@ -84,44 +90,55 @@
 - **현재 상태**: 🟢 RESOLVED — `_normalize_path_for_comparison`·`_to_folder_prefix_pair`·`_belongs_to_any_folder` NFC 일원화 (`TC-IDX-12`) | 회귀: PASS (138 passed)
 
 ### [DEFECT-07] `_get_tag_val`의 `tag.values == []` 빈 리스트 `IndexError`로 인한 EXIF 메타데이터 파싱 전면 중단
-- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
-- **심각도**: 🟠 P1 High (Partial Metadata Loss)
-- **해결 내역**:
-  - **수정 파일**: [`backend/app/utils/image.py`](../../../backend/app/utils/image.py#L99-L125), [`backend/app/utils/image.py#L239-L312`](../../../backend/app/utils/image.py#L239-L312), [`backend/tests/test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py#L1014-L1129)
-  - **원인 및 조치**: ExifRead가 `count=0` 또는 `count>=1000` 초과·손상 IFD 태그에 대해 `values=[]`를 반환할 때 `_get_tag_val`이 `tag.values[0]`에 직접 접근하여 `IndexError`를 발생시키고 `_parse_exif_tags_dict`의 나머지 모든 EXIF 파싱을 중단시키던 결함을 해소함. `_unwrap_tag_values` 헬퍼를 도입해 빈 리스트/튜플(`[]`, `()`), 공백 문자열, 빈 바이트 및 `None`을 필터링하되 숫자 `0`은 보존하고 `_get_tag_val`이 후속 대체 키(`EXIF ISOSpeed`, `Image LensModel`, `Image DateTime` 등)를 계속 탐색하도록 교정함. 또한 `_parse_positive_float`, `_parse_int`, `_extract_tags_dict`를 분리해 손상된 `Ratio(n, 0)`(`ZeroDivisionError`) 및 비정형 튜플(`TypeError`)이 후속 EXIF 필드를 중단하지 않도록 방어함.
-  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_13 -v` (`PASS`), `./venv/bin/pytest backend/tests/ -v` (`139 passed`)
+- **현재 상태**: 🟢 RESOLVED — `_unwrap_tag_values`/`_parse_positive_float`/`_parse_int` 도입으로 빈 IFD·0분모 방어 (`TC-IDX-13`) | 회귀: PASS (139 passed)
 
 ### [DEFECT-08] `photos.py` 비동기 엔드포인트 내 동기 DB I/O 호출로 인한 FastAPI 단일 비동기 이벤트 루프 동결
-- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
-- **심각도**: 🟠 P1 High (Event Loop Freeze / Denial of Service)
-- **해결 내역**:
-  - **수정 파일**: [`backend/app/api/photos.py`](../../../backend/app/api/photos.py#L25-L264), [`backend/tests/test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py#L1132-L1455)
-  - **원인 및 조치**: Devil's Advocate 자문 교차 검증을 통해 `get_photo_thumbnail`, `get_photo_original`, `export_photos`의 동기 DB 조회(`get_by_id`, `get_by_ids`) 및 동기 파일시스템 I/O(`get_photo_original` 비-RAW 분기의 `os.path.exists`, `export_photos`의 `os.path.exists`/`os.path.isdir`) 직접 실행뿐 아니라, `from database import SessionLocal` 값 바인딩으로 인한 테스트 격리 누락, `Depends(get_db)` 세션을 워커 스레드로 넘길 때의 `StaticPool`/커넥션 풀 고갈 위험, 전역 `_decode_semaphore`의 다중 이벤트 루프 바인딩 충돌, `except Exception`의 `HTTPException(404/422)` 삼킴까지 일괄 해소함. `_fetch_photo_media_record_sync`, `_read_cached_thumbnail_sync`, `_stat_regular_file_sync`, `_decode_raw_original`, `_prepare_export_items_sync`를 분리하여 모든 DB·파일시스템 I/O를 `await asyncio.to_thread(...)` 내부로 격리하고 워커 스레드에서 `database.SessionLocal()`을 열고 닫은 뒤 평문 값(tuple/dict)만 반환하도록 개편함. 또한 `get_decode_semaphore()`를 `WeakKeyDictionary[AbstractEventLoop, Semaphore]` 기반으로 루프별 격리하고 비-RAW `FileResponse`에 `stat_result` 및 `S_ISREG` 검증과 `except HTTPException: raise` 가드를 추가함.
-  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_14 -v` (`3 passed`), `./venv/bin/pytest backend/tests/ -v` (`142 passed`)
+- **현재 상태**: 🟢 RESOLVED — `asyncio.to_thread` 독립 세션 격리 및 `WeakKeyDictionary` 루프별 세마포어 적용 (`TC-IDX-14`) | 회귀: PASS (142 passed)
 
 ### [DEFECT-09] `IndexingStateManager._pause_loop` 영구 `None` 고착으로 인한 크로스 스레드 `call_soon_threadsafe` 누락 및 이벤트 루프 블로킹
-- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
-- **심각도**: 🟠 P1 High (Concurrency Hang)
-- **해결 내역**:
-  - **수정 파일**: [`backend/app/services/indexing_state.py`](../../../backend/app/services/indexing_state.py#L15-L530), [`backend/app/services/indexing_service.py`](../../../backend/app/services/indexing_service.py#L38-L48), [`backend/app/services/indexing_service.py#L573-L674`](../../../backend/app/services/indexing_service.py#L573-L674), [`backend/app/api/indexing.py`](../../../backend/app/api/indexing.py#L79-L96), [`backend/tests/test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py#L1456-L1725)
-  - **원인 및 조치**: 2-Way 경쟁 가설 추적 및 2회 Devil's Advocate 검증을 통해, sync FastAPI 라우트(`start_indexing`/`sync_database`) AnyIO 워커 스레드의 `try_start_indexing()` 선행 호출로 `_pause_loop`가 `None`에 영구 고착되는 문제뿐 아니라 다중 이벤트 루프(`loop_1` vs `TestClient` 포탈 루프 `loop_2`) 전환 시 대기자 고아화·`cancel->start->pause` 기상 펄스 유실·스레드 간 stale 읽기·닫힌 루프 `RuntimeError`·시작 전 일시정지 무시 레이스까지 일괄 해소함. `threading.RLock` 기반 `_ThreadSafeAsyncEvent(asyncio.Event)`를 도입해 각 대기자의 `(waiter_loop, waiter_future)`를 직접 추적하고 락 해제 후 루프별 `call_soon_threadsafe`로 안전 기상시키도록 개편함. 또한 원자적 `wait_if_paused(run_id)`와 `initialize_background_run`의 선점 일시정지 보존, `finalize_run("idle")` 이벤트 복구, `run_indexing_background` 스캔/좀비 정리 전 대기 가드, `api/indexing.py` 제어 라우트 원자적 반환(`bool`) 검사를 연동함.
-  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_15 -v` (`4 passed`), `./venv/bin/pytest backend/tests/ -v` (`146 passed`)
+- **현재 상태**: 🟢 RESOLVED — `RLock` 기반 `_ThreadSafeAsyncEvent` 및 다중 루프 `(waiter_loop, waiter_future)` 안전 기상 도입 (`TC-IDX-15`) | 회귀: PASS (146 passed)
 
 ### [DEFECT-10] `ActionBar.tsx`의 사진 내보내기 실패 시 "0장 완료" 녹색 체크 허위 표시 및 선택 강제 해제
-- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
-- **심각도**: 🟠 P1 High (False Success UI Masking)
-- **해결 내역**:
-  - **수정 파일**: [`backend/app/api/photos.py`](../../../backend/app/api/photos.py#L86-L105), [`backend/app/api/photos.py`](../../../backend/app/api/photos.py#L232-L331), [`src/utils/exportStream.ts`](../../../src/utils/exportStream.ts#L1-L285), [`src/services/api.ts`](../../../src/services/api.ts#L111-L136), [`src/store/useAppStore.ts`](../../../src/store/useAppStore.ts#L197-L210), [`src/components/ActionBar.tsx`](../../../src/components/ActionBar.tsx#L1-L357), [`backend/tests/test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py#L1729-L1909)
-  - **원인 및 조치**: 2-Way 경쟁 가설 추적 및 Devil's Advocate 적대적 검증을 통해 다계층 내보내기 계약·SSE 파서·UI 수명주기 결함을 일괄 해소함. 백엔드 `_prepare_export_items_sync`/`_stream_export_events`는 요청 중복 ID 제거·부분 DB 누락 항목 `errors` 포함·`failed`/`partial`/`success` 상태와 `failed_count`/`total_count`/`exported_ids`/`failed_ids`·예기치 않은 스트림 오류 `event: error`를 명시 발행하도록 개선함. 프론트엔드 `src/utils/exportStream.ts`는 WHATWG 스펙 준수 라인 파서(CRLF/청크 경계 `\r` 보류·EOF 잔여 버퍼 및 `TextDecoder` 플러시·멀티라인 `data:`·주석/접두어 충돌 방어·`event: error` 예외 전파)와 `evaluateExportOutcome`을 구현했고 `api.ts`는 `AbortSignal` 전달 및 사전 중복 제거를 적용함. `useAppStore.ts`의 원자적 `deselectPhotoIds`와 `ActionBar.tsx` 상태 머신을 연동해 실패(`error`)·부분실패(`partial`) 시 붉은색/호박색 경고 배너(`AlertTriangle`)·선택 상태 유지(부분실패 시 실패 ID만 잔류)·`[다시 시도]`/`[닫기]`·`StrictMode`/타이머/중복 클릭/`AbortError` 세대 가드를 구현함.
-  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_16 -v` (`2 passed`), `./venv/bin/pytest backend/tests/ -v` (`148 passed`), `npx tsc --noEmit && npm run build` (`PASS`), Node `node --test` 순수 SSE/스토어/API 단위 검증 (`9 passed`)
+- **현재 상태**: 🟢 RESOLVED — 백엔드 `failed`/`partial`/`error` SSE 계약 및 `exportStream.ts`·`ActionBar` 상태 머신 연동 (`TC-IDX-16`) | 회귀: PASS (148 passed)
 
 ### [DEFECT-11] `DELETE /api/folders`의 등록 여부 미검증으로 인한 상위 경로 전달 시 전체 사진/폴더 재귀적 강제 삭제
-- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
-- **심각도**: 🟠 P1 High (Arbitrary Mass Deletion)
-- **해결 내역**:
-  - **수정 파일**: [`backend/app/api/folders.py`](../../../backend/app/api/folders.py#L1-L52), [`backend/app/services/indexing_service.py`](../../../backend/app/services/indexing_service.py#L135-L382), [`src/store/useAppStore.ts`](../../../src/store/useAppStore.ts#L261-L286), [`src/components/sidebar/FolderList.tsx`](../../../src/components/sidebar/FolderList.tsx#L10-L166), [`src/components/Sidebar.tsx`](../../../src/components/Sidebar.tsx#L339-L347), [`backend/tests/test_api_folders.py`](../../../backend/tests/test_api_folders.py#L71-L97), [`backend/tests/test_concurrency_hardening.py`](../../../backend/tests/test_concurrency_hardening.py#L324-L346), [`backend/tests/test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py#L2150-L2413)
-  - **원인 및 조치**: 1차 적대적 Devil's Advocate 검증을 통해 API·서비스 무검증 접두어 삭제뿐 아니라 빈/공백 문자열의 `os.path.realpath("") == CWD` 우회, 리프 심볼릭 링크를 통한 상위 디렉터리 확장(`[F3]`), 교차 폴더 파일 심볼릭 링크 연쇄 삭제(`[F4]`), `remove_folder_data` 예외 삼킴(`200 OK` 위장), `IndexingStateManager` 활성 인덱싱 중 동시 삭제 레이스(`[F2]`), 프론트엔드 `useAppStore.removeFolder`/`FolderList.tsx` 실패 무묵인 및 허위 선택 해제(`[F1]`)까지 일괄 해소함. `indexing_service.py`에 `_resolve_path_without_leaf_symlink`·`_normalize_folder_deletion_path`·`_validate_folder_deletion_pair`·`_find_matching_indexed_folders`·`_belongs_to_deletion_target`·`_execute_folder_deletion`을 도입해 비어 있지 않은 절대 경로만 허용하고, NFC/NFD 및 말단 슬래시를 통합 정규화한 뒤 등록된 `IndexedFolder`와 **정확히 일치**하는 경우에만 삭제를 승인(`FolderNotRegisteredError` -> 404, 잘못된 경로 `ValueError` -> 400, 활성 인덱싱 중 삭제 `FolderDeletionConflictError` -> 409, DB/Chroma 오류 롤백 후 재전파 -> 500)하도록 교정함(하위 중첩 등록 폴더는 함께 정리하고 형제 접두어 폴더 및 교차 파일 심볼릭 링크는 보존). 프론트엔드 `useAppStore.ts`는 `!response.ok` 시 에러를 전파(404 시 폴더 목록 동기화)하고, `FolderList.tsx`는 `isIndexing` 중 삭제 버튼을 비활성화하며 실패 시 쿼리 무효화·선택 해제를 차단하고 오류 알림을 노출하도록 보완함.
-  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_17 -v` (`2 passed`), `./venv/bin/pytest backend/tests/test_api_folders.py -v` (`5 passed`), `./venv/bin/pytest backend/tests/ -q` (`151 passed`), `npx tsc --noEmit && npm run build` (`PASS`)
+- **현재 상태**: 🟢 RESOLVED — 등록 폴더 정확 일치·리프 심볼릭 링크 비확장·활성 인덱싱 409 차단 및 UI 에러 전파 (`TC-IDX-17`) | 회귀: PASS (151 passed)
+
+### [DEFECT-12] 인덱싱 취소(`cancel()`) 직후 인플라이트 워커 스레드 종료 전 조기 상태 해제로 인한 좀비 사진 잔류 및 중복 인덱서 실행
+- **현재 상태**: 🟡 OPEN
+- **심각도**: 🟠 P1 High (Concurrency Race / Zombie Orphaned State)
+- **발생 위치**: [`backend/app/services/indexing_state.py#L355-L527`](../../../backend/app/services/indexing_state.py#L355-L527), [`backend/app/services/indexing_service.py#L403-L515`](../../../backend/app/services/indexing_service.py#L403-L515), [`backend/app/services/folder_manager.py#L279-L305`](../../../backend/app/services/folder_manager.py#L279-L305), [`src/hooks/useIndexingStatus.ts#L99-L116`](../../../src/hooks/useIndexingStatus.ts#L99-L116)
+- **증상 및 재현**: `cancel()`이 백그라운드 태스크와 이미 진입한 `asyncio.to_thread` 워커(`_commit_batch_with_retry`, `index_single_file_sync`) 종료 전에 즉시 `status="cancelled"`로 전이하고 `try_start_indexing()`/`execute_folder_deletion()`은 `status in ("processing", "paused")`만 검사해, 취소 직후 폴더 삭제 시 고아 사진/벡터가 재삽입되거나 중복 인덱서가 동시 실행됨 (`✅ Empirical Probe Reproduced`).
+
+### [DEFECT-13] `PhotoRepository.list_photos`의 `parent_dir ==` 정확 일치 필터로 인한 하위 폴더 및 macOS NFD 경로 사진 전면 누락
+- **현재 상태**: 🟡 OPEN
+- **심각도**: 🟠 P1 High (Seam Mismatch / Empty Folder View)
+- **발생 위치**: [`backend/app/repositories/photo_repository.py#L25-L30`](../../../backend/app/repositories/photo_repository.py#L25-L30), [`backend/app/api/photos.py#L115-L127`](../../../backend/app/api/photos.py#L115-L127)
+- **증상 및 재현**: `FolderList`는 루트 `IndexedFolder.path`를 전달하나 `list_photos`가 `Image.parent_dir == parent_dir` 정확 일치만 수행해 하위 디렉터리 사진과 macOS NFD/NFC 불일치 경로 사진이 모두 누락됨 (`✅ Empirical Probe Reproduced`).
+
+### [DEFECT-14] `usePhotoDetail.handleReindex`의 React Query `photoDetail` 캐시 미갱신 및 사진 전환 시 타 사진 편집 버퍼 오염
+- **현재 상태**: 🟡 OPEN
+- **심각도**: 🟠 P1 High (Stale Cache & Cross-Item State Corruption)
+- **발생 위치**: [`src/hooks/usePhotoDetail.ts#L246-L258`](../../../src/hooks/usePhotoDetail.ts#L246-L258), [`src/hooks/usePhotoDetailQuery.ts#L6-L18`](../../../src/hooks/usePhotoDetailQuery.ts#L6-L18)
+- **증상 및 재현**: 재분석 성공 시 `['photoDetail', targetId]` 캐시(`staleTime: 5m`) 및 `['photos']`를 갱신하지 않아 구 데이터가 유지되며, 비동기 대기 중 다른 사진 선택 시 새 사진의 편집 버퍼가 덮어쓰여짐 (`✅ Deterministic Trace Verified`).
+
+### [DEFECT-15] `useToggleFavoriteMutation`의 `selectedFolder=null` 하드코딩 및 `photoDetail` 캐시 미동기화로 인한 하트 상태 불일치
+- **현재 상태**: 🟡 OPEN
+- **심각도**: 🟠 P1 High (Query Key Mismatch / Cache Split-Brain)
+- **발생 위치**: [`src/hooks/usePhotoDetail.ts#L29,L260-L267`](../../../src/hooks/usePhotoDetail.ts#L29), [`src/hooks/usePhotosQuery.ts#L8-L53`](../../../src/hooks/usePhotosQuery.ts#L8-L53), [`src/components/PhotoGallery.tsx#L100-L121`](../../../src/components/PhotoGallery.tsx#L100-L121)
+- **증상 및 재현**: 상세 패널 훅이 `selectedFolder`를 `null`로 고정하고, 갤러리·상세 양쪽 모두 `['photoDetail', photoId]` 캐시를 갱신하지 않아 폴더 뷰/상세 뷰에서 하트 토글 상태가 반영되지 않음 (`✅ Empirical Probe Reproduced`).
+
+### [DEFECT-16] 내보내기 진행 중 전체 선택 해제 시 `usePhotoExport`의 완료/실패 피드백이 이후 새 선택에 잔류
+- **현재 상태**: 🟡 OPEN
+- **심각도**: 🟠 P1 High (Async Lifecycle / Stale State Leak)
+- **발생 위치**: [`src/hooks/usePhotoExport.ts#L64-L69,L96-L145`](../../../src/hooks/usePhotoExport.ts#L64-L69), [`src/components/ActionBar.tsx#L19,L49-L57`](../../../src/components/ActionBar.tsx#L19)
+- **증상 및 재현**: `selectedPhotoIds.size === 0`일 때 진행 중이던 SSE 요청을 abort/무효화하지 않아, 뒤늦게 완료/실패한 응답이 `feedback`을 세팅하고 다음 사진 선택(`0 -> 1`) 시 이전 배너가 새 `[내보내기]` 버튼을 가림 (`✅ Deterministic Trace Verified`).
+
+### [DEFECT-17] `_resize_image_to_jpeg_bytes`의 세로 초장축 이미지 JPEG 65,500px 한계 초과 `OSError` 크래시
+- **현재 상태**: 🟡 OPEN
+- **심각도**: 🟠 P1 High (Edge-Case Crash / Indexing & Thumbnail Failure)
+- **발생 위치**: [`backend/app/services/photo.py#L28-L39`](../../../backend/app/services/photo.py#L28-L39)
+- **증상 및 재현**: 가로폭만 `360px`로 고정하고 세로 상한을 제한하지 않아 `height/width > 181.94` 초장축 이미지(`10x5000`, `100x20000`) 저장 시 libjpeg 65,500px 한계 초과 `OSError`로 인덱싱/썸네일 서빙이 실패함 (`✅ Empirical Probe Reproduced`).
 
 ---
 
