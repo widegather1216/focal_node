@@ -2831,5 +2831,346 @@ async def test_tc_cf_11_pipeline_error_isolation_and_sync_retry(
         chroma_mod._evict_shared_system_cache(str(chroma_dir), client=chroma_client)
 
 
+@pytest.mark.asyncio
+async def test_tc_idx_18_cancel_drains_in_flight_workers_before_delete_or_restart(
+    client, db_session, tmp_path, monkeypatch
+):
+    """
+    TC-IDX-18 (DEFECT-12 Part 1):
+    Verifies that when cancel() is called while run_indexing_background has an in-flight
+    asyncio.to_thread worker (index_single_file_sync):
+    1. Status transitions to 'cancelling' with active_run_in_flight=True until workers drain.
+    2. Concurrent POST /api/index/start, POST /api/index/sync, try_start_indexing(), and
+       DELETE /api/folders are all rejected (400 / False / 409) while the worker is in-flight.
+    3. Idempotent second POST /api/index/cancel returns 200 without 400 error.
+    4. Once the worker exits, no batch commit occurs, status becomes 'cancelled' with
+       active_run_in_flight=False, and folder deletion / restart succeed with zero zombies.
+    """
+    import asyncio
+    import threading
+    from unittest.mock import MagicMock, patch
+    import services.indexing_service as idx_svc
+    from services.indexing_state import indexing_state_manager
+
+    indexing_state_manager.reset_status()
+    photo_dir = tmp_path / "tc18_photos"
+    photo_dir.mkdir()
+    photo_file = photo_dir / "sample.jpg"
+    Image.new("RGB", (32, 32), color="teal").save(str(photo_file), format="JPEG")
+
+    db_session.add(models.IndexedFolder(path=str(photo_dir)))
+    db_session.commit()
+
+    worker_entered = threading.Event()
+    release_worker = threading.Event()
+
+    def blocking_index_single(file_path):
+        worker_entered.set()
+        release_worker.wait(timeout=5.0)
+        return {
+            "image_data": {
+                "id": "tc18_orphan_id",
+                "parent_dir": str(photo_dir),
+                "file_path": file_path,
+                "file_name": "sample.jpg",
+                "file_size": 100,
+                "file_mtime": time.time(),
+                "mime_type": "image/jpeg",
+            },
+            "metadata_data": {},
+            "ai_data": {"caption": "x", "tags": [], "aesthetic_tags": [], "is_user_edited": False},
+            "embedding": [0.1] * 8,
+        }
+
+    assert indexing_state_manager.try_start_indexing() is True
+    run_id = indexing_state_manager.current_run_id
+
+    commit_spy = MagicMock()
+    try:
+        with patch.object(idx_svc, "scan_directory", return_value=[str(photo_file)]), \
+             patch.object(idx_svc, "cleanup_zombie_records"), \
+             patch.object(idx_svc, "index_single_file_sync", side_effect=blocking_index_single), \
+             patch("services.photo.register_photos_batch_atomic", commit_spy):
+
+            bg_task = asyncio.create_task(
+                idx_svc.run_indexing_background([str(photo_dir)], run_id=run_id)
+            )
+            for _ in range(100):
+                if worker_entered.is_set():
+                    break
+                await asyncio.sleep(0.01)
+            assert worker_entered.is_set()
+
+            cancel_resp = client.post("/api/index/cancel")
+            assert cancel_resp.status_code == 200
+
+            # Second cancel while draining must be idempotent (200 OK)
+            cancel_again_resp = client.post("/api/index/cancel")
+            assert cancel_again_resp.status_code == 200
+
+            # While worker is still in-flight: must report cancelling + in-flight
+            status_resp = client.get("/api/index/status")
+            assert status_resp.status_code == 200
+            status_json = status_resp.json()
+            assert status_json["status"] == "cancelling"
+            assert status_json["active_run_in_flight"] is True
+
+            # Concurrent restart / sync / folder deletion must all be blocked
+            assert indexing_state_manager.try_start_indexing() is False
+            assert client.post("/api/index/start", json={"folder_paths": [str(photo_dir)]}).status_code == 400
+            assert client.post("/api/index/sync").status_code == 400
+            assert client.delete("/api/folders", params={"path": str(photo_dir)}).status_code == 409
+
+            # Unblock worker and await background task completion
+            release_worker.set()
+            await asyncio.wait_for(bg_task, timeout=3.0)
+
+        assert commit_spy.call_count == 0
+        final_status = client.get("/api/index/status").json()
+        assert final_status["status"] == "cancelled"
+        assert final_status["active_run_in_flight"] is False
+
+        db_session.expire_all()
+        assert db_session.query(models.Image).filter_by(id="tc18_orphan_id").first() is None
+
+        # Folder deletion now succeeds cleanly
+        del_resp = client.delete("/api/folders", params={"path": str(photo_dir)})
+        assert del_resp.status_code == 200
+        assert db_session.query(models.IndexedFolder).filter_by(path=str(photo_dir)).first() is None
+
+        # New indexing run can now start cleanly
+        monkeypatch.setattr("api.indexing.run_indexing_background", lambda paths, run_id=None: None)
+        restart_resp = client.post("/api/index/start", json={"folder_paths": [str(photo_dir)]})
+        assert restart_resp.status_code == 202
+    finally:
+        release_worker.set()
+        indexing_state_manager.reset_status()
+
+
+@pytest.mark.asyncio
+async def test_tc_idx_18_in_flight_commit_retry_abort_and_folder_delete_mutual_exclusion(
+    client, db_session, tmp_path, monkeypatch
+):
+    """
+    TC-IDX-18 (DEFECT-12 Part 2):
+    Verifies:
+    1. If cancel() occurs while _commit_batch_with_retry is already executing
+       register_photos_batch_atomic, DELETE /api/folders is blocked (409) until the commit
+       thread exits, after which DELETE cleans up the committed rows with zero zombies.
+    2. _commit_batch_with_retry aborts remaining retries immediately once run_id is cancelled.
+    3. execute_folder_deletion and try_start_indexing are mutually exclusive across threads.
+    4. Failed start_indexing rollback for a superseded run never clobbers a newer in-flight run.
+    """
+    import asyncio
+    import threading
+    from unittest.mock import MagicMock, patch
+    import services.indexing_service as idx_svc
+    import services.folder_manager as folder_mgr
+    from services.indexing_state import indexing_state_manager
+    from repositories.photo_repository import PhotoRepository
+
+    indexing_state_manager.reset_status()
+    photo_dir = tmp_path / "tc18_commit"
+    photo_dir.mkdir()
+    thumb_dir = tmp_path / "tc18_thumbs"
+    thumb_dir.mkdir()
+    photo_file = photo_dir / "committed.jpg"
+    Image.new("RGB", (32, 32), color="purple").save(str(photo_file), format="JPEG")
+    monkeypatch.setattr(idx_svc, "get_thumbnail_path", lambda pid: str(thumb_dir / f"{pid}.jpg"))
+
+    db_session.add(models.IndexedFolder(path=str(photo_dir)))
+    db_session.commit()
+
+    commit_entered = threading.Event()
+    release_commit = threading.Event()
+
+    def blocking_commit(db, batch_items):
+        commit_entered.set()
+        release_commit.wait(timeout=5.0)
+        for item in batch_items:
+            img_data = item["image_data"]
+            db.add(models.Image(**img_data))
+        db.commit()
+
+    def single_item_result(file_path):
+        return {
+            "image_data": {
+                "id": "tc18_committed_id",
+                "parent_dir": str(photo_dir),
+                "file_path": file_path,
+                "file_name": "committed.jpg",
+                "file_size": 100,
+                "file_mtime": time.time(),
+                "mime_type": "image/jpeg",
+            },
+            "metadata_data": {},
+            "ai_data": {"caption": "ok", "tags": [], "aesthetic_tags": [], "is_user_edited": False},
+            "embedding": [0.2] * 8,
+        }
+
+    assert indexing_state_manager.try_start_indexing() is True
+    run_id = indexing_state_manager.current_run_id
+
+    try:
+        with patch.object(idx_svc, "scan_directory", return_value=[str(photo_file)]), \
+             patch.object(idx_svc, "cleanup_zombie_records"), \
+             patch.object(idx_svc, "index_single_file_sync", side_effect=single_item_result), \
+             patch("services.photo.register_photos_batch_atomic", side_effect=blocking_commit):
+
+            bg_task = asyncio.create_task(
+                idx_svc.run_indexing_background([str(photo_dir)], run_id=run_id)
+            )
+            for _ in range(100):
+                if commit_entered.is_set():
+                    break
+                await asyncio.sleep(0.01)
+            assert commit_entered.is_set()
+
+            assert client.post("/api/index/cancel").status_code == 200
+            assert client.delete("/api/folders", params={"path": str(photo_dir)}).status_code == 409
+            assert indexing_state_manager.try_start_indexing() is False
+
+            release_commit.set()
+            await asyncio.wait_for(bg_task, timeout=3.0)
+
+        assert indexing_state_manager.status == "cancelled"
+        assert indexing_state_manager.active_run_in_flight is False
+
+        # Now delete succeeds and purges the record committed by the in-flight worker
+        with patch.object(idx_svc, "vector_repo"):
+            assert client.delete("/api/folders", params={"path": str(photo_dir)}).status_code == 200
+
+        db_session.expire_all()
+        assert db_session.query(models.Image).filter_by(id="tc18_committed_id").first() is None
+        assert db_session.query(models.IndexedFolder).filter_by(path=str(photo_dir)).first() is None
+
+        # Part B: _commit_batch_with_retry stops retrying if cancelled after attempt 0 fails
+        indexing_state_manager.reset_status()
+        assert indexing_state_manager.try_start_indexing() is True
+        retry_run_id = indexing_state_manager.current_run_id
+        attempt_counter = {"count": 0}
+
+        def fail_once_then_cancel(db, items):
+            attempt_counter["count"] += 1
+            indexing_state_manager.cancel()
+            raise RuntimeError("Transient commit failure")
+
+        with patch.object(idx_svc, "SessionLocal", return_value=MagicMock()), \
+             patch("services.photo.register_photos_batch_atomic", side_effect=fail_once_then_cancel), \
+             patch("time.sleep") as mock_sleep:
+            idx_svc._commit_batch_with_retry(
+                [{"image_data": {"id": "r1", "file_path": "/r1.jpg"}}],
+                max_attempts=3,
+                run_id=retry_run_id,
+            )
+        assert attempt_counter["count"] == 1
+        assert mock_sleep.call_count == 0
+
+        # Part C: Folder deletion in progress blocks try_start_indexing()
+        indexing_state_manager.reset_status()
+        del_dir = tmp_path / "tc18_del_mutex"
+        del_dir.mkdir()
+        db_session.add(models.IndexedFolder(path=str(del_dir)))
+        db_session.add(
+            models.Image(
+                id="tc18_del_img",
+                parent_dir=str(del_dir),
+                file_path=str(del_dir / "x.jpg"),
+                file_name="x.jpg",
+                file_size=10,
+                file_mtime=time.time(),
+                mime_type="image/jpeg",
+            )
+        )
+        db_session.commit()
+
+        concurrent_start_result = []
+        orig_purge = folder_mgr.purge_photo_records_batch
+
+        def spy_purge(*args, **kwargs):
+            concurrent_start_result.append(indexing_state_manager.try_start_indexing())
+            return orig_purge(*args, **kwargs)
+
+        with patch.object(folder_mgr, "purge_photo_records_batch", side_effect=spy_purge), \
+             patch.object(idx_svc, "vector_repo"):
+            del_resp = client.delete("/api/folders", params={"path": str(del_dir)})
+        assert del_resp.status_code == 200
+        assert concurrent_start_result == [False]
+
+        # Part D: Superseded Run 1 start_indexing exception must not clobber Run 2's in-flight tracking
+        indexing_state_manager.reset_status()
+        other_dir = tmp_path / "tc18_other"
+        other_dir.mkdir()
+
+        def failing_add_folder_after_cancel_and_restart(self, path):
+            assert indexing_state_manager.cancel() is True
+            assert indexing_state_manager.try_start_indexing() is True
+            run2_id = indexing_state_manager.current_run_id
+            assert indexing_state_manager.initialize_background_run(run_id=run2_id, track_execution=True) == run2_id
+            raise RuntimeError("Run 1 DB failure after supersede")
+
+        monkeypatch.setattr(PhotoRepository, "add_folder", failing_add_folder_after_cancel_and_restart)
+        with pytest.raises(RuntimeError, match="Run 1 DB failure after supersede"):
+            client.post("/api/index/start", json={"folder_paths": [str(other_dir)]})
+        assert indexing_state_manager.status == "processing"
+        assert indexing_state_manager.active_run_in_flight is True
+    finally:
+        release_commit.set()
+        indexing_state_manager.reset_status()
+
+
+def test_tc_idx_18_pipeline_step_cancellation_prevents_orphan_thumbnail_and_ai_inference(
+    tmp_path, monkeypatch
+):
+    """
+    TC-IDX-18 (DEFECT-12 Part 3):
+    Verifies that cancelling a run during HashStep / EXIFExtractStep aborts
+    subsequent pipeline steps before ThumbnailStep writes an orphan JPEG or
+    AIInferenceStep invokes SigLIP/Gemma.
+    """
+    from unittest.mock import MagicMock
+    import services.indexing_service as idx_svc
+    import services.pipeline as pipeline_mod
+    from services.indexing_state import indexing_state_manager
+
+    indexing_state_manager.reset_status()
+    photo_dir = tmp_path / "tc18_step_cancel"
+    photo_dir.mkdir()
+    thumb_dir = tmp_path / "tc18_step_thumbs"
+    thumb_dir.mkdir()
+    img_path = photo_dir / "step.jpg"
+    Image.new("RGB", (32, 32), color="cyan").save(str(img_path), format="JPEG")
+
+    monkeypatch.setattr(photo_service, "THUMBNAIL_CACHE_DIR", str(thumb_dir))
+    monkeypatch.setattr("services.photo.THUMBNAIL_CACHE_DIR", str(thumb_dir))
+
+    thumb_spy = MagicMock()
+    ai_spy = MagicMock()
+    monkeypatch.setattr(pipeline_mod, "generate_and_cache_thumbnail", thumb_spy)
+    monkeypatch.setattr(pipeline_mod, "get_siglip_adapter", ai_spy)
+
+    assert indexing_state_manager.try_start_indexing() is True
+    run_id = indexing_state_manager.current_run_id
+
+    orig_sha = idx_svc.calculate_sha256
+
+    def sha_then_cancel(path):
+        digest = orig_sha(path)
+        indexing_state_manager.cancel()
+        return digest
+
+    monkeypatch.setattr(idx_svc, "calculate_sha256", sha_then_cancel)
+    try:
+        result = idx_svc.index_single_file_sync(str(img_path), run_id=run_id)
+        assert result == "cancelled"
+        assert thumb_spy.call_count == 0
+        assert ai_spy.call_count == 0
+        assert list(thumb_dir.iterdir()) == []
+    finally:
+        indexing_state_manager.reset_status()
+
+
+
+
 
 

@@ -276,6 +276,30 @@ def find_folder_image_ids(db: Session, target_pair: tuple[str, str]) -> list[str
     return matched_ids
 
 
+def _acquire_folder_deletion_slot(active_state_manager) -> bool:
+    """Acquires folder deletion lock slot or falls back to status inspection for mocks."""
+    if hasattr(active_state_manager, "try_acquire_folder_deletion"):
+        if not active_state_manager.try_acquire_folder_deletion():
+            raise FolderDeletionConflictError(
+                "Cannot remove folder while indexing is in progress, paused, or cancelling."
+            )
+        return True
+
+    is_busy = (
+        active_state_manager.is_indexing_active()
+        if hasattr(active_state_manager, "is_indexing_active")
+        else (
+            active_state_manager.status in ("processing", "paused", "cancelling")
+            or bool(getattr(active_state_manager, "active_run_in_flight", False))
+        )
+    )
+    if is_busy:
+        raise FolderDeletionConflictError(
+            "Cannot remove folder while indexing is in progress, paused, or cancelling."
+        )
+    return False
+
+
 def execute_folder_deletion(
     active_db: Session,
     folder_path: str,
@@ -290,18 +314,20 @@ def execute_folder_deletion(
         active_db, normalized_target, target_prefix, folder_path
     )
     active_state_manager = state_manager or indexing_state_manager
-    if active_state_manager.status in ("processing", "paused"):
-        raise FolderDeletionConflictError("Cannot remove folder while indexing is in progress or paused.")
-
-    image_ids = find_folder_image_ids(active_db, target_pair)
-    if image_ids:
-        print(f"[Indexer] Removing {len(image_ids)} images for folder {folder_path}", flush=True)
-        purge_photo_records_batch(
-            active_db, image_ids, vector_repository=vector_repository, thumbnail_path_fn=thumbnail_path_fn
-        )
-    for folder_record in folders_to_delete:
-        active_db.delete(folder_record)
-    active_db.commit()
+    acquired_slot = _acquire_folder_deletion_slot(active_state_manager)
+    try:
+        image_ids = find_folder_image_ids(active_db, target_pair)
+        if image_ids:
+            print(f"[Indexer] Removing {len(image_ids)} images for folder {folder_path}", flush=True)
+            purge_photo_records_batch(
+                active_db, image_ids, vector_repository=vector_repository, thumbnail_path_fn=thumbnail_path_fn
+            )
+        for folder_record in folders_to_delete:
+            active_db.delete(folder_record)
+        active_db.commit()
+    finally:
+        if acquired_slot:
+            active_state_manager.release_folder_deletion()
 
 
 def remove_folder_data(

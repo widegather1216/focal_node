@@ -7,6 +7,7 @@ cleanup to folder_manager and single-photo reindexing to photo_reindex.
 """
 
 import asyncio
+import contextvars
 import hashlib
 import logging
 import os
@@ -34,6 +35,14 @@ from services.photo_reindex import reindex_single_photo_inplace as _reindex_sing
 from utils.image import extract_metadata
 
 logger = logging.getLogger("focal_node.indexing_service")
+_ACTIVE_RUN_ID_CTX: contextvars.ContextVar[Optional[int]] = contextvars.ContextVar(
+    "active_indexing_run_id", default=None
+)
+
+
+def _is_active_run_cancelled(run_id: Optional[int]) -> bool:
+    """Returns True when an explicit run_id has been cancelled or superseded."""
+    return run_id is not None and indexing_state_manager.is_run_cancelled(run_id)
 
 SUPPORTED_EXTENSIONS = {
     ".jpg", ".jpeg", ".png", ".webp",
@@ -238,24 +247,46 @@ def _resolve_hash_conflict(
             db_session.close()
 
 
-def index_single_file_sync(file_path: str) -> Union[dict, str]:
+def _run_pipeline_with_cancel_guard(
+    file_path: str, image_id: str, effective_run_id: Optional[int]
+) -> Union[dict, str]:
+    from services.pipeline import IndexingPipeline
+
+    if effective_run_id is None:
+        return IndexingPipeline().run(file_path, image_id=image_id)
+    return IndexingPipeline().run(
+        file_path,
+        image_id=image_id,
+        should_cancel=lambda: _is_active_run_cancelled(effective_run_id),
+    )
+
+
+def index_single_file_sync(file_path: str, run_id: Optional[int] = None) -> Union[dict, str]:
     """Performs hashing, pipeline inference, and prepares atomic registration payload."""
+    effective_run_id = run_id if run_id is not None else _ACTIVE_RUN_ID_CTX.get()
+    if _is_active_run_cancelled(effective_run_id):
+        return "cancelled"
     try:
         file_size = os.path.getsize(file_path)
         file_mtime = os.path.getmtime(file_path)
         should_skip, existing_or_superseded_id = _find_existing_id_or_skip(file_path, file_size, file_mtime)
         if should_skip:
-            if existing_or_superseded_id:
-                return _ensure_existing_photo_vector(file_path, existing_or_superseded_id, "skipped")
-            return "skipped"
+            if not existing_or_superseded_id:
+                return "skipped"
+            if _is_active_run_cancelled(effective_run_id):
+                return "cancelled"
+            return _ensure_existing_photo_vector(file_path, existing_or_superseded_id, "skipped")
 
         image_id = calculate_sha256(file_path)
+        if _is_active_run_cancelled(effective_run_id):
+            return "cancelled"
         conflict_status = _resolve_hash_conflict(file_path, image_id, file_size, file_mtime)
         if conflict_status is not None:
+            if _is_active_run_cancelled(effective_run_id):
+                return "cancelled"
             return _ensure_existing_photo_vector(file_path, image_id, conflict_status)
 
-        from services.pipeline import IndexingPipeline
-        pipeline_result = IndexingPipeline().run(file_path, image_id=image_id)
+        pipeline_result = _run_pipeline_with_cancel_guard(file_path, image_id, effective_run_id)
         if isinstance(pipeline_result, str):
             return pipeline_result
 
@@ -331,7 +362,11 @@ def _handle_batch_commit_failure(
     raise commit_err
 
 
-def _commit_batch_with_retry(batch_items: list[dict], max_attempts: int = 3) -> None:
+def _commit_batch_with_retry(
+    batch_items: list[dict],
+    max_attempts: int = 3,
+    run_id: Optional[int] = None,
+) -> None:
     """Saves indexed photos batch to SQLite and ChromaDB with exponential backoff retry."""
     if max_attempts < 1:
         raise ValueError(f"max_attempts must be at least 1, got {max_attempts}")
@@ -339,8 +374,14 @@ def _commit_batch_with_retry(batch_items: list[dict], max_attempts: int = 3) -> 
         return
 
     for attempt in range(max_attempts):
+        if _is_active_run_cancelled(run_id):
+            logger.info("[Indexer] Skipping batch commit before attempt %d due to cancellation (run=%s).", attempt + 1, run_id)
+            return
         commit_err = _attempt_batch_commit(batch_items)
         if commit_err is None:
+            return
+        if _is_active_run_cancelled(run_id):
+            logger.info("[Indexer] Aborting batch commit retry after failure due to cancellation (run=%s).", run_id)
             return
         _handle_batch_commit_failure(commit_err, attempt, max_attempts, len(batch_items))
 
@@ -382,7 +423,11 @@ async def _process_single_indexing_file(
         if not await indexing_state_manager.wait_if_paused(run_id):
             return "cancelled"
 
-        file_result = await asyncio.to_thread(index_single_file_sync, file_path)
+        ctx_token = _ACTIVE_RUN_ID_CTX.set(run_id)
+        try:
+            file_result = await asyncio.to_thread(index_single_file_sync, file_path)
+        finally:
+            _ACTIVE_RUN_ID_CTX.reset(ctx_token)
         if indexing_state_manager.is_run_cancelled(run_id):
             return "cancelled"
         counter[0] += 1
@@ -426,7 +471,7 @@ async def _process_indexing_chunk(
     raw_batch_items = [item for item in chunk_results if isinstance(item, dict)]
     if raw_batch_items:
         batch_items = _deduplicate_batch_items(raw_batch_items)
-        await asyncio.to_thread(_commit_batch_with_retry, batch_items)
+        await asyncio.to_thread(_commit_batch_with_retry, batch_items, run_id=run_id)
 
 
 def _finalize_indexing_status(
@@ -463,6 +508,8 @@ async def _prepare_and_scan_for_run(
     if not await _wait_if_paused(active_run_id):
         return None
     files = await asyncio.to_thread(scan_directory, folder_paths)
+    if indexing_state_manager.is_run_cancelled(active_run_id):
+        return None
     total_files = len(files)
     indexing_state_manager.update_progress(0, total_files, "", run_id=active_run_id)
     print(f"[Indexer] Starting background indexing. Found {total_files} files.", flush=True)
@@ -492,7 +539,9 @@ async def _execute_indexing_chunks(files: list[str], active_run_id: int) -> None
 
 async def run_indexing_background(folder_paths: list[str], run_id: Optional[int] = None) -> None:
     """Main background scheduler executing the indexing lifecycle without blocking the event loop."""
-    active_run_id = indexing_state_manager.initialize_background_run(run_id=run_id)
+    active_run_id = indexing_state_manager.initialize_background_run(
+        run_id=run_id, track_execution=True
+    )
     if active_run_id is None:
         logger.info("[Indexer] Skipping cancelled or superseded background run (run_id=%s).", run_id)
         return

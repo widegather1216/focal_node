@@ -1,6 +1,6 @@
 import os
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Union, Optional
+from typing import Any, Callable, Dict, Optional, Union
 from utils.image import extract_metadata
 from services.photo import generate_and_cache_thumbnail
 from services.ai_factory import get_siglip_adapter, get_gemma_adapter
@@ -75,9 +75,16 @@ class IndexingPipeline:
             AIInferenceStep()
         ]
 
-    def run(self, file_path: str, image_id: Optional[str] = None) -> Union[Dict[str, Any], str]:
+    def run(
+        self,
+        file_path: str,
+        image_id: Optional[str] = None,
+        should_cancel: Optional[Callable[[], bool]] = None,
+    ) -> Union[Dict[str, Any], str]:
         ctx = PipelineContext(file_path, image_id=image_id)
         for step in self.steps:
+            if should_cancel is not None and should_cancel():
+                return "cancelled"
             cont = step.execute(ctx)
             if not cont or ctx.status == "error":
                 return "error"

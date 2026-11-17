@@ -156,6 +156,8 @@ class _ThreadSafeAsyncEvent(asyncio.Event):
 class IndexingStateManager:
     def __init__(self):
         self._run_generation: int = 0
+        self._in_flight_run_id: Optional[int] = None
+        self._active_folder_deletions: int = 0
         self._cancelled_run_ids: set[int] = set()
         self._cancel_requested: bool = False
         self._status_dict: Dict[str, Any] = {
@@ -299,9 +301,36 @@ class IndexingStateManager:
         with self._lock:
             self._status_dict["status"] = val
 
+    @property
+    def active_run_in_flight(self) -> bool:
+        with self._lock:
+            return self._in_flight_run_id is not None
+
+    def is_indexing_active(self) -> bool:
+        """Returns True if indexing is processing, paused, cancelling, or still draining in-flight."""
+        with self._lock:
+            return (
+                self._status_dict["status"] in ("processing", "paused", "cancelling")
+                or self._in_flight_run_id is not None
+            )
+
+    def try_acquire_folder_deletion(self) -> bool:
+        """Atomically reserves a folder-deletion slot unless indexing is active or draining."""
+        with self._lock:
+            if self.is_indexing_active():
+                return False
+            self._active_folder_deletions += 1
+            return True
+
+    def release_folder_deletion(self) -> None:
+        with self._lock:
+            self._active_folder_deletions = max(0, self._active_folder_deletions - 1)
+
     def get_status_dict(self) -> Dict[str, Any]:
         with self._lock:
-            return dict(self._status_dict)
+            snapshot = dict(self._status_dict)
+            snapshot["active_run_in_flight"] = self._in_flight_run_id is not None
+            return snapshot
 
     def update_progress(
         self,
@@ -352,15 +381,33 @@ class IndexingStateManager:
                 return not self.is_run_cancelled(effective_run_id)
             await self._pause_gate.await_entry(payload)
 
+    def _reset_idle_state_locked(self, current_loop: Optional[asyncio.AbstractEventLoop]) -> Tuple[list[WaiterEntry], Any, Optional[asyncio.AbstractEventLoop]]:
+        self._run_generation += 1
+        self._status_dict = {
+            "status": "idle",
+            "total_files": 0,
+            "processed_files": 0,
+            "current_file": "",
+            "error_message": None,
+            "run_id": self._run_generation,
+        }
+        self._cancel_requested = False
+        pending_waiters, custom_event, custom_loop = self._prepare_event_transition_locked(
+            True, current_loop
+        )
+        self._pause_event = self._pause_gate
+        self._pause_loop = current_loop
+        return pending_waiters, custom_event, custom_loop
+
     def try_start_indexing(self) -> bool:
         """
         Atomically checks if indexing can start and preempts the status to 'processing'.
         Returns True if status successfully transitioned to 'processing'.
-        Returns False if indexing is already in progress or paused.
+        Returns False if indexing is active/cancelling or folder deletion is in progress.
         """
         current_loop = _get_running_loop_safe()
         with self._lock:
-            if self._status_dict["status"] in ["processing", "paused"]:
+            if self.is_indexing_active() or self._active_folder_deletions > 0:
                 return False
             self._run_generation += 1
             self._status_dict["status"] = "processing"
@@ -378,15 +425,23 @@ class IndexingStateManager:
         )
         return True
 
-    def _resolve_active_run_id_locked(self, run_id: Optional[int]) -> Optional[int]:
+    def _resolve_active_run_id_locked(
+        self, run_id: Optional[int], track_execution: bool = False
+    ) -> Optional[int]:
         if run_id is None:
+            if track_execution and self._in_flight_run_id is not None:
+                return None
             self._run_generation += 1
             return self._run_generation
         if run_id != self._run_generation or run_id in self._cancelled_run_ids:
             return None
+        if track_execution and self._in_flight_run_id not in (None, run_id):
+            return None
         return run_id
 
-    def initialize_background_run(self, run_id: Optional[int] = None) -> Optional[int]:
+    def initialize_background_run(
+        self, run_id: Optional[int] = None, track_execution: bool = False
+    ) -> Optional[int]:
         """
         Ensures processing state and active event for background task startup
         without momentarily resetting status to 'idle'.
@@ -394,10 +449,12 @@ class IndexingStateManager:
         """
         current_loop = _get_running_loop_safe()
         with self._lock:
-            active_run_id = self._resolve_active_run_id_locked(run_id)
+            active_run_id = self._resolve_active_run_id_locked(run_id, track_execution=track_execution)
             if active_run_id is None:
                 return None
 
+            if track_execution:
+                self._in_flight_run_id = active_run_id
             preserve_paused = run_id is not None and self._status_dict["status"] == "paused"
             if not preserve_paused:
                 self._status_dict["status"] = "processing"
@@ -445,6 +502,8 @@ class IndexingStateManager:
         """
         current_loop = _get_running_loop_safe()
         with self._lock:
+            if run_id is None or run_id == self._in_flight_run_id:
+                self._in_flight_run_id = None
             if run_id is not None and run_id != self._run_generation:
                 return None
             final_status = self._apply_final_status_locked(error_message, run_id)
@@ -456,24 +515,24 @@ class IndexingStateManager:
         )
         return final_status
 
+    def rollback_preempted_start(self, run_id: int) -> bool:
+        """Rolls back a failed start/sync route only if no newer run or execution owns state."""
+        current_loop = _get_running_loop_safe()
+        with self._lock:
+            if self._run_generation != run_id or self._in_flight_run_id is not None:
+                return False
+            pending_waiters, custom_event, custom_loop = self._reset_idle_state_locked(current_loop)
+        self._dispatch_event_wakeups(
+            pending_waiters, custom_event, custom_loop, current_loop, True
+        )
+        return True
+
     def reset_status(self):
         current_loop = _get_running_loop_safe()
         with self._lock:
-            self._run_generation += 1
-            self._status_dict = {
-                "status": "idle",
-                "total_files": 0,
-                "processed_files": 0,
-                "current_file": "",
-                "error_message": None,
-                "run_id": self._run_generation,
-            }
-            self._cancel_requested = False
-            pending_waiters, custom_event, custom_loop = self._prepare_event_transition_locked(
-                True, current_loop
-            )
-            self._pause_event = self._pause_gate
-            self._pause_loop = current_loop
+            self._in_flight_run_id = None
+            self._active_folder_deletions = 0
+            pending_waiters, custom_event, custom_loop = self._reset_idle_state_locked(current_loop)
         self._dispatch_event_wakeups(
             pending_waiters, custom_event, custom_loop, current_loop, True
         )
@@ -511,16 +570,23 @@ class IndexingStateManager:
     def cancel(self) -> bool:
         current_loop = _get_running_loop_safe()
         with self._lock:
-            if self._status_dict["status"] not in ["processing", "paused"]:
+            current_status = self._status_dict["status"]
+            if current_status == "cancelling":
+                return True
+            if current_status not in ("processing", "paused"):
                 return False
             self._cancel_requested = True
             if self._run_generation > 0:
                 self._record_cancelled_run(self._run_generation)
-            self._status_dict["status"] = "cancelled"
+            if self._in_flight_run_id is not None:
+                self._status_dict["status"] = "cancelling"
+                logger.info("[IndexerState] Background indexing cancellation requested (draining in-flight workers).")
+            else:
+                self._status_dict["status"] = "cancelled"
+                logger.info("[IndexerState] Background indexing cancelled.")
             pending_waiters, custom_event, custom_loop = self._prepare_event_transition_locked(
                 True, current_loop
             )
-            logger.info("[IndexerState] Background indexing cancelled.")
         self._dispatch_event_wakeups(
             pending_waiters, custom_event, custom_loop, current_loop, True
         )
