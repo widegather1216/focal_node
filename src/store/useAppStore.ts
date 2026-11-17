@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { api, ApiHttpError } from '../services/api';
 import { SearchFilters } from '../types/photo';
+import { IndexingLifecycleState } from '../types/system';
 
 export type { SearchFilters };
 
@@ -37,19 +38,23 @@ interface AppState {
   findSimilarPhotos: (photoId: string) => void;
 
   isIndexing: boolean;
-  indexingState: 'idle' | 'processing' | 'paused' | 'cancelled' | 'error';
+  indexingState: IndexingLifecycleState;
   indexingProgress: IndexingProgress | null;
   indexingError: string | null;
   indexingErrorRunId: number | null;
   dismissedErrorRunId: number | null;
   lastTerminalRunId: number;
+  currentIndexingRunId: number | null;
+  terminalEventSeq: number;
   setIndexingProgress: (progress: IndexingProgress | null) => void;
   setIsIndexing: (isIndexing: boolean) => void;
-  setIndexingState: (state: 'idle' | 'processing' | 'paused' | 'cancelled' | 'error') => void;
+  setIndexingState: (state: IndexingLifecycleState) => void;
   setIndexingError: (error: string | null) => void;
+  setCurrentIndexingRunId: (runId: number | null) => void;
   reportIndexingError: (message: string, runId?: number | null) => void;
   dismissIndexingError: () => void;
   markIndexingTerminal: (runId?: number | null) => void;
+  recordTerminalEvent: () => void;
 
   isDownloadingModel: boolean;
   setIsDownloadingModel: (isDownloading: boolean) => void;
@@ -130,6 +135,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   indexingErrorRunId: null,
   dismissedErrorRunId: null,
   lastTerminalRunId: 0,
+  currentIndexingRunId: null,
+  terminalEventSeq: 0,
   setIndexingProgress: (progress) => set({ indexingProgress: progress }),
   setIsIndexing: (isIndexing) => set({
     isIndexing,
@@ -138,9 +145,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   }),
   setIndexingState: (indexingState) => set({
     indexingState,
-    isIndexing: indexingState === 'processing' || indexingState === 'paused',
+    isIndexing:
+      indexingState === 'processing' ||
+      indexingState === 'paused' ||
+      indexingState === 'cancelling',
   }),
   setIndexingError: (indexingError) => set({ indexingError }),
+  setCurrentIndexingRunId: (currentIndexingRunId) => set({ currentIndexingRunId }),
   reportIndexingError: (message, runId = null) => set((state) => {
     if (runId !== null && runId > 0) {
       if (state.dismissedErrorRunId === runId || runId <= state.lastTerminalRunId) {
@@ -168,6 +179,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     lastTerminalRunId:
       runId !== null && runId > state.lastTerminalRunId ? runId : state.lastTerminalRunId,
   })),
+  recordTerminalEvent: () => set((state) => {
+    const activeRunId = state.currentIndexingRunId;
+    const nextTerminalRunId =
+      activeRunId !== null && activeRunId > state.lastTerminalRunId
+        ? activeRunId
+        : state.lastTerminalRunId;
+    return {
+      lastTerminalRunId: nextTerminalRunId,
+      terminalEventSeq: state.terminalEventSeq + 1,
+    };
+  }),
 
   isDownloadingModel: false,
   setIsDownloadingModel: (isDownloadingModel) => set({ isDownloadingModel }),

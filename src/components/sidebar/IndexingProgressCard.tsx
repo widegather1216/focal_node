@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { AlertTriangle, CheckCircle2, Loader2, Pause, Play, Square, X } from 'lucide-react';
 import { api } from '../../services/api';
+import { useAppStore } from '../../store/useAppStore';
 
 interface IndexingProgressCardProps {
   isIndexing: boolean;
@@ -17,9 +19,12 @@ export const IndexingProgressCard: React.FC<IndexingProgressCardProps> = ({
   indexingError,
   onDismissError,
 }) => {
+  const [isCancelSubmitting, setIsCancelSubmitting] = useState(false);
+
   const isError = indexingState === 'error' || Boolean(indexingError);
   if (!isIndexing && !indexingProgress && !isError) return null;
 
+  const isCancelling = indexingState === 'cancelling';
   const isPaused = indexingState === 'paused';
   const isProcessing = indexingState === 'processing';
   const total = indexingProgress?.total || 0;
@@ -33,22 +38,25 @@ export const IndexingProgressCard: React.FC<IndexingProgressCardProps> = ({
 
   const statusTitle = isError
     ? '인덱싱 실패'
-    : isPaused
-      ? '인덱싱 일시정지'
-      : isProcessing
-        ? total > 0
-          ? `사진 인덱싱 중 (${progressPct}%)`
-          : '폴더 스캔 중...'
-        : '인덱싱 완료';
+    : isCancelling
+      ? '인덱싱 취소 중...'
+      : isPaused
+        ? '인덱싱 일시정지'
+        : isProcessing
+          ? total > 0
+            ? `사진 인덱싱 중 (${progressPct}%)`
+            : '폴더 스캔 중...'
+          : '인덱싱 완료';
 
   const cardBorder = isError
     ? '1px solid rgba(225, 29, 72, 0.45)'
-    : isPaused
+    : isPaused || isCancelling
       ? '1px solid rgba(255, 255, 255, 0.12)'
       : '1px solid var(--border-subtle)';
 
   const renderStatusIcon = () => {
     if (isError) return <AlertTriangle size={13} color="var(--accent-focal)" style={{ flexShrink: 0 }} />;
+    if (isCancelling) return <Loader2 size={13} className="spin" color="var(--text-secondary)" style={{ flexShrink: 0 }} />;
     if (isPaused) return <Pause size={13} color="var(--text-secondary)" style={{ flexShrink: 0 }} />;
     if (isProcessing) return <Loader2 size={13} className="spin" color="var(--accent-focal)" style={{ flexShrink: 0 }} />;
     return <CheckCircle2 size={13} color="var(--accent-emerald)" style={{ flexShrink: 0 }} />;
@@ -59,6 +67,22 @@ export const IndexingProgressCard: React.FC<IndexingProgressCardProps> = ({
       await action();
     } catch (err: unknown) {
       console.error(`${actionLabel} error:`, err);
+    }
+  };
+
+  const handleCancelClick = async () => {
+    if (isCancelSubmitting || isCancelling) return;
+    setIsCancelSubmitting(true);
+    try {
+      await api.cancelIndexing();
+      const latestState = useAppStore.getState().indexingState;
+      if (latestState === 'processing' || latestState === 'paused') {
+        useAppStore.getState().setIndexingState('cancelling');
+      }
+    } catch (err: unknown) {
+      console.error('Cancel error:', err);
+    } finally {
+      setIsCancelSubmitting(false);
     }
   };
 
@@ -104,7 +128,8 @@ export const IndexingProgressCard: React.FC<IndexingProgressCardProps> = ({
               {isProcessing ? (
                 <button
                   onClick={() => runIndexingControlAction('Pause', () => api.pauseIndexing())}
-                  style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+                  disabled={isCancelSubmitting}
+                  style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: isCancelSubmitting ? 'not-allowed' : 'pointer', opacity: isCancelSubmitting ? 0.5 : 1, padding: '2px', display: 'flex', alignItems: 'center' }}
                   title="일시정지"
                 >
                   <Pause size={13} />
@@ -112,7 +137,8 @@ export const IndexingProgressCard: React.FC<IndexingProgressCardProps> = ({
               ) : (
                 <button
                   onClick={() => runIndexingControlAction('Resume', () => api.resumeIndexing())}
-                  style={{ background: 'none', border: 'none', color: 'var(--accent-focal)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+                  disabled={isCancelSubmitting}
+                  style={{ background: 'none', border: 'none', color: 'var(--accent-focal)', cursor: isCancelSubmitting ? 'not-allowed' : 'pointer', opacity: isCancelSubmitting ? 0.5 : 1, padding: '2px', display: 'flex', alignItems: 'center' }}
                   title="계속 진행"
                 >
                   <Play size={13} />
@@ -120,8 +146,9 @@ export const IndexingProgressCard: React.FC<IndexingProgressCardProps> = ({
               )}
 
               <button
-                onClick={() => runIndexingControlAction('Cancel', () => api.cancelIndexing())}
-                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }}
+                onClick={handleCancelClick}
+                disabled={isCancelSubmitting}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: isCancelSubmitting ? 'not-allowed' : 'pointer', opacity: isCancelSubmitting ? 0.5 : 1, padding: '2px', display: 'flex', alignItems: 'center' }}
                 title="취소"
               >
                 <Square size={11} fill="currentColor" />
@@ -171,7 +198,7 @@ export const IndexingProgressCard: React.FC<IndexingProgressCardProps> = ({
             <div style={{
               width: `${progressPct}%`,
               height: '100%',
-              backgroundColor: isPaused ? 'rgba(225, 29, 72, 0.4)' : 'var(--accent-focal)',
+              backgroundColor: isPaused || isCancelling ? 'rgba(225, 29, 72, 0.4)' : 'var(--accent-focal)',
               transition: 'width 0.25s ease'
             }} />
           </div>

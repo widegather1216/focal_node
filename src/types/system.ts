@@ -11,7 +11,7 @@ export interface FolderResponse {
   created_at: string;
 }
 
-export type IndexingLifecycleState = 'idle' | 'processing' | 'paused' | 'cancelled' | 'error';
+export type IndexingLifecycleState = 'idle' | 'processing' | 'paused' | 'cancelling' | 'cancelled' | 'error';
 
 export interface IndexingStatusResponse {
   status: IndexingLifecycleState;
@@ -20,6 +20,7 @@ export interface IndexingStatusResponse {
   current_file: string;
   error_message: string | null;
   run_id: number;
+  active_run_in_flight?: boolean;
 }
 
 export type ModelDownloadItemStatus = 'pending' | 'cached' | 'downloading' | 'completed' | 'error';
