@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from sqlalchemy.orm import Session
 
 from database import SessionLocal
-from models import Image as DBImage
+from models import Image as DBImage, ImageMetadata as DBImageMetadata
 from repositories.vector_repository import VectorRepository
 from services.ai_factory import get_gemma_adapter, get_siglip_adapter
 from services.folder_manager import (
@@ -29,7 +29,7 @@ from services.folder_manager import (
     remove_folder_data as _remove_folder_data_impl,
 )
 from services.indexing_state import indexing_state_manager
-from services.photo import get_thumbnail_path
+from services.photo import _prepare_chroma_metadata, get_thumbnail_path
 from services.photo_reindex import reindex_single_photo_inplace as _reindex_single_photo_impl
 from utils.image import extract_metadata
 
@@ -148,7 +148,7 @@ def run_ai_pipeline_sync(file_path: str) -> Tuple[Dict[str, Any], list[float], D
 def _find_existing_id_or_skip(
     file_path: str, file_size: int, file_mtime: float
 ) -> tuple[bool, Optional[str]]:
-    """Checks SQLite by file_path and returns (should_skip, existing_image_id_if_modified)."""
+    """Checks SQLite by file_path and returns (is_unchanged_in_sqlite, existing_image_id)."""
     db_session: Optional[Session] = None
     try:
         db_session = SessionLocal()
@@ -157,12 +157,51 @@ def _find_existing_id_or_skip(
             return False, None
         mtime_unchanged = abs(existing_by_path.file_mtime - file_mtime) < 0.01
         if mtime_unchanged and existing_by_path.file_size == file_size:
-            return True, None
+            return True, existing_by_path.id
         print(f"[Indexer] File modified. Marking for re-indexing: {file_path}", flush=True)
         return False, existing_by_path.id
     finally:
         if db_session is not None:
             db_session.close()
+
+
+def _load_chroma_metadata_for_photo(image_id: str) -> dict:
+    """Loads stored EXIF attributes from SQLite for ChromaDB vector repair without holding DB locks."""
+    db_session: Optional[Session] = None
+    try:
+        db_session = SessionLocal()
+        db_meta = db_session.query(DBImageMetadata).filter(DBImageMetadata.image_id == image_id).first()
+        if db_meta is None:
+            return _prepare_chroma_metadata({})
+        return _prepare_chroma_metadata(
+            {
+                "capture_date": db_meta.capture_date,
+                "iso": db_meta.iso,
+                "camera_model": db_meta.camera_model,
+                "lens_model": db_meta.lens_model,
+            }
+        )
+    finally:
+        if db_session is not None:
+            db_session.close()
+
+
+def _repair_missing_vector_sync(file_path: str, image_id: str) -> str:
+    """Re-embeds only the SigLIP image vector into ChromaDB, preserving SQLite ai_analysis."""
+    chroma_meta = _load_chroma_metadata_for_photo(image_id)
+    embedding = get_siglip_adapter().get_image_embedding(file_path)
+    vector_repo.upsert(ids=[image_id], embeddings=[embedding], metadatas=[chroma_meta])
+    logger.info("[Indexer] Repaired missing ChromaDB vector for %s (%s)", file_path, image_id)
+    print(f"[Indexer] Repaired missing ChromaDB vector: {file_path}", flush=True)
+    return "vector_repaired"
+
+
+def _ensure_existing_photo_vector(file_path: str, image_id: str, skip_status: str) -> str:
+    """Verifies ChromaDB vector presence for an existing SQLite photo and repairs if missing."""
+    if vector_repo.has_embedding(image_id):
+        return skip_status
+    repair_status = _repair_missing_vector_sync(file_path, image_id)
+    return repair_status if skip_status == "skipped" else skip_status
 
 
 def _safe_rollback_session(db_session: Session) -> None:
@@ -204,14 +243,16 @@ def index_single_file_sync(file_path: str) -> Union[dict, str]:
     try:
         file_size = os.path.getsize(file_path)
         file_mtime = os.path.getmtime(file_path)
-        should_skip, superseded_id = _find_existing_id_or_skip(file_path, file_size, file_mtime)
+        should_skip, existing_or_superseded_id = _find_existing_id_or_skip(file_path, file_size, file_mtime)
         if should_skip:
+            if existing_or_superseded_id:
+                return _ensure_existing_photo_vector(file_path, existing_or_superseded_id, "skipped")
             return "skipped"
 
         image_id = calculate_sha256(file_path)
         conflict_status = _resolve_hash_conflict(file_path, image_id, file_size, file_mtime)
         if conflict_status is not None:
-            return conflict_status
+            return _ensure_existing_photo_vector(file_path, image_id, conflict_status)
 
         from services.pipeline import IndexingPipeline
         pipeline_result = IndexingPipeline().run(file_path, image_id=image_id)
@@ -219,9 +260,9 @@ def index_single_file_sync(file_path: str) -> Union[dict, str]:
             return pipeline_result
 
         new_image_id = pipeline_result.get("image_data", {}).get("id")
-        if superseded_id and superseded_id != new_image_id:
+        if existing_or_superseded_id and existing_or_superseded_id != new_image_id:
             # Defer old record deletion until batch commit succeeds to avoid data loss on interrupt.
-            pipeline_result["replaces_image_id"] = superseded_id
+            pipeline_result["replaces_image_id"] = existing_or_superseded_id
         return pipeline_result
     except Exception as index_err:
         logger.error("[Indexer] Error indexing file %s: %s", file_path, index_err)
@@ -307,6 +348,7 @@ def _commit_batch_with_retry(batch_items: list[dict], max_attempts: int = 3) -> 
 _PROGRESS_STATUS_LABELS = {
     "skipped_duplicate_hash": "Skipped (Duplicate Hash)",
     "skipped": "Skipped (Already Indexed)",
+    "vector_repaired": "Repaired (Missing Vector)",
 }
 
 

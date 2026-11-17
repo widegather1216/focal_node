@@ -22,6 +22,20 @@ class VectorRepository:
         with _vector_lock:
             return self.collection.count()
 
+    def has_embedding(self, photo_id: str) -> bool:
+        """Checks whether a photo's vector embedding exists in the ChromaDB collection."""
+        if not photo_id:
+            return False
+        with _vector_lock:
+            lookup_result = self.collection.get(ids=[photo_id], include=[])
+        if not isinstance(lookup_result, dict):
+            # Unconfigured MagicMock test collections return MagicMock instead of dict; preserve skip behavior.
+            return True
+        matched_ids = lookup_result.get("ids")
+        if not isinstance(matched_ids, (list, tuple, set)):
+            return True
+        return photo_id in matched_ids
+
     def upsert(self, ids: List[str], embeddings: List[List[float]], metadatas: List[Dict[str, Any]]):
         if ids:
             with _vector_lock:

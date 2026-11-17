@@ -2412,3 +2412,249 @@ def test_tc_idx_17_canonical_match_symlink_guards_and_indexing_conflict(client, 
         assert db_session.query(models.Image).filter_by(id="tc17_folder_b_shortcut").first() is not None
 
 
+def test_tc_cf_10_chroma_self_healing_evicts_only_corrupted_system(tmp_path):
+    """
+    TC-CF-10 (Part 1 / DEFECT-09):
+    Verifies with real chromadb==1.5.9 that:
+    1. Corrupted chroma.sqlite3 triggers self-healing without crashing on
+       SharedSystemClient 'AttributeError: bindings'.
+    2. _collection and _chroma_client are synchronized and usable after healing.
+    3. Unrelated ChromaDB PersistentClient instances in SharedSystemClient remain intact.
+    """
+    import importlib.util
+    import chromadb
+    from chromadb.api.shared_system_client import SharedSystemClient
+
+    other_dir = tmp_path / "other_healthy_chroma"
+    corrupt_dir = tmp_path / "corrupted_chroma"
+    corrupt_dir.mkdir(parents=True)
+    (corrupt_dir / "chroma.sqlite3").write_bytes(b"corrupted sqlite bytes not a real db")
+
+    chroma_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "app", "chroma.py")
+    )
+    spec = importlib.util.spec_from_file_location("chroma_real_tc_cf_10", chroma_path)
+    real_chroma = importlib.util.module_from_spec(spec)
+    assert spec is not None and spec.loader is not None
+    spec.loader.exec_module(real_chroma)
+
+    other_client = chromadb.PersistentClient(path=str(other_dir))
+    other_coll = other_client.get_or_create_collection(
+        name="other_embeddings", metadata={"hnsw:space": "cosine"}
+    )
+    other_coll.upsert(ids=["keep_me"], embeddings=[[0.5] * 8], metadatas=[{"tag": "ok"}])
+
+    try:
+        real_chroma.CHROMA_DB_PATH = str(corrupt_dir)
+        real_chroma._chroma_client = None
+        real_chroma._collection = object()  # Stale sentinel must be reset during self-healing
+
+        healed_client = real_chroma.get_chroma_client()
+        assert healed_client is not None
+        assert real_chroma._collection is None
+
+        healed_coll = real_chroma.get_chroma_collection()
+        assert healed_coll is not None
+        assert healed_coll.count() == 0
+        healed_coll.upsert(ids=["rebuilt_1"], embeddings=[[0.2] * 8], metadatas=[{"tag": "new"}])
+        assert healed_coll.count() == 1
+
+        # Also verify direct get_chroma_collection() call on a fresh corrupted directory
+        corrupt_dir_2 = tmp_path / "corrupted_chroma_direct"
+        corrupt_dir_2.mkdir(parents=True)
+        (corrupt_dir_2 / "chroma.sqlite3").write_bytes(b"corrupted direct")
+        real_chroma.CHROMA_DB_PATH = str(corrupt_dir_2)
+        real_chroma._chroma_client = None
+        real_chroma._collection = None
+        healed_coll_2 = real_chroma.get_chroma_collection()
+        assert healed_coll_2.count() == 0
+
+        # Corrupted folder was backed up aside
+        backup_dirs = [
+            entry for entry in tmp_path.iterdir()
+            if entry.name.startswith("corrupted_chroma_corrupted_")
+        ]
+        assert len(backup_dirs) == 1
+
+        # Unrelated healthy SharedSystemClient must NOT have been evicted
+        assert str(other_dir) in SharedSystemClient._identifier_to_system
+        assert other_coll.count() == 1
+        assert other_coll.get(ids=["keep_me"], include=[])["ids"] == ["keep_me"]
+    finally:
+        for dir_path in (other_dir, corrupt_dir, tmp_path / "corrupted_chroma_direct"):
+            real_chroma._evict_shared_system_cache(str(dir_path))
+
+
+@pytest.mark.asyncio
+async def test_tc_cf_10_sync_recovers_missing_vectors_and_preserves_critique(
+    client, db_session, tmp_path, monkeypatch
+):
+    """
+    TC-CF-10 (Part 2 / DEFECT-09):
+    Verifies that after ChromaDB self-healing (empty collection), /api/index/sync and
+    index_single_file_sync detect missing vectors for existing SQLite photos, repair only
+    the SigLIP embeddings in-place, preserve AIAnalysis (is_user_edited, critique, scores)
+    without invoking GemmaAdapter, and skip cleanly once vectors exist.
+    """
+    from unittest.mock import MagicMock
+    import chromadb
+    import services.indexing_service as idx_svc
+    from repositories.vector_repository import VectorRepository
+    from services.indexing_state import indexing_state_manager
+
+    photo_dir = tmp_path / "photos"
+    photo_dir.mkdir()
+    chroma_dir = tmp_path / "healed_chroma"
+
+    img_a = photo_dir / "unchanged.jpg"
+    img_b = photo_dir / "touched.jpg"
+    img_c = photo_dir / "no_meta.jpg"
+    Image.new("RGB", (32, 32), color="red").save(str(img_a), format="JPEG")
+    Image.new("RGB", (32, 32), color="green").save(str(img_b), format="JPEG")
+    Image.new("RGB", (32, 32), color="blue").save(str(img_c), format="JPEG")
+
+    id_a = idx_svc.calculate_sha256(str(img_a))
+    id_b = idx_svc.calculate_sha256(str(img_b))
+    id_c = idx_svc.calculate_sha256(str(img_c))
+
+    db_session.add(models.IndexedFolder(path=str(photo_dir)))
+    db_session.add_all([
+        models.Image(
+            id=id_a,
+            parent_dir=str(photo_dir),
+            file_path=str(img_a),
+            file_name="unchanged.jpg",
+            file_size=img_a.stat().st_size,
+            file_mtime=img_a.stat().st_mtime,
+            mime_type="image/jpeg",
+            is_favorite=True,
+        ),
+        models.ImageMetadata(image_id=id_a, width=32, height=32, camera_model="Leica Q3", iso=400),
+        models.AIAnalysis(
+            image_id=id_a,
+            caption="User edited caption",
+            tags='["manual", "street"]',
+            aesthetic_tags='["monochrome"]',
+            is_user_edited=True,
+            critique="## 총평\n탁월한 구도와 명암 대비",
+            critique_en="Superb composition and tonal contrast.",
+            overall_score=9.3,
+            iaa_score=9.4,
+            iqa_score=9.1,
+            ista_score=9.0,
+        ),
+        models.Image(
+            id=id_b,
+            parent_dir=str(photo_dir),
+            file_path=str(img_b),
+            file_name="touched.jpg",
+            file_size=img_b.stat().st_size,
+            file_mtime=img_b.stat().st_mtime - 50.0,
+            mime_type="image/jpeg",
+            is_favorite=False,
+        ),
+        models.ImageMetadata(image_id=id_b, width=32, height=32, camera_model="Sony A7M4", iso=100),
+        models.AIAnalysis(
+            image_id=id_b,
+            caption="Keep touched caption",
+            tags='["landscape"]',
+            is_user_edited=True,
+            critique="Keep touched critique",
+            overall_score=8.7,
+        ),
+        models.Image(
+            id=id_c,
+            parent_dir=str(photo_dir),
+            file_path=str(img_c),
+            file_name="no_meta.jpg",
+            file_size=img_c.stat().st_size,
+            file_mtime=img_c.stat().st_mtime,
+            mime_type="image/jpeg",
+            is_favorite=False,
+        ),
+        models.AIAnalysis(
+            image_id=id_c,
+            caption="No metadata row photo",
+            tags='["minimal"]',
+            is_user_edited=False,
+        ),
+    ])
+    db_session.commit()
+
+    # Empty real ChromaDB collection simulating post-self-healing state
+    chroma_client = chromadb.PersistentClient(path=str(chroma_dir))
+    real_collection = chroma_client.get_or_create_collection(
+        name="photo_embeddings", metadata={"hnsw:space": "cosine"}
+    )
+    assert real_collection.count() == 0
+
+    mock_siglip = MagicMock()
+    mock_siglip.get_image_embedding.side_effect = lambda p: (
+        [0.9, 0.1, 0.0, 0.0] if p == str(img_a)
+        else ([0.8, 0.2, 0.0, 0.0] if p == str(img_b) else [0.1, 0.9, 0.0, 0.0])
+    )
+    mock_siglip.get_text_embedding.return_value = [0.9, 0.1, 0.0, 0.0]
+    mock_gemma = MagicMock()
+
+    monkeypatch.setattr("repositories.vector_repository.get_chroma_collection", lambda: real_collection)
+    monkeypatch.setattr("chroma.get_chroma_collection", lambda: real_collection)
+    monkeypatch.setattr("services.indexing_service.get_siglip_adapter", lambda: mock_siglip)
+    monkeypatch.setattr("services.indexing_service.get_gemma_adapter", lambda: mock_gemma)
+    monkeypatch.setattr("services.search_service.get_siglip_adapter", lambda: mock_siglip)
+
+    try:
+        # 1. Direct single-file repair handles missing ImageMetadata row safely
+        assert idx_svc.index_single_file_sync(str(img_c)) == "vector_repaired"
+        assert real_collection.count() == 1
+        assert VectorRepository().has_embedding(id_c) is True
+
+        # 2. Full /api/index/sync recovers remaining missing vectors (unchanged + mtime-touched)
+        indexing_state_manager.reset_status()
+        sync_resp = client.post("/api/index/sync")
+        assert sync_resp.status_code == 202
+
+        assert real_collection.count() == 3
+        repo = VectorRepository()
+        assert repo.has_embedding(id_a) is True
+        assert repo.has_embedding(id_b) is True
+        assert repo.has_embedding(id_c) is True
+        assert repo.get_embedding_by_id(id_a) is not None
+
+        # 3. GemmaAdapter was never called & all user edits / critiques remain intact
+        mock_gemma.generate_caption_and_tags.assert_not_called()
+        db_session.expire_all()
+
+        img_a_row = db_session.query(models.Image).filter_by(id=id_a).first()
+        ai_a_row = db_session.query(models.AIAnalysis).filter_by(image_id=id_a).first()
+        assert img_a_row.is_favorite is True
+        assert ai_a_row.is_user_edited is True
+        assert ai_a_row.caption == "User edited caption"
+        assert json.loads(ai_a_row.tags) == ["manual", "street"]
+        assert ai_a_row.critique == "## 총평\n탁월한 구도와 명암 대비"
+        assert ai_a_row.critique_en == "Superb composition and tonal contrast."
+        assert ai_a_row.overall_score == pytest.approx(9.3)
+        assert ai_a_row.iaa_score == pytest.approx(9.4)
+        assert ai_a_row.iqa_score == pytest.approx(9.1)
+        assert ai_a_row.ista_score == pytest.approx(9.0)
+
+        ai_b_row = db_session.query(models.AIAnalysis).filter_by(image_id=id_b).first()
+        assert ai_b_row.is_user_edited is True
+        assert ai_b_row.critique == "Keep touched critique"
+        assert ai_b_row.overall_score == pytest.approx(8.7)
+
+        # 4. Subsequent sync/single check skips once vectors are present
+        assert idx_svc.index_single_file_sync(str(img_a)) == "skipped"
+        assert idx_svc.index_single_file_sync(str(img_b)) == "skipped"
+
+        # 5. Similar photo search works again using recovered embeddings
+        sim_resp = client.post("/api/search/similar", json={"photo_id": id_a, "limit": 5, "offset": 0})
+        assert sim_resp.status_code == 200
+        sim_ids = [item["id"] for item in sim_resp.json()]
+        assert id_b in sim_ids
+    finally:
+        indexing_state_manager.reset_status()
+        import chroma as chroma_mod
+        chroma_mod._evict_shared_system_cache(str(chroma_dir), client=chroma_client)
+
+
+
