@@ -1,17 +1,17 @@
 # 🧭 Focal Node: Master Control Tower (Living Wiki Hub)
 
 > 외부 클라우드 전송 없이 Mac Native(Apple MLX & PyTorch MPS)로 구동되는 **프라이버시 보호 로컬 사진 관리 및 AI 시맨틱 검색/비평 데스크탑 플랫폼**입니다.
-> **최종 업데이트**: 2026-11-17 (by `deep-bug-hunter`)
+> **최종 업데이트**: 2026-11-17 (by `systematic-debugger`)
 
 ---
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
-- **Active 도메인**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) *(`DEFECT-12~17` 6건 해결 대기)*
-- **현재 단계 (Stage)**: `🩹 Debugging (01_indexing_storage DEFECT-12~17 해결 중)`
-- **직전 완료 작업**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) 3-Lens 딥버그 헌팅 및 실증 프로빙 완료 (`DEFECT-12` 취소-삭제/재시작 인플라이트 워커 레이스, `DEFECT-13` `list_photos` 하위 폴더·NFD 누락, `DEFECT-14` `handleReindex` 캐시 미갱신·사진 전환 오염, `DEFECT-15` 즐겨찾기 `selectedFolder=null`·`photoDetail` 캐시 분열, `DEFECT-16` 내보내기 선택 해제 후 stale 피드백 누수, `DEFECT-17` 세로 초장축 JPEG 65,500px 초과 `OSError` 크래시 총 6건 발권)
+- **Active 도메인**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) *(`DEFECT-13~17` 5건 해결 대기)*
+- **현재 단계 (Stage)**: `🩹 Debugging (01_indexing_storage DEFECT-13~17 해결 중)`
+- **직전 완료 작업**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) `DEFECT-12` 해결 완료 (`IndexingStateManager` `_in_flight_run_id`·`"cancelling"` 드레인 상태·폴더 삭제 상호배제 슬롯·`IndexingPipeline.run` 스텝 취소 가드·`_commit_batch_with_retry` 재시도 취소 중단·프론트엔드 `'cancelling'` 잠금 및 `terminalEventSeq` 역전 차단, `TC-IDX-18` 3종·전체 `pytest` `168 passed, 1 deselected`·`tsc && vite build` PASS)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"01_indexing_storage 도메인의 DEFECT-12 티켓 해결해줘"` *(`systematic-debugger`로 순차 해결 시작)*
+  > `"01_indexing_storage 도메인의 DEFECT-13 티켓 해결해줘"` *(`systematic-debugger`로 순차 해결 계속)*
 
 ---
 
@@ -20,7 +20,7 @@
 | 도메인 (Bounded Context) | 생명주기 상태 | 구현 진척도 (Active Step 1~4) | QA 인수 통과율 | 미해결 티켓 (`🚨D` / `🧐R`) | 최근 작업 요약 |
 | :--- | :--- | :---: | :---: | :---: | :--- |
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `12/12 (100%)` | `0 / 0` | `DEFECT-01~11`·`REFACTOR-01` 전수 해결 완료(`save_binary_file` 경로 검증·`tauri.conf.json` CSP 적용), Sign-Off 복귀 |
-| 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `14/23 (61%)` | `6 / 0` | `deep-bug-hunter` 딥버그 헌팅으로 `DEFECT-12~17` 6건 발권(취소 레이스·하위폴더 NFD·캐시 분열·JPEG 65,500px 한계), 해결 대기 |
+| 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `15/23 (65%)` | `5 / 0` | `DEFECT-12` 해결 완료(취소 인플라이트 워커 드레인·폴더삭제 상호배제), `DEFECT-13~17` 5건 해결 대기 |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 0` | `REFACTOR-01` 해결 완료(SigLIP 폴백·`search.py` 로깅·`similar:` 버튼 연결), RRF·스마트 앨범 Step 1~4 대기 |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `15/15 (100%)` | `0 / 0` | `DEFECT-01~03`·`REFACTOR-01~08` 전수 해결 완료 (Headless MPS/MLX 가드·ADR-05 레거시 정리·300줄 이하 분할), Sign-Off 완료 |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 🛠️ Implementing | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 0` | `REFACTOR-01~02` 전수 해결 완료(`src/` 전역 `any` 0건·`api.ts`/훅/컴포넌트 타입 엄격화), 차트 드릴다운 Step 3~4 대기 |
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-17]` `[systematic-debugger]` [`01_indexing_storage`]**: `DEFECT-12` 결함 해결 완료 (`backend/app/services/indexing_state.py`에 `_in_flight_run_id`·`active_run_in_flight`·`_active_folder_deletions` 상호 배제 슬롯·`rollback_preempted_start` 도입 및 `initialize_background_run(..., track_execution=True)` 연동으로 워커 스레드 실행 중 `cancel()` 시 `"cancelling"` 드레인 상태 유지/2연타 멱등 `True`/미실행 호출 즉시 `"cancelled"` 호환, `folder_manager.py` `execute_folder_deletion` ↔ `try_start_indexing` `409`/`400` 상호 배제, `pipeline.py` 스텝별 취소 가드, `indexing_service.py` `_ACTIVE_RUN_ID_CTX` 전파·`_commit_batch_with_retry` 재시도 취소 중단·스캔 취소 로그 차단, `src/types/system.ts`·`useAppStore.ts`·`useIndexingStatus.ts`·`useTauriEvents.ts`·`IndexingProgressCard.tsx` `'cancelling'` 잠금/500ms 폴링/`terminalEventSeq` 역전 차단 적용; `TC-IDX-18` 3종·전체 `pytest` `168 passed, 1 deselected`·`tsc && vite build` 전수 PASS).
 
 - **`[2026-11-17]` `[deep-bug-hunter]` [`01_indexing_storage`]**: 3-Lens 다중 관점 적대적 딥버그 헌팅 및 비파괴 실증 마이크로 프로빙 완료 (`IndexingStateManager.cancel()` 조기 상태 해제로 인한 인플라이트 워커/폴더삭제/재시작 레이스 `DEFECT-12`, `PhotoRepository.list_photos` `parent_dir ==` 정확 일치로 인한 하위 폴더·NFD 경로 누락 `DEFECT-13`, `usePhotoDetail.handleReindex` `photoDetail` 캐시 미갱신·사진 전환 버퍼 오염 `DEFECT-14`, `useToggleFavoriteMutation` `selectedFolder=null` 하드코딩·`photoDetail` 미동기화 `DEFECT-15`, `usePhotoExport` 선택 해제 후 인플라이트 stale 피드백 누수 `DEFECT-16`, `_resize_image_to_jpeg_bytes` 세로 초장축 65,500px 초과 `OSError` 크래시 `DEFECT-17` 총 `DEFECT 6건` 등록).
 

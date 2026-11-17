@@ -1,8 +1,8 @@
 # 🧪 [01_indexing_storage] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-12~17 해결 대기)`
+- **검증 상태**: `🩹 Debugging (DEFECT-13~17 해결 대기)`
 - **인수 조건 통과율**: `1 / 4 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 6건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 5건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -60,7 +60,7 @@
 | **Boundary**| `TC-IDX-15` | IndexingStateManager 크로스 스레드 루프 바인딩 | 백그라운드 스레드 pause/resume | call_soon_threadsafe 안전 전달 | `PASS (Fixed in DEFECT-09)` |
 | **Negative**| `TC-IDX-16` | 사진 내보내기 실패 시 에러 보존 및 UI 피드백 | 0장 내보내기 에러 응답 수신 | 허위 녹색 완료 차단 및 실패 안내 | `PASS (Fixed in DEFECT-10)` |
 | **Security**| `TC-IDX-17` | 폴더 삭제 시 미등록 상위 경로 재귀 삭제 차단 | DELETE /api/folders?path=/ | 미등록 상위 경로 요청 거부 및 데이터 보호 | `PASS (Fixed in DEFECT-11)` |
-| **Boundary**| `TC-IDX-18` | 인덱싱 취소 직후 폴더 삭제 및 재시작 동시성 격리 | 워커 스레드 실행 중 cancel ➔ delete/start | 인플라이트 워커 종료 전 삭제/재시작 차단 및 좀비 방지 | `FAIL (DEFECT-12)` |
+| **Boundary**| `TC-IDX-18` | 인덱싱 취소 직후 폴더 삭제 및 재시작 동시성 격리 | 워커 스레드 실행 중 cancel ➔ delete/start | 인플라이트 워커 종료 전 삭제/재시작 차단 및 좀비 방지 | `PASS (Fixed in DEFECT-12)` |
 | **Happy** | `TC-IDX-19` | 폴더 필터 조회 시 하위 디렉터리 및 NFD/NFC 정규화 | 하위 폴더/한글 NFD 포함 폴더 선택 | 하위 디렉터리 및 NFD/NFC 사진 정상 조회 | `FAIL (DEFECT-13)` |
 | **Boundary**| `TC-IDX-20` | 단일 사진 재분석 캐시 동기화 및 사진 전환 격리 | 상세 재분석 중 타 사진 선택 또는 완료 대기 | `photoDetail` 캐시 즉시 갱신 및 전환 후 버퍼 오염 차단 | `FAIL (DEFECT-14)` |
 | **Boundary**| `TC-IDX-21` | 상세 패널/갤러리 즐겨찾기 토글 양방향 캐시 동기화 | 폴더 선택 중 상세 패널 하트 토글 | `photos` 및 `photoDetail` 캐시 모두 서버 상태와 일치 | `FAIL (DEFECT-15)` |
@@ -105,10 +105,11 @@
 - **현재 상태**: 🟢 RESOLVED — 등록 폴더 정확 일치·리프 심볼릭 링크 비확장·활성 인덱싱 409 차단 및 UI 에러 전파 (`TC-IDX-17`) | 회귀: PASS (151 passed)
 
 ### [DEFECT-12] 인덱싱 취소(`cancel()`) 직후 인플라이트 워커 스레드 종료 전 조기 상태 해제로 인한 좀비 사진 잔류 및 중복 인덱서 실행
-- **현재 상태**: 🟡 OPEN
-- **심각도**: 🟠 P1 High (Concurrency Race / Zombie Orphaned State)
-- **발생 위치**: [`backend/app/services/indexing_state.py#L355-L527`](../../../backend/app/services/indexing_state.py#L355-L527), [`backend/app/services/indexing_service.py#L403-L515`](../../../backend/app/services/indexing_service.py#L403-L515), [`backend/app/services/folder_manager.py#L279-L305`](../../../backend/app/services/folder_manager.py#L279-L305), [`src/hooks/useIndexingStatus.ts#L99-L116`](../../../src/hooks/useIndexingStatus.ts#L99-L116)
-- **증상 및 재현**: `cancel()`이 백그라운드 태스크와 이미 진입한 `asyncio.to_thread` 워커(`_commit_batch_with_retry`, `index_single_file_sync`) 종료 전에 즉시 `status="cancelled"`로 전이하고 `try_start_indexing()`/`execute_folder_deletion()`은 `status in ("processing", "paused")`만 검사해, 취소 직후 폴더 삭제 시 고아 사진/벡터가 재삽입되거나 중복 인덱서가 동시 실행됨 (`✅ Empirical Probe Reproduced`).
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`backend/app/services/indexing_state.py`](../../../backend/app/services/indexing_state.py), [`backend/app/services/indexing_service.py`](../../../backend/app/services/indexing_service.py), [`backend/app/services/folder_manager.py`](../../../backend/app/services/folder_manager.py), [`backend/app/services/pipeline.py`](../../../backend/app/services/pipeline.py), [`backend/app/api/indexing.py`](../../../backend/app/api/indexing.py), [`src/types/system.ts`](../../../src/types/system.ts), [`src/store/useAppStore.ts`](../../../src/store/useAppStore.ts), [`src/hooks/useIndexingStatus.ts`](../../../src/hooks/useIndexingStatus.ts), [`src/hooks/useTauriEvents.ts`](../../../src/hooks/useTauriEvents.ts), [`src/components/sidebar/IndexingProgressCard.tsx`](../../../src/components/sidebar/IndexingProgressCard.tsx)
+  - **원인 및 조치**: Devil's Advocate 검증을 거쳐 `IndexingStateManager`에 `_in_flight_run_id`·`active_run_in_flight`·`_active_folder_deletions` 상호 배제 슬롯·`rollback_preempted_start`를 도입하고, `run_indexing_background`가 `initialize_background_run(..., track_execution=True)`로 진입한 뒤 `cancel()` 호출 시 워커 종료 전까지 `"cancelling"` 드레인 상태를 유지(2연타 멱등 `True`, 미실행 상태에서는 즉시 `"cancelled"` 호환 유지)하며 `finalize_run` 종료 시점에만 `"cancelled"` 및 `active_run_in_flight=False`로 해제하도록 교정함. 또한 `folder_manager.execute_folder_deletion` ↔ `try_start_indexing` 원자적 상호 배제(`409`/`400`), `IndexingPipeline.run` 스텝별 취소 가드(고아 썸네일/VLM 지연 차단), `_commit_batch_with_retry` 재시도 취소 중단, 프론트엔드 `'cancelling'` 잠금 유지(`isIndexing=true`, 500ms 폴링) 및 `terminalEventSeq` 기반 Tauri↔Polling 상태 역전 차단을 적용함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_18 -v` (`3 passed`), `./venv/bin/pytest backend/tests/ -k "not test_base_keep_alive_model_lifecycle" -q` (`168 passed, 1 deselected`), `npx tsc --noEmit && npm run build` (`PASS`, `0 Errors`)
 
 ### [DEFECT-13] `PhotoRepository.list_photos`의 `parent_dir ==` 정확 일치 필터로 인한 하위 폴더 및 macOS NFD 경로 사진 전면 누락
 - **현재 상태**: 🟡 OPEN
