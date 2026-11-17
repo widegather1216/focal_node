@@ -7,19 +7,19 @@
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
-- **Active 도메인**: [`00_core_foundation`](./features/00_core_foundation/README.md) *(`DEFECT-09` 해결 완료 / P1 2건 `DEFECT-10~11` 해결 대기)*
-- **현재 단계 (Stage)**: `🩹 Debugging (00_core_foundation DEFECT-10~11 해결 대기 / 04_studio_ui_analytics Step 3~4 대기)`
-- **직전 완료 작업**: [`00_core_foundation`](./features/00_core_foundation/README.md) `DEFECT-09` 해결 완료 (`chroma.py` `SharedSystemClient` 대상 경로 정밀 제거·안전 `stop()`·`_collection` 동기화 Self-Healing 및 `VectorRepository.has_embedding()`·`indexing_service.py` `_repair_missing_vector_sync()` In-place 벡터 복구·`ai_analysis` 100% 보존, `TC-CF-10` 포함 `43 passed`·`pytest 164 passed`·`tsc` PASS)
+- **Active 도메인**: [`00_core_foundation`](./features/00_core_foundation/README.md) *(`DEFECT-10` 해결 완료 / P1 1건 `DEFECT-11` 해결 대기)*
+- **현재 단계 (Stage)**: `🩹 Debugging (00_core_foundation DEFECT-11 해결 대기 / 04_studio_ui_analytics Step 3~4 대기)`
+- **직전 완료 작업**: [`00_core_foundation`](./features/00_core_foundation/README.md) `DEFECT-10` 해결 완료 (`mlx_adapters.py` `GemmaAdapter.generate_caption_and_tags()` `RuntimeError` 시 `clear_mlx_cache(); gc.collect()` 후 `raise`·일반 `Exception` 로깅 후 `raise`로 빈 메타데이터 은폐 차단 및 `AIInferenceStep`/`index_single_file_sync` 단위 오류 격리·재동기화 복구 검증, `TC-CF-11` 2종 포함 `pytest 166 passed`·`tsc` PASS)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"00_core_foundation 도메인의 DEFECT-10 티켓 해결해줘"` *(`systematic-debugger`로 다음 P1 결함 해결)*
+  > `"00_core_foundation 도메인의 DEFECT-11 티켓 해결해줘"` *(`systematic-debugger`로 마지막 P1 결함 해결)*
 
 ---
 
 ## 📊 2. 전체 도메인 진행 현황판 (Master Progress Matrix)
 
 | 도메인 (Bounded Context) | 생명주기 상태 | 구현 진척도 (Active Step 1~4) | QA 인수 통과율 | 미해결 티켓 (`🚨D` / `🧐R`) | 최근 작업 요약 |
-| :--- | :--- :---: | :---: | :---: | :---: | :--- |
-| 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `10/12 (83%)` | `2 / 0` | `DEFECT-09` 해결 완료(ChromaDB `SharedSystemClient` Self-Healing 및 누락 벡터 In-place 복구), `DEFECT-10~11` 2건 대기 |
+| :--- | :--- | :---: | :---: | :---: | :--- |
+| 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `11/12 (92%)` | `1 / 0` | `DEFECT-10` 해결 완료(`GemmaAdapter.generate_caption_and_tags` 예외 재전파 및 파이프라인 오류 격리·재동기화 복구), `DEFECT-11` 1건 대기 |
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `14/17 (82%)` | `0 / 0` | DEFECT-01~11·REFACTOR-01~02 전수 해결 완료(`folder_manager.py`·`photo_reindex.py` 분리, `ActionBar`/`Sidebar` 경량화), Active Step 1 대기 |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 0` | `REFACTOR-01` 해결 완료(SigLIP 폴백·`search.py` 로깅·`similar:` 버튼 연결), RRF·스마트 앨범 Step 1~4 대기 |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `15/15 (100%)` | `0 / 0` | `DEFECT-01~03`·`REFACTOR-01~08` 전수 해결 완료 (Headless MPS/MLX 가드·ADR-05 레거시 정리·300줄 이하 분할), Sign-Off 완료 |
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-17]` `[systematic-debugger]` [`00_core_foundation`]**: `DEFECT-10` 결함 해결 완료 (`73f6c10` / `backend/app/services/mlx_adapters.py` `GemmaAdapter.generate_caption_and_tags()`에서 `RuntimeError` 시 `logger.error` + `clear_mlx_cache(); gc.collect()` 복구 후 `raise`, 일반 `Exception`도 로깅 후 `raise`하도록 수정해 빈 딕셔너리(`{"caption": "", "tags": [], "aesthetic_tags": []}`) 은폐 반환을 제거하고 `finally` `_release_model_request()`로 `active_requests`를 안전 해제함; `pipeline.py` `AIInferenceStep.execute()` 및 `indexing_service.py` `index_single_file_sync()`의 단일 파일 `"error"` 격리·동일 청크 정상 파일 커밋·SQLite/ChromaDB 미저장 및 후속 `/api/index/sync` 재시도·`reindex_single_photo_inplace()` 기존 DB 보존 확인; `test_backend_hardening.py` `TC-CF-11` 2종 포함 전체 `pytest`(`166 passed`)·`tsc --noEmit` 전수 PASS).
 
 - **`[2026-11-17]` `[systematic-debugger]` [`00_core_foundation`]**: `DEFECT-09` 결함 해결 완료 (`fdd438e` / `backend/app/chroma.py`에 `_resolve_system_identifiers`·`_evict_shared_system_cache`·`_backup_corrupted_chroma_dir`·`_heal_chroma_client_locked`를 도입해 `chromadb==1.5.9` 손상 `chroma.sqlite3` Self-Healing 시 타 클라이언트를 보존하면서 실패 경로의 `System`만 `SharedSystemClient`에서 정밀 제거·안전 `stop()` 및 `_collection = None` 동기화로 `AttributeError: bindings` 크래시 해소, `VectorRepository.has_embedding()` 추가 및 `indexing_service.py` `_find_existing_id_or_skip()`·`_resolve_hash_conflict()`·`_ensure_existing_photo_vector()`·`_repair_missing_vector_sync()`로 누락 벡터 감지 시 `GemmaAdapter`·SQLite 덮어쓰기 없이 SigLIP 2 임베딩만 In-place 업서트해 `is_user_edited`·`critique`·`overall_score` 100% 보존; `test_backend_hardening.py` `TC-CF-10` 2종 포함 `43 passed`·전체 `pytest`(`164 passed`)·`tsc --noEmit` 전수 PASS).
 

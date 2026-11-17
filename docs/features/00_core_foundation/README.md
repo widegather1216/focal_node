@@ -1,8 +1,8 @@
 # 🏛️ [00_core_foundation] Core Foundation & System Architecture
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-09 해결 완료 — DEFECT-10~11 2건 해결 대기)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-10 해결 완료 — DEFECT-11 1건 해결 대기)`
 - **구현 진척도**: `[■■■■] 4/4 Steps`
-- **미해결 티켓 현황**: `🚨 DEFECT: 2건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 1건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -29,16 +29,14 @@
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-11-17 / systematic-debugger / 00_core_foundation DEFECT-09 해결 및 회귀 검증 완료 (fdd438e)`
-- **조치 요약 (`DEFECT-09` RESOLVED)**:
-  - `backend/app/chroma.py`: `_resolve_system_identifiers()`, `_evict_shared_system_cache()`, `_backup_corrupted_chroma_dir()`, `_heal_chroma_client_locked()` 도입으로 손상 `chroma.sqlite3` Self-Healing 시 해당 경로의 실패 `System`만 `SharedSystemClient`에서 정밀 제거·안전 `stop()` 후 `_collection = None` 동기화·재초기화(`AttributeError: bindings` 해소 및 타 클라이언트 보존).
-  - `backend/app/repositories/vector_repository.py`: `has_embedding(photo_id)` 추가로 실제 Chroma `dict["ids"]` 누락 판정 및 `conftest.py` 미설정 `MagicMock` 환경 호환 보장.
-  - `backend/app/services/indexing_service.py`: `_find_existing_id_or_skip()`·`_resolve_hash_conflict()`·`_ensure_existing_photo_vector()`·`_repair_missing_vector_sync()`로 누락 벡터 감지 시 SQLite `ImageMetadata` + SigLIP 2 임베딩만 In-place 업서트(`"vector_repaired"`)하여 `is_user_edited`·`critique`·`overall_score` 100% 보존 및 `GemmaAdapter` 미호출.
-  - `backend/tests/test_backend_hardening.py`: `TC-CF-10` 회귀 테스트 2종(실제 `chromadb==1.5.9` 손상 `chroma.sqlite3` Self-Healing 격리 복구 및 `/api/index/sync`·`index_single_file_sync` 누락 벡터 복구·비평 보존·유사 검색 복원) 추가.
-- **남은 핵심 결함 (`DEFECT-10~11`, 2건)**:
-  - `DEFECT-10` (🟠 P1): `GemmaAdapter.generate_caption_and_tags` 예외 삼킴으로 빈 메타데이터 커밋 및 재인덱싱 영구 스킵
+- **직전 완료 작업**: `2026-11-17 / systematic-debugger / 00_core_foundation DEFECT-10 해결 및 회귀 검증 완료 (73f6c10)`
+- **조치 요약 (`DEFECT-10` RESOLVED)**:
+  - `backend/app/services/mlx_adapters.py`: `GemmaAdapter.generate_caption_and_tags()`에서 `RuntimeError` 시 `logger.error` + `clear_mlx_cache(); gc.collect()` 복구 후 `raise`, 일반 `Exception`도 로깅 후 `raise`하도록 교정해 빈 딕셔너리(`{"caption": "", "tags": [], "aesthetic_tags": []}`) 은폐 반환 제거(`finally`의 `_release_model_request()`가 `active_requests` 안전 해제).
+  - 연쇄 영향 검증: `pipeline.py` `AIInferenceStep.execute()`와 `indexing_service.py` `index_single_file_sync()`가 실패 파일 1건만 `"error"`로 격리해 동일 청크의 정상 파일 커밋 및 전체 인덱싱 루프를 보존하고, 실패 파일은 SQLite/ChromaDB에 미저장되어 다음 `/api/index/sync` 시 재시도됨을 실증(`reindex_single_photo_inplace()` 기존 DB 데이터 보존 포함).
+  - `backend/tests/test_backend_hardening.py`: `TC-CF-11` 회귀 테스트 2종(`test_tc_cf_11_gemma_caption_inference_raises_and_clears_cache`, `test_tc_cf_11_pipeline_error_isolation_and_sync_retry`) 추가.
+- **남은 핵심 결함 (`DEFECT-11`, 1건)**:
   - `DEFECT-11` (🟠 P1): Tauri IPC `save_binary_file` 무검증 임의 파일 쓰기 및 `tauri.conf.json` `"csp": null`
-- **검증 명령어**: `./venv/bin/pytest backend/tests/test_backend_hardening.py backend/tests/test_api_indexing.py backend/tests/test_api_search.py -v` (`43 passed`), `./venv/bin/pytest backend/tests/ -q` (`164 passed`), `npx tsc --noEmit` (`PASS`)
+- **검증 명령어**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k "tc_cf_11" -v` (`2 passed`), `./venv/bin/pytest backend/tests/ -q` (`166 passed`), `npx tsc --noEmit` (`PASS`)
 - **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - `systematic-debugger`로 다음 P1 티켓 `DEFECT-10` 해결 진행 권장 (`"00_core_foundation 도메인의 DEFECT-10 티켓 해결해줘"`).
+  - `systematic-debugger`로 마지막 P1 티켓 `DEFECT-11` 해결 진행 권장 (`"00_core_foundation 도메인의 DEFECT-11 티켓 해결해줘"`).
   - (교차 도메인 참고) `01_indexing_storage`의 `folder_manager.py#L50-L65` `purge_photo_records_batch`도 `db.commit()` 전 썸네일/Chroma 선삭제 경합이 존재함.

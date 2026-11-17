@@ -1,8 +1,8 @@
 # 🧪 [00_core_foundation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-09 해결 완료 — DEFECT-10~11 2건 해결 대기)`
-- **인수 조건 통과율**: `10 / 12 (83%)`
-- **미해결 티켓**: `🚨 DEFECT: 2건` | `🧐 REFACTOR: 0건`
+- **검증 상태**: `🩹 Debugging (DEFECT-10 해결 완료 — DEFECT-11 1건 해결 대기)`
+- **인수 조건 통과율**: `11 / 12 (92%)`
+- **미해결 티켓**: `🚨 DEFECT: 1건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -34,7 +34,7 @@
 | **Boundary**| `TC-CF-08` | 활성 VLM 요청 중 동시 비평 취소/언로드 경합 | `active_requests == 1` 중 `unload_model` | 활성 추론 보호 및 `NoneType` 크래시 방지 | `PASS (Fixed in DEFECT-07)` |
 | **Negative**| `TC-CF-09` | `huggingface_hub==1.21.0` 손상 인덱스/샤드 재복구 | 손상된 `index.json` 로컬 캐시 잔존 | `force_download=True`로 정상 덮어쓰기 복구 | `PASS (Fixed in DEFECT-08)` |
 | **Negative**| `TC-CF-10` | ChromaDB Self-Healing 복구 및 벡터 재동기화 | 손상된 `chroma.sqlite3` 주입 후 기동/sync | 크래시 없이 초기화 및 누락 벡터 재임베딩 | `PASS (Fixed in DEFECT-09)` |
-| **Negative**| `TC-CF-11` | `GemmaAdapter` 추론 예외 시 파이프라인 전파 | MLX OOM/`RuntimeError` 발생 | 빈 메타데이터 커밋 차단 및 오류 격리 | `FAIL (DEFECT-10)` |
+| **Negative**| `TC-CF-11` | `GemmaAdapter` 추론 예외 시 파이프라인 전파 | MLX OOM/`RuntimeError` 발생 | 빈 메타데이터 커밋 차단 및 오류 격리 | `PASS (Fixed in DEFECT-10)` |
 | **Security**| `TC-CF-12` | Tauri `save_binary_file` IPC 경로/CSP 경계 검증 | 임의 시스템 경로 쓰기 요청 | 허용 경로/확장자 외 차단 및 CSP 적용 | `FAIL (DEFECT-11)` |
 
 ---
@@ -93,11 +93,11 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py backend/tests/test_api_indexing.py backend/tests/test_api_search.py -v` (`43 passed`, `TC-CF-10` Red ➔ Green) & `./venv/bin/pytest backend/tests/ -q` (`164 passed`) & `npx tsc --noEmit` (`PASS`)
 
 ### [DEFECT-10] `GemmaAdapter.generate_caption_and_tags` 예외 은폐로 빈 AI 메타데이터 영구 커밋 및 재인덱싱 스킵
-- **심각도**: 🟠 P1 High (`Silent Degradation / Data Loss`) | **실증**: `✅ Empirical Probe Reproduced`
-- **위치**: [`backend/app/services/mlx_adapters.py#L145-L166`](../../../backend/app/services/mlx_adapters.py#L145-L166), [`pipeline.py#L53-L66`](../../../backend/app/services/pipeline.py#L53-L66), [`indexing_service.py#L148-L165`](../../../backend/app/services/indexing_service.py#L148-L165)
-- **근본 원인 및 증거**: `generate_caption_and_tags()`가 `RuntimeError`/일반 `Exception`을 잡아 캐시 정리 후 `{"caption": "", "tags": [], "aesthetic_tags": []}`를 정상 반환함을 프로브로 실증. 이로 인해 `AIInferenceStep`이 성공 처리되어 SQLite에 빈 캡션/태그와 최신 `file_mtime`/`file_size`가 커밋되고 이후 Sync에서도 영구 스킵됨.
-- **최소 수정 설계**: 캐시 복구(`clear_mlx_cache(); gc.collect()`) 후 빈 딕셔너리 반환 대신 예외를 재전파(`raise`)하여 `AIInferenceStep`이 오류로 격리하도록 교정.
-- **현재 상태**: 🟡 OPEN
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`mlx_adapters.py#L156-L179`](../../../backend/app/services/mlx_adapters.py#L156-L179), [`test_backend_hardening.py#L2660-L2835`](../../../backend/tests/test_backend_hardening.py#L2660-L2835)
+  - **원인 및 조치**: `GemmaAdapter.generate_caption_and_tags()`가 `RuntimeError` 및 일반 `Exception` 발생 시 빈 딕셔너리(`{"caption": "", "tags": [], "aesthetic_tags": []}`)를 반환해 `AIInferenceStep`과 `index_single_file_sync()`가 정상 완료로 SQLite에 커밋하고 이후 `/api/index/sync`에서도 영구 스킵되던 결함을 교정함. `RuntimeError` 시 `logger.error` + `clear_mlx_cache(); gc.collect()` 복구 수행 후 `raise`, 일반 `Exception`도 로깅 후 `raise`하도록 수정함(`finally`의 `_release_model_request()`가 `active_requests`를 안전 해제). 연쇄 경로 검증 결과 `AIInferenceStep.execute()`(`pipeline.py#L53-L66`)와 `index_single_file_sync()`(`indexing_service.py#L241-L270`)가 실패 파일 1건만 `"error"`로 격리하여 같은 청크의 정상 파일은 커밋되고 실패 파일은 SQLite/ChromaDB 미저장 상태로 남아 다음 `/api/index/sync` 시 재시도되며, `reindex_single_photo_inplace()`(`run_ai_pipeline_sync`) 역시 기존 DB 캡션/태그 덮어쓰기를 방지함을 확인함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k "tc_cf_11" -v` (`2 passed`, `TC-CF-11` Red ➔ Green) & `./venv/bin/pytest backend/tests/ -q` (`166 passed`) & `npx tsc --noEmit` (`PASS`)
 
 ### [DEFECT-11] Tauri IPC `save_binary_file` 무검증 임의 파일 덮어쓰기 및 `csp: null` 보안 경계 결함
 - **심각도**: 🟠 P1 High (`Security`) | **실증**: `✅ Deterministic Trace Verified`
