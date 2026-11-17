@@ -1,8 +1,8 @@
 # 🧪 [00_core_foundation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-06 해결 완료 — DEFECT-07~11 5건 해결 대기)`
-- **인수 조건 통과율**: `7 / 12 (58%)`
-- **미해결 티켓**: `🚨 DEFECT: 5건` | `🧐 REFACTOR: 0건`
+- **검증 상태**: `🩹 Debugging (DEFECT-07 해결 완료 — DEFECT-08~11 4건 해결 대기)`
+- **인수 조건 통과율**: `8 / 12 (67%)`
+- **미해결 티켓**: `🚨 DEFECT: 4건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -31,7 +31,7 @@
 | **Boundary**| `TC-CF-05` | 다운로드 재시도 시 동시성 및 파일 락 정합성 | 다운로드 중 POST /download | 중복 스레드 및 락 삭제 충돌 방지 | `PASS (Fixed in DEFECT-04)` |
 | **Negative**| `TC-CF-06` | 비쓰기 macOS 릴리즈 `.app` 번들 사이드카 부팅 | `0o555` 읽기전용 `.app` 실행 | 심볼릭 링크 없이 `_internal` 정상 기동 | `PASS (Fixed in DEFECT-05)` |
 | **Negative**| `TC-CF-07` | 부분 다운로드 스냅샷(`tokenizer.json` > 5MB) 검증 | 가중치 없이 `tokenizer.json`만 존재 | `is_snapshot_weights_valid() == False` 반환 | `PASS (Fixed in DEFECT-06)` |
-| **Boundary**| `TC-CF-08` | 활성 VLM 요청 중 동시 비평 취소/언로드 경합 | `active_requests == 1` 중 `unload_model` | 활성 추론 보호 및 `NoneType` 크래시 방지 | `FAIL (DEFECT-07)` |
+| **Boundary**| `TC-CF-08` | 활성 VLM 요청 중 동시 비평 취소/언로드 경합 | `active_requests == 1` 중 `unload_model` | 활성 추론 보호 및 `NoneType` 크래시 방지 | `PASS (Fixed in DEFECT-07)` |
 | **Negative**| `TC-CF-09` | `huggingface_hub==1.21.0` 손상 인덱스/샤드 재복구 | 손상된 `index.json` 로컬 캐시 잔존 | `force_download=True`로 정상 덮어쓰기 복구 | `FAIL (DEFECT-08)` |
 | **Negative**| `TC-CF-10` | ChromaDB Self-Healing 복구 및 벡터 재동기화 | 손상된 `chroma.sqlite3` 주입 후 기동/sync | 크래시 없이 초기화 및 누락 벡터 재임베딩 | `FAIL (DEFECT-09)` |
 | **Negative**| `TC-CF-11` | `GemmaAdapter` 추론 예외 시 파이프라인 전파 | MLX OOM/`RuntimeError` 발생 | 빈 메타데이터 커밋 차단 및 오류 격리 | `FAIL (DEFECT-10)` |
@@ -72,11 +72,11 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_model_downloader.py -v` (`10 passed`, `TC-CF-07` Red ➔ Green) & `./venv/bin/pytest backend/tests/ -q` (`155 passed`) & `npx tsc --noEmit && npm run build` (`PASS`)
 
 ### [DEFECT-07] `BaseKeepAliveModel.unload_model()`의 `active_requests` 미검사 및 `force=True` 강제 언로드로 인한 활성 추론 크래시
-- **심각도**: 🔴 P0 Critical (`Concurrency Race / Crash & Silent Degradation`) | **실증**: `✅ Empirical Probe Reproduced`
-- **위치**: [`backend/app/services/base_model.py#L134-L141`](../../../backend/app/services/base_model.py#L134-L141), [`chat_service.py#L45-L65`](../../../backend/app/services/chat_service.py#L45-L65), [`mlx_adapters.py#L104-L166`](../../../backend/app/services/mlx_adapters.py#L104-L166), [`unipercept_adapter.py#L131-L158`](../../../backend/app/services/unipercept_adapter.py#L131-L158)
-- **근본 원인 및 증거**: `BaseKeepAliveModel.unload_model()`이 `self.active_requests == 0`을 검사하지 않고, `_unload_critique_models(force=True)`·`_run_unipercept_stage` `finally`가 타 요청의 `GPU_LOCK` 비점유 준비 구간(RAW 디코딩/프롬프트 구성) 중 모델/프로세서를 `None`으로 해제함. `active_requests == 1` 상태에서 `_unload_critique_models(force=True)` 호출 시 `adapter.model`/`processor`가 `None`으로 파괴됨을 실증함(`NoneType.apply_chat_template` 크래시 및 빈 메타데이터 저장).
-- **최소 수정 설계**: `unload_model()`에 `active_requests == 0` 가드 및 지연 언로드 플래그 적용, `_run_mlx_vlm_generation()` 내 `GPU_LOCK` 획득 후 `model/processor is None` 시 재적재 가드 추가.
-- **현재 상태**: 🟡 OPEN
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`base_model.py`](../../../backend/app/services/base_model.py#L72-L162), [`mlx_adapters.py`](../../../backend/app/services/mlx_adapters.py#L86-L140), [`unipercept_adapter.py`](../../../backend/app/services/unipercept_adapter.py#L131-L167), [`unipercept_adapter.py#L506-L508`](../../../backend/app/services/unipercept_adapter.py#L506-L508), [`chat_service.py`](../../../backend/app/services/chat_service.py#L45-L74), [`test_concurrency_hardening.py`](../../../backend/tests/test_concurrency_hardening.py#L365-L526)
+  - **원인 및 조치**: Devil's Advocate 동시성 검증을 거쳐 ① `BaseKeepAliveModel`에 `pending_unload` 지연 해제 플래그와 `_defer_or_skip_unload_locked()`를 도입해 `unload_model()`이 `active_requests > 0`일 때 `GPU_LOCK` 블로킹 및 모델 파괴 없이 `pending_unload = True`를 설정하고 `active_requests == 0`일 때만 즉시 언로드하도록 교정, ② `GemmaAdapter._release_model_request()` 및 `UniPerceptAdapter._release_model_for_request()`가 `max(0, active_requests - 1)` 감산 후 `self.lock` 해제 뒤 `active_requests == 0`이고 `pending_unload` 또는 취소 상태일 때 `self.unload_model()`을 호출해 28GB/12GB 메모리 누수 및 락 역전을 차단, ③ `GemmaAdapter._run_mlx_vlm_generation()` 내 `GPU_LOCK -> self.lock` 재적재 가드 추가 및 `UniPerceptAdapter._acquire_model_for_request()` 내 취소 감지 시 `active_requests == 0`일 때만 `_unload_model_locked()` 실행(활성 요청 공존 시 `pending_unload = True`), ④ `chat_service.py` `_unload_critique_models()`에서 `force=True` 호출 호환을 유지하되 `_has_active_requests()` 타입 가드로 활성 GPU 추론 중 무잠금 캐시 초기화를 방지함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_concurrency_hardening.py backend/tests/test_critique_cancellation.py backend/tests/test_unipercept.py -v` (`40 passed`, `TC-CF-08` Red ➔ Green) & `./venv/bin/pytest backend/tests/ -q` (`159 passed`) & `npx tsc --noEmit` (`PASS`)
 
 ### [DEFECT-08] `huggingface_hub==1.21.0` `force_download=False` 단락으로 인한 손상 인덱스/샤드 캐시 복구 영구 실패
 - **심각도**: 🟠 P1 High (`Dependency Collision / Silent Recovery Failure`) | **실증**: `✅ Empirical Probe Reproduced`
