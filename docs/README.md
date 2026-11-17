@@ -7,11 +7,11 @@
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
-- **Active 도메인**: [`00_core_foundation`](./features/00_core_foundation/README.md) *(`DEFECT-10` 해결 완료 / P1 1건 `DEFECT-11` 해결 대기)*
-- **현재 단계 (Stage)**: `🩹 Debugging (00_core_foundation DEFECT-11 해결 대기 / 04_studio_ui_analytics Step 3~4 대기)`
-- **직전 완료 작업**: [`00_core_foundation`](./features/00_core_foundation/README.md) `DEFECT-10` 해결 완료 (`mlx_adapters.py` `GemmaAdapter.generate_caption_and_tags()` `RuntimeError` 시 `clear_mlx_cache(); gc.collect()` 후 `raise`·일반 `Exception` 로깅 후 `raise`로 빈 메타데이터 은폐 차단 및 `AIInferenceStep`/`index_single_file_sync` 단위 오류 격리·재동기화 복구 검증, `TC-CF-11` 2종 포함 `pytest 166 passed`·`tsc` PASS)
+- **Active 도메인**: [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) *(`00_core_foundation` `🟢 Sign-Off` 복귀 완료 / `04_studio_ui_analytics` Step 3~4 개발 대기)*
+- **현재 단계 (Stage)**: `🛠️ Implementing (04_studio_ui_analytics Step 3~4 대기 / 00_core_foundation 🟢 Sign-Off)`
+- **직전 완료 작업**: [`00_core_foundation`](./features/00_core_foundation/README.md) `DEFECT-11` 해결 및 `🟢 Sign-Off` 복귀 (`src-tauri/src/lib.rs` `validate_export_save_path` 경로·확장자·시스템 경로·심볼릭 링크 경계 검증 및 `tauri.conf.json` CSP + `dangerousDisableAssetCspModification: ["style-src"]` 적용, `cargo test --lib` `6 passed`·`pytest` `166 passed`·`tsc && vite build` PASS)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"00_core_foundation 도메인의 DEFECT-11 티켓 해결해줘"` *(`systematic-debugger`로 마지막 P1 결함 해결)*
+  > `"04_studio_ui_analytics 도메인 Step 3 개발 진행해줘"` *(`clean-code-developer`로 차트 드릴다운 구현 이어하기)*
 
 ---
 
@@ -19,7 +19,7 @@
 
 | 도메인 (Bounded Context) | 생명주기 상태 | 구현 진척도 (Active Step 1~4) | QA 인수 통과율 | 미해결 티켓 (`🚨D` / `🧐R`) | 최근 작업 요약 |
 | :--- | :--- | :---: | :---: | :---: | :--- |
-| 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `11/12 (92%)` | `1 / 0` | `DEFECT-10` 해결 완료(`GemmaAdapter.generate_caption_and_tags` 예외 재전파 및 파이프라인 오류 격리·재동기화 복구), `DEFECT-11` 1건 대기 |
+| 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `12/12 (100%)` | `0 / 0` | `DEFECT-01~11`·`REFACTOR-01` 전수 해결 완료(`save_binary_file` 경로 검증·`tauri.conf.json` CSP 적용), Sign-Off 복귀 |
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `14/17 (82%)` | `0 / 0` | DEFECT-01~11·REFACTOR-01~02 전수 해결 완료(`folder_manager.py`·`photo_reindex.py` 분리, `ActionBar`/`Sidebar` 경량화), Active Step 1 대기 |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 0` | `REFACTOR-01` 해결 완료(SigLIP 폴백·`search.py` 로깅·`similar:` 버튼 연결), RRF·스마트 앨범 Step 1~4 대기 |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `15/15 (100%)` | `0 / 0` | `DEFECT-01~03`·`REFACTOR-01~08` 전수 해결 완료 (Headless MPS/MLX 가드·ADR-05 레거시 정리·300줄 이하 분할), Sign-Off 완료 |
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-17]` `[systematic-debugger]` [`00_core_foundation`]**: `DEFECT-11` 결함 해결 및 `00_core_foundation` `🟢 Sign-Off` 복귀 완료 (`532dca1` / `src-tauri/src/lib.rs`에 `validate_export_save_path` 및 헬퍼 4종을 도입해 빈 경로/NUL/상대경로/`..`/`.`/끝 슬래시·숨김 파일(`.zshrc`, `.env`)·`.pdf`/`.md` 외 확장자·미존재 부모·루트(`/`) 및 보호 시스템 경로(`/System`, `/Library`, `/usr`, `/bin`, `/sbin`, `/etc`, `/private/etc`, `/dev`, `/cores`, `/Applications`, `/private/var/root|db|log`, 대소문자 무구분 `*.app`)·심볼릭 링크/비정규 파일 타깃 덮어쓰기를 차단하고 `spec.md#3.1` 계약을 보존했으며, `src-tauri/tauri.conf.json`에 WebView CSP(`script-src 'self'`, `object-src 'none'`, `base-uri 'self'`, `style-src 'self' 'unsafe-inline'`, `127.0.0.1:*`/`localhost:*`, `blob:`/`data:`/`ipc:`) 및 `"dangerousDisableAssetCspModification": ["style-src"]`를 적용해 프로덕션 번들 `'unsafe-inline'` 무효화를 방지함; `cargo test --lib` `TC-CF-12` 3종 포함 `6 passed`·전체 `pytest` `166 passed`·`tsc && vite build` 전수 PASS).
 
 - **`[2026-11-17]` `[systematic-debugger]` [`00_core_foundation`]**: `DEFECT-10` 결함 해결 완료 (`73f6c10` / `backend/app/services/mlx_adapters.py` `GemmaAdapter.generate_caption_and_tags()`에서 `RuntimeError` 시 `logger.error` + `clear_mlx_cache(); gc.collect()` 복구 후 `raise`, 일반 `Exception`도 로깅 후 `raise`하도록 수정해 빈 딕셔너리(`{"caption": "", "tags": [], "aesthetic_tags": []}`) 은폐 반환을 제거하고 `finally` `_release_model_request()`로 `active_requests`를 안전 해제함; `pipeline.py` `AIInferenceStep.execute()` 및 `indexing_service.py` `index_single_file_sync()`의 단일 파일 `"error"` 격리·동일 청크 정상 파일 커밋·SQLite/ChromaDB 미저장 및 후속 `/api/index/sync` 재시도·`reindex_single_photo_inplace()` 기존 DB 보존 확인; `test_backend_hardening.py` `TC-CF-11` 2종 포함 전체 `pytest`(`166 passed`)·`tsc --noEmit` 전수 PASS).
 

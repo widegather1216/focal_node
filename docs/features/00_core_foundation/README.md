@@ -1,8 +1,8 @@
 # 🏛️ [00_core_foundation] Core Foundation & System Architecture
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-10 해결 완료 — DEFECT-11 1건 해결 대기)`
+- **현재 상태 (Lifecycle)**: `🟢 Sign-Off (DEFECT-01~11 · REFACTOR-01 전수 해결 및 100% PASS)`
 - **구현 진척도**: `[■■■■] 4/4 Steps`
-- **미해결 티켓 현황**: `🚨 DEFECT: 1건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -29,14 +29,13 @@
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-11-17 / systematic-debugger / 00_core_foundation DEFECT-10 해결 및 회귀 검증 완료 (73f6c10)`
-- **조치 요약 (`DEFECT-10` RESOLVED)**:
-  - `backend/app/services/mlx_adapters.py`: `GemmaAdapter.generate_caption_and_tags()`에서 `RuntimeError` 시 `logger.error` + `clear_mlx_cache(); gc.collect()` 복구 후 `raise`, 일반 `Exception`도 로깅 후 `raise`하도록 교정해 빈 딕셔너리(`{"caption": "", "tags": [], "aesthetic_tags": []}`) 은폐 반환 제거(`finally`의 `_release_model_request()`가 `active_requests` 안전 해제).
-  - 연쇄 영향 검증: `pipeline.py` `AIInferenceStep.execute()`와 `indexing_service.py` `index_single_file_sync()`가 실패 파일 1건만 `"error"`로 격리해 동일 청크의 정상 파일 커밋 및 전체 인덱싱 루프를 보존하고, 실패 파일은 SQLite/ChromaDB에 미저장되어 다음 `/api/index/sync` 시 재시도됨을 실증(`reindex_single_photo_inplace()` 기존 DB 데이터 보존 포함).
-  - `backend/tests/test_backend_hardening.py`: `TC-CF-11` 회귀 테스트 2종(`test_tc_cf_11_gemma_caption_inference_raises_and_clears_cache`, `test_tc_cf_11_pipeline_error_isolation_and_sync_retry`) 추가.
-- **남은 핵심 결함 (`DEFECT-11`, 1건)**:
-  - `DEFECT-11` (🟠 P1): Tauri IPC `save_binary_file` 무검증 임의 파일 쓰기 및 `tauri.conf.json` `"csp": null`
-- **검증 명령어**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k "tc_cf_11" -v` (`2 passed`), `./venv/bin/pytest backend/tests/ -q` (`166 passed`), `npx tsc --noEmit` (`PASS`)
+- **직전 완료 작업**: `2026-11-17 / systematic-debugger / 00_core_foundation DEFECT-11 해결 및 🟢 Sign-Off 복귀 (532dca1)`
+- **조치 요약 (`DEFECT-11` RESOLVED)**:
+  - `src-tauri/src/lib.rs` (`#L138-L247`): `validate_export_save_path` 및 헬퍼 4종(`validate_export_raw_input`, `validate_export_filename`, `is_blocked_system_dir`, `ensure_safe_export_target`)을 도입해 상대경로·NUL·`..`/`.`/끝 슬래시·숨김 파일(`.zshrc`, `.env`)·`.pdf`/`.md` 외 확장자·미존재 부모·루트(`/`) 및 보호 시스템 경로(`/System`, `/Library`, `/usr`, `/bin`, `/sbin`, `/etc`, `/private/etc`, `/dev`, `/cores`, `/Applications`, `/private/var/root|db|log`, 대소문자 무구분 `*.app`)·심볼릭 링크 및 비정규 파일 타깃 덮어쓰기를 차단하고 정상 `.pdf`/`.md` 저장 계약(`spec.md#3.1`)은 100% 유지.
+  - `src-tauri/tauri.conf.json` (`#L20-L23`): `"csp"` 보안 정책(`script-src 'self'`, `object-src 'none'`, `base-uri 'self'`, `style-src 'self' 'unsafe-inline'`, FastAPI `127.0.0.1:*`/`localhost:*`, `blob:`/`data:`/`ipc:`) 및 `"dangerousDisableAssetCspModification": ["style-src"]`를 적용해 프로덕션 번들 Tauri 자동 `style-src` nonce 주입으로 인한 `'unsafe-inline'` 무효화를 방지.
+  - `src-tauri/src/lib.rs` (`#L644-L759`): `test_save_binary_file_rejects_unsafe_paths`, `test_save_binary_file_allows_valid_pdf_and_markdown_exports`, `test_tauri_conf_csp_hardening` 단위 테스트 추가 및 Red ➔ Green 입증.
+- **남은 핵심 결함**: 없음 (`🚨 DEFECT: 0건 | 🧐 REFACTOR: 0건` — `00_core_foundation` 12/12 `100% PASS` `🟢 Sign-Off`)
+- **검증 명령어**: `cargo test --manifest-path src-tauri/Cargo.toml --lib` (`6 passed`), `./venv/bin/pytest backend/tests/ -q` (`166 passed`), `npx tsc --noEmit && npm run build` (`PASS`), `python3 -B ~/.gemini/config/skills/interactive-feature-planner/scripts/check_wiki_health.py docs` (`exit code 0`)
 - **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - `systematic-debugger`로 마지막 P1 티켓 `DEFECT-11` 해결 진행 권장 (`"00_core_foundation 도메인의 DEFECT-11 티켓 해결해줘"`).
+  - `00_core_foundation` Sign-Off 완료. 대기 중인 다음 도메인 `04_studio_ui_analytics` Step 3~4 개발 진행 권장 (`"04_studio_ui_analytics 도메인 Step 3 개발 진행해줘"`).
   - (교차 도메인 참고) `01_indexing_storage`의 `folder_manager.py#L50-L65` `purge_photo_records_batch`도 `db.commit()` 전 썸네일/Chroma 선삭제 경합이 존재함.

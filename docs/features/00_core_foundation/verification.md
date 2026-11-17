@@ -1,8 +1,8 @@
 # 🧪 [00_core_foundation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-10 해결 완료 — DEFECT-11 1건 해결 대기)`
-- **인수 조건 통과율**: `11 / 12 (92%)`
-- **미해결 티켓**: `🚨 DEFECT: 1건` | `🧐 REFACTOR: 0건`
+- **검증 상태**: `🟢 Sign-Off (전체 인수 조건 100% PASS & 미해결 티켓 0건)`
+- **인수 조건 통과율**: `12 / 12 (100%)`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -35,7 +35,7 @@
 | **Negative**| `TC-CF-09` | `huggingface_hub==1.21.0` 손상 인덱스/샤드 재복구 | 손상된 `index.json` 로컬 캐시 잔존 | `force_download=True`로 정상 덮어쓰기 복구 | `PASS (Fixed in DEFECT-08)` |
 | **Negative**| `TC-CF-10` | ChromaDB Self-Healing 복구 및 벡터 재동기화 | 손상된 `chroma.sqlite3` 주입 후 기동/sync | 크래시 없이 초기화 및 누락 벡터 재임베딩 | `PASS (Fixed in DEFECT-09)` |
 | **Negative**| `TC-CF-11` | `GemmaAdapter` 추론 예외 시 파이프라인 전파 | MLX OOM/`RuntimeError` 발생 | 빈 메타데이터 커밋 차단 및 오류 격리 | `PASS (Fixed in DEFECT-10)` |
-| **Security**| `TC-CF-12` | Tauri `save_binary_file` IPC 경로/CSP 경계 검증 | 임의 시스템 경로 쓰기 요청 | 허용 경로/확장자 외 차단 및 CSP 적용 | `FAIL (DEFECT-11)` |
+| **Security**| `TC-CF-12` | Tauri `save_binary_file` IPC 경로/CSP 경계 검증 | 임의 시스템 경로 쓰기 요청 | 허용 경로/확장자 외 차단 및 CSP 적용 | `PASS (Fixed in DEFECT-11)` |
 
 ---
 
@@ -100,11 +100,11 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k "tc_cf_11" -v` (`2 passed`, `TC-CF-11` Red ➔ Green) & `./venv/bin/pytest backend/tests/ -q` (`166 passed`) & `npx tsc --noEmit` (`PASS`)
 
 ### [DEFECT-11] Tauri IPC `save_binary_file` 무검증 임의 파일 덮어쓰기 및 `csp: null` 보안 경계 결함
-- **심각도**: 🟠 P1 High (`Security`) | **실증**: `✅ Deterministic Trace Verified`
-- **위치**: [`src-tauri/src/lib.rs#L62-L65`](../../../src-tauri/src/lib.rs#L62-L65), [`src-tauri/src/lib.rs#L82`](../../../src-tauri/src/lib.rs#L82), [`src-tauri/tauri.conf.json#L20-L22`](../../../src-tauri/tauri.conf.json#L20-L22)
-- **근본 원인 및 증거**: `save_binary_file(path, data)`가 경로 정규화, 허용 확장자/디렉토리 검증, 네이티브 저장 다이얼로그 연동 검증 없이 `std::fs::write(&path, &data)`를 직접 호출하며, `tauri.conf.json`에 `"csp": null`이 설정되어 WebView 스크립트 취약점 시 OS 임의 파일 덮어쓰기 가능.
-- **최소 수정 설계**: 허용 확장자(`.pdf`, `.md`)·`canonicalize()` 경계 검증 또는 Rust 측 네이티브 저장 다이얼로그 결합 및 `tauri.conf.json` CSP 정책 명시.
-- **현재 상태**: 🟡 OPEN
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`src-tauri/src/lib.rs#L138-L247`](../../../src-tauri/src/lib.rs#L138-L247), [`src-tauri/src/lib.rs#L644-L759`](../../../src-tauri/src/lib.rs#L644-L759), [`src-tauri/tauri.conf.json#L20-L23`](../../../src-tauri/tauri.conf.json#L20-L23)
+  - **원인 및 조치**: Devil's Advocate 사전 검증으로 Tauri v2의 `style-src` 자동 `'nonce-...'` 주입 시 `'unsafe-inline'`이 무효화되는 반례 및 루트(`/report.pdf`)·대소문자 `.APP`·끝 슬래시(`/`, `/.`)·특수 파일 덮어쓰기 반례를 선제 보완함. ① [`lib.rs`](../../../src-tauri/src/lib.rs#L138-L247)에 `validate_export_save_path` 및 단일 책임 헬퍼(`validate_export_raw_input`, `validate_export_filename`, `is_blocked_system_dir`, `ensure_safe_export_target`)를 도입해 빈 경로/공백/NUL/상대경로/`..`/`.`/끝 슬래시·숨김 파일(`.zshrc`, `.env`)·`.pdf`/`.md` 외 확장자·미존재 부모 디렉토리·루트(`/`) 및 보호 시스템 경로(`/System`, `/Library`, `/usr`, `/bin`, `/sbin`, `/etc`, `/private/etc`, `/dev`, `/cores`, `/Applications`, `/private/var/root|db|log`, 대소문자 무구분 `*.app` 번들)·심볼릭 링크 및 비정규 파일 타깃을 차단하고 `/Users/...`·`/Volumes/...`·macOS `/var/folders/...` 정상 내보내기는 보존(`spec.md#3.1` 계약 유지), ② [`tauri.conf.json`](../../../src-tauri/tauri.conf.json#L20-L23)에 `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: http://127.0.0.1:* http://localhost:* asset: http://asset.localhost; ... object-src 'none'; base-uri 'self'; form-action 'self'` 및 `"dangerousDisableAssetCspModification": ["style-src"]`를 설정해 React/PDF 인라인 스타일·`html2canvas`·`127.0.0.1` 사이드카 통신을 유지하면서 XSS를 방어함.
+  - **회귀 테스트 결과**: `cargo test --manifest-path src-tauri/Cargo.toml --lib` (`6 passed`, `TC-CF-12` Red ➔ Green) & `./venv/bin/pytest backend/tests/ -q` (`166 passed`) & `npx tsc --noEmit && npm run build` (`PASS`)
 
 ---
 
