@@ -135,9 +135,115 @@ fn reveal_in_finder(path: String) -> Result<(), String> {
     Ok(())
 }
 
+const BLOCKED_EXPORT_SYSTEM_PREFIXES: &[&str] = &[
+    "/System",
+    "/Library",
+    "/usr",
+    "/bin",
+    "/sbin",
+    "/etc",
+    "/private/etc",
+    "/dev",
+    "/cores",
+    "/Applications",
+    "/private/var/root",
+    "/private/var/db",
+    "/private/var/log",
+];
+
+fn validate_export_raw_input(raw_path: &str) -> Result<&Path, String> {
+    if raw_path.trim().is_empty() {
+        return Err("Export path must not be empty.".to_string());
+    }
+    if raw_path.contains('\0') {
+        return Err("Export path must not contain NUL bytes.".to_string());
+    }
+    if raw_path.ends_with('/') || raw_path.ends_with(std::path::MAIN_SEPARATOR) || raw_path.ends_with("/.") {
+        return Err("Export path must refer to a file, not a directory.".to_string());
+    }
+    let input_path = Path::new(raw_path);
+    if !input_path.is_absolute() {
+        return Err("Export path must be an absolute path.".to_string());
+    }
+    let has_traversal = input_path.components().any(|component| {
+        matches!(component, std::path::Component::ParentDir | std::path::Component::CurDir)
+    });
+    if has_traversal {
+        return Err("Export path must not contain relative traversal segments.".to_string());
+    }
+    Ok(input_path)
+}
+
+fn validate_export_filename(input_path: &Path) -> Result<&str, String> {
+    let file_name = input_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| "Export path must contain a valid UTF-8 file name.".to_string())?;
+    if file_name.starts_with('.') {
+        return Err("Hidden dotfiles are not allowed for export.".to_string());
+    }
+    let extension = input_path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase());
+    if !matches!(extension.as_deref(), Some("pdf") | Some("md")) {
+        return Err("Only .pdf and .md export files are allowed.".to_string());
+    }
+    Ok(file_name)
+}
+
+fn is_blocked_system_dir(canonical_parent: &Path) -> bool {
+    if canonical_parent == Path::new("/") {
+        return true;
+    }
+    if BLOCKED_EXPORT_SYSTEM_PREFIXES.iter().any(|prefix| canonical_parent.starts_with(prefix)) {
+        return true;
+    }
+    canonical_parent.components().any(|component| match component {
+        std::path::Component::Normal(segment) => {
+            segment.to_string_lossy().to_ascii_lowercase().ends_with(".app")
+        }
+        _ => false,
+    })
+}
+
+fn ensure_safe_export_target(target_path: &Path) -> Result<(), String> {
+    match std::fs::symlink_metadata(target_path) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() || !metadata.is_file() {
+                return Err("Refusing to write to a symbolic link or non-regular file target.".to_string());
+            }
+            Ok(())
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(format!("Failed to inspect export target '{}': {}", target_path.display(), err)),
+    }
+}
+
+fn validate_export_save_path(raw_path: &str) -> Result<PathBuf, String> {
+    let input_path = validate_export_raw_input(raw_path)?;
+    let file_name = validate_export_filename(input_path)?;
+    let parent_dir = input_path
+        .parent()
+        .ok_or_else(|| "Export path must have a valid parent directory.".to_string())?;
+    let canonical_parent = std::fs::canonicalize(parent_dir)
+        .map_err(|err| format!("Export parent directory is inaccessible: {}", err))?;
+    if !canonical_parent.is_dir() {
+        return Err("Export parent path is not a directory.".to_string());
+    }
+    if is_blocked_system_dir(&canonical_parent) {
+        return Err(format!("Refusing to export into protected system directory '{}'.", canonical_parent.display()));
+    }
+    let target_path = canonical_parent.join(file_name);
+    ensure_safe_export_target(&target_path)?;
+    Ok(target_path)
+}
+
 #[tauri::command]
 fn save_binary_file(path: String, data: Vec<u8>) -> Result<(), String> {
-    std::fs::write(&path, &data).map_err(|e| format!("Failed to write file at '{}': {}", path, e))
+    let validated_path = validate_export_save_path(&path)?;
+    std::fs::write(&validated_path, &data)
+        .map_err(|err| format!("Failed to write file at '{}': {}", validated_path.display(), err))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -533,5 +639,122 @@ mod tests {
         let res_dir = base.join("Focal Node.app/Contents/Resources");
         let err = resolve_release_sidecar_path(Some(&res_dir), &exe_path).unwrap_err();
         assert!(err.contains("Backend sidecar binary not found"));
+    }
+
+    #[test]
+    fn test_save_binary_file_rejects_unsafe_paths() {
+        let base = std::env::temp_dir().join(format!("focal_node_save_sec_{}", std::process::id()));
+        let sub = base.join("sub");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&sub).unwrap();
+
+        #[cfg(unix)]
+        let symlink_target = base.join("symlink_report.pdf");
+        #[cfg(unix)]
+        let symlink_etc_dir = base.join("etc_link");
+        #[cfg(unix)]
+        {
+            let real_file = base.join("real.pdf");
+            std::fs::write(&real_file, b"%PDF-orig").unwrap();
+            std::os::unix::fs::symlink(&real_file, &symlink_target).unwrap();
+            std::os::unix::fs::symlink("/etc", &symlink_etc_dir).unwrap();
+        }
+
+        let mut cases: Vec<(&str, String)> = vec![
+            ("empty", "".to_string()),
+            ("whitespace", "   ".to_string()),
+            ("nul_byte", format!("{}/bad\0.pdf", base.display())),
+            ("relative", "relative_export.pdf".to_string()),
+            ("trailing_slash", format!("{}/report.pdf/", base.display())),
+            ("trailing_dot", format!("{}/report.pdf/.", base.display())),
+            ("hidden_rc", base.join(".zshrc").to_string_lossy().to_string()),
+            ("hidden_env", base.join(".env").to_string_lossy().to_string()),
+            ("hidden_pdf", base.join(".secret.pdf").to_string_lossy().to_string()),
+            ("traversal_pdf", format!("{}/../escape.pdf", sub.display())),
+            ("shell_script", base.join("payload.sh").to_string_lossy().to_string()),
+            ("exe_file", base.join("payload.exe").to_string_lossy().to_string()),
+            ("plist_file", base.join("com.evil.agent.plist").to_string_lossy().to_string()),
+            ("no_ext", base.join("README").to_string_lossy().to_string()),
+            ("missing_parent", base.join("nonexistent_dir/report.pdf").to_string_lossy().to_string()),
+            ("root_dir_file", "/report.pdf".to_string()),
+            ("system_dir", "/System/evil.pdf".to_string()),
+            ("library_dir", "/Library/evil.md".to_string()),
+            ("usr_dir", "/usr/evil.pdf".to_string()),
+            ("bin_dir", "/bin/evil.pdf".to_string()),
+            ("sbin_dir", "/sbin/evil.pdf".to_string()),
+            ("etc_dir", "/etc/evil.md".to_string()),
+            ("private_etc_dir", "/private/etc/evil.md".to_string()),
+            ("app_bundle_mixed_case", "/Applications/Focal Node.APP/contents/Resources/evil.md".to_string()),
+        ];
+
+        #[cfg(unix)]
+        {
+            cases.push(("symlink_target", symlink_target.to_string_lossy().to_string()));
+            cases.push(("symlink_to_etc", symlink_etc_dir.join("evil.md").to_string_lossy().to_string()));
+        }
+
+        let outcomes: Vec<(&str, Result<(), String>)> = cases
+            .into_iter()
+            .map(|(label, candidate)| (label, save_binary_file(candidate, b"%PDF-1.4".to_vec())))
+            .collect();
+
+        let _ = std::fs::remove_dir_all(&base);
+
+        for (label, outcome) in outcomes {
+            assert!(outcome.is_err(), "Expected save_binary_file to reject {}, got {:?}", label, outcome);
+        }
+    }
+
+    #[test]
+    fn test_save_binary_file_allows_valid_pdf_and_markdown_exports() {
+        let base = std::env::temp_dir().join(format!("focal_node_save_ok_{}", std::process::id()));
+        let safe_dir = base.join("etc_backup");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&safe_dir).unwrap();
+
+        let pdf_path = safe_dir.join("photo_AI비평_리포트.pdf");
+        let md_path = safe_dir.join("photo_AI비평.MD");
+
+        let pdf_bytes = b"%PDF-1.7 test content".to_vec();
+        let md_bytes = b"# Critique Report\n".to_vec();
+
+        let pdf_outcome = save_binary_file(pdf_path.to_string_lossy().to_string(), pdf_bytes.clone());
+        let md_outcome = save_binary_file(md_path.to_string_lossy().to_string(), md_bytes.clone());
+        let overwrite_outcome = save_binary_file(md_path.to_string_lossy().to_string(), b"# Updated\n".to_vec());
+
+        assert!(pdf_outcome.is_ok(), "Expected PDF export to succeed, got {:?}", pdf_outcome);
+        assert!(md_outcome.is_ok(), "Expected MD export to succeed, got {:?}", md_outcome);
+        assert!(overwrite_outcome.is_ok(), "Expected overwriting regular MD file to succeed, got {:?}", overwrite_outcome);
+        assert_eq!(std::fs::read(&pdf_path).unwrap(), pdf_bytes);
+        assert_eq!(std::fs::read(&md_path).unwrap(), b"# Updated\n");
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn test_tauri_conf_csp_hardening() {
+        let conf_str = include_str!("../tauri.conf.json");
+        let conf_json: serde_json::Value = serde_json::from_str(conf_str).expect("Valid tauri.conf.json");
+        let security = &conf_json["app"]["security"];
+        let csp = security["csp"].as_str().expect("app.security.csp must be a non-null string");
+
+        assert!(csp.contains("default-src 'self'"));
+        assert!(csp.contains("script-src 'self'"));
+        assert!(!csp.contains("script-src 'self' 'unsafe-inline'"));
+        assert!(!csp.contains("'unsafe-eval'"));
+        assert!(csp.contains("style-src 'self' 'unsafe-inline'"));
+        assert!(csp.contains("http://127.0.0.1:*"));
+        assert!(csp.contains("http://localhost:*"));
+        assert!(csp.contains("ws://localhost:*"));
+        assert!(csp.contains("blob:"));
+        assert!(csp.contains("data:"));
+        assert!(csp.contains("ipc:"));
+        assert!(csp.contains("object-src 'none'"));
+        assert!(csp.contains("base-uri 'self'"));
+
+        let disabled_mods = security["dangerousDisableAssetCspModification"]
+            .as_array()
+            .expect("dangerousDisableAssetCspModification must be configured for style-src");
+        assert!(disabled_mods.iter().any(|entry| entry.as_str() == Some("style-src")));
     }
 }
