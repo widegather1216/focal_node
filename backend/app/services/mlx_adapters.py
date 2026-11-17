@@ -1,6 +1,7 @@
 """MLX-based Gemma 4 VLM adapter and SigLIP2Adapter compatibility re-export."""
 
 import gc
+import logging
 import os
 import sys
 import time
@@ -9,6 +10,8 @@ from typing import Any, Optional
 from core.ports import ImageCaptioningPort
 from services.base_model import BaseKeepAliveModel, GPU_LOCK, clear_mlx_cache
 from services.siglip_adapter import SigLIP2Adapter
+
+logger = logging.getLogger("focal_node.mlx_adapters")
 
 __all__ = ["SigLIP2Adapter", "GemmaAdapter"]
 
@@ -163,13 +166,15 @@ class GemmaAdapter(BaseKeepAliveModel, ImageCaptioningPort):
             raw_output = self._run_mlx_vlm_generation(messages, image_input=_resolve_image_input(image_path))
             return parse_gemma_json_output(raw_output)
         except RuntimeError as err:
+            logger.error("[GemmaAdapter] MLX OOM or RuntimeError during inference: %s", err)
             print(f"[GemmaAdapter] MLX OOM or RuntimeError during inference: {err}. Recovering...", flush=True)
             clear_mlx_cache()
             gc.collect()
-            return {"caption": "", "tags": [], "aesthetic_tags": []}
+            raise
         except Exception as err:
+            logger.error("[GemmaAdapter] Unexpected inference error: %s", err, exc_info=True)
             print(f"[GemmaAdapter] Unexpected inference error: {err}", flush=True)
-            return {"caption": "", "tags": [], "aesthetic_tags": []}
+            raise
         finally:
             self._release_model_request()
 

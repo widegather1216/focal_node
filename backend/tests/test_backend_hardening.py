@@ -2657,4 +2657,179 @@ async def test_tc_cf_10_sync_recovers_missing_vectors_and_preserves_critique(
         chroma_mod._evict_shared_system_cache(str(chroma_dir), client=chroma_client)
 
 
+def test_tc_cf_11_gemma_caption_inference_raises_and_clears_cache(monkeypatch, tmp_path):
+    """
+    TC-CF-11 (Part 1 / DEFECT-10):
+    Verifies GemmaAdapter.generate_caption_and_tags propagates RuntimeError (with MLX cache
+    cleanup + gc.collect) and general Exceptions instead of returning empty fallback dicts,
+    while always releasing active_requests cleanly.
+    """
+    from unittest.mock import MagicMock
+    import services.mlx_adapters as mlx_mod
+
+    img_file = tmp_path / "sample.jpg"
+    Image.new("RGB", (32, 32), color="red").save(str(img_file), format="JPEG")
+
+    gemma = mlx_mod.GemmaAdapter()
+    gemma.model = MagicMock()
+    gemma.processor = MagicMock()
+
+    clear_calls = []
+    gc_calls = []
+    monkeypatch.setattr(mlx_mod, "clear_mlx_cache", lambda: clear_calls.append(True) or True)
+    monkeypatch.setattr(mlx_mod.gc, "collect", lambda: gc_calls.append(True) or 0)
+
+    # 1. RuntimeError (MLX OOM) clears MLX cache, collects garbage, re-raises, releases request
+    monkeypatch.setattr(
+        gemma,
+        "_run_mlx_vlm_generation",
+        MagicMock(side_effect=RuntimeError("MLX Metal out of memory")),
+    )
+    with pytest.raises(RuntimeError, match="MLX Metal out of memory"):
+        gemma.generate_caption_and_tags(str(img_file))
+    assert len(clear_calls) == 1
+    assert len(gc_calls) == 1
+    assert gemma.active_requests == 0
+
+    # 2. General Exception logs and re-raises without returning empty dict, releases request
+    monkeypatch.setattr(
+        gemma,
+        "_run_mlx_vlm_generation",
+        MagicMock(side_effect=ValueError("Tokenizer corruption")),
+    )
+    with pytest.raises(ValueError, match="Tokenizer corruption"):
+        gemma.generate_caption_and_tags(str(img_file))
+    assert gemma.active_requests == 0
+
+
+@pytest.mark.asyncio
+async def test_tc_cf_11_pipeline_error_isolation_and_sync_retry(
+    client, db_session, tmp_path, monkeypatch
+):
+    """
+    TC-CF-11 (Part 2 / DEFECT-10):
+    Verifies that when GemmaAdapter.generate_caption_and_tags raises RuntimeError for one
+    photo in a chunk:
+    1. AIInferenceStep and index_single_file_sync isolate only that file as 'error'.
+    2. Healthy photos in the same chunk commit normally to SQLite/ChromaDB and background
+       indexing completes without crashing.
+    3. The failed photo is NOT committed with empty caption/tags, so a subsequent /api/index/sync
+       retries it and persists real AI metadata once MLX recovers.
+    4. reindex_single_photo_inplace preserves existing AIAnalysis when inference raises.
+    """
+    from unittest.mock import MagicMock
+    import chromadb
+    import services.indexing_service as idx_svc
+    import services.mlx_adapters as mlx_mod
+    import services.pipeline as pipeline_mod
+    from repositories.vector_repository import VectorRepository
+    from services.indexing_state import indexing_state_manager
+
+    photo_dir = tmp_path / "photos"
+    photo_dir.mkdir()
+    thumb_dir = tmp_path / "thumbs"
+    thumb_dir.mkdir()
+    chroma_dir = tmp_path / "chroma_tc_cf_11"
+
+    monkeypatch.setattr(photo_service, "THUMBNAIL_CACHE_DIR", str(thumb_dir))
+    monkeypatch.setattr("services.photo.THUMBNAIL_CACHE_DIR", str(thumb_dir))
+
+    good_img = photo_dir / "good.jpg"
+    bad_img = photo_dir / "bad_oom.jpg"
+    Image.new("RGB", (32, 32), color="blue").save(str(good_img), format="JPEG")
+    Image.new("RGB", (32, 32), color="orange").save(str(bad_img), format="JPEG")
+
+    good_id = idx_svc.calculate_sha256(str(good_img))
+    bad_id = idx_svc.calculate_sha256(str(bad_img))
+
+    db_session.add(models.IndexedFolder(path=str(photo_dir)))
+    db_session.commit()
+
+    chroma_client = chromadb.PersistentClient(path=str(chroma_dir))
+    real_collection = chroma_client.get_or_create_collection(
+        name="photo_embeddings", metadata={"hnsw:space": "cosine"}
+    )
+
+    mock_siglip = MagicMock()
+    mock_siglip.get_image_embedding.return_value = [0.5] * 8
+    mock_siglip.get_zero_shot_hints.return_value = ["하늘", "풍경"]
+
+    real_gemma = mlx_mod.GemmaAdapter()
+    real_gemma.model = MagicMock()
+    real_gemma.processor = MagicMock()
+    fail_bad_once = {"fail": True}
+
+    def fake_vlm_generate(messages, image_input=None, **kwargs):
+        if fail_bad_once["fail"] and image_input == str(bad_img):
+            raise RuntimeError("MLX OOM during batch indexing")
+        return json.dumps({
+            "caption": "푸른 하늘 아래 풍경",
+            "tags": ["하늘", "풍경"],
+            "aesthetic_tags": ["선명함"],
+        })
+
+    monkeypatch.setattr(real_gemma, "_run_mlx_vlm_generation", fake_vlm_generate)
+    monkeypatch.setattr(mlx_mod, "clear_mlx_cache", lambda: True)
+    monkeypatch.setattr("repositories.vector_repository.get_chroma_collection", lambda: real_collection)
+    monkeypatch.setattr("chroma.get_chroma_collection", lambda: real_collection)
+    monkeypatch.setattr(pipeline_mod, "get_siglip_adapter", lambda: mock_siglip)
+    monkeypatch.setattr(pipeline_mod, "get_gemma_adapter", lambda: real_gemma)
+    monkeypatch.setattr(idx_svc, "get_siglip_adapter", lambda: mock_siglip)
+    monkeypatch.setattr(idx_svc, "get_gemma_adapter", lambda: real_gemma)
+
+    try:
+        # 1. Step-level isolation check: AIInferenceStep marks ctx.status='error' and returns False
+        step_ctx = pipeline_mod.PipelineContext(str(bad_img), image_id=bad_id)
+        assert pipeline_mod.AIInferenceStep().execute(step_ctx) is False
+        assert step_ctx.status == "error"
+        assert idx_svc.index_single_file_sync(str(bad_img)) == "error"
+
+        # 2. Background sync with mixed good + failing files in same chunk
+        indexing_state_manager.reset_status()
+        sync_resp_1 = client.post("/api/index/sync")
+        assert sync_resp_1.status_code == 202
+        assert indexing_state_manager.status == "idle"
+
+        db_session.expire_all()
+        assert db_session.query(models.Image).filter_by(id=good_id).first() is not None
+        good_ai = db_session.query(models.AIAnalysis).filter_by(image_id=good_id).first()
+        assert good_ai is not None and good_ai.caption == "푸른 하늘 아래 풍경"
+        assert db_session.query(models.Image).filter_by(id=bad_id).first() is None
+        assert db_session.query(models.AIAnalysis).filter_by(image_id=bad_id).first() is None
+        assert VectorRepository().has_embedding(good_id) is True
+        assert VectorRepository().has_embedding(bad_id) is False
+
+        # 3. Existing photo in-place reindex preserves DB record when Gemma inference raises
+        with pytest.raises(RuntimeError, match="MLX OOM"):
+            fail_bad_once["fail"] = True
+            monkeypatch.setattr(
+                real_gemma,
+                "_run_mlx_vlm_generation",
+                MagicMock(side_effect=RuntimeError("MLX OOM during reindex")),
+            )
+            await idx_svc.reindex_single_photo_inplace(good_id)
+        db_session.expire_all()
+        assert db_session.query(models.AIAnalysis).filter_by(image_id=good_id).first().caption == "푸른 하늘 아래 풍경"
+
+        # 4. Subsequent /api/index/sync retries previously failed bad_img once MLX recovers
+        fail_bad_once["fail"] = False
+        monkeypatch.setattr(real_gemma, "_run_mlx_vlm_generation", fake_vlm_generate)
+        indexing_state_manager.reset_status()
+        sync_resp_2 = client.post("/api/index/sync")
+        assert sync_resp_2.status_code == 202
+        assert indexing_state_manager.status == "idle"
+
+        db_session.expire_all()
+        assert db_session.query(models.Image).filter_by(id=bad_id).first() is not None
+        bad_ai = db_session.query(models.AIAnalysis).filter_by(image_id=bad_id).first()
+        assert bad_ai is not None and bad_ai.caption == "푸른 하늘 아래 풍경"
+        assert json.loads(bad_ai.tags) == ["하늘", "풍경"]
+        assert VectorRepository().has_embedding(bad_id) is True
+    finally:
+        indexing_state_manager.reset_status()
+        import chroma as chroma_mod
+        chroma_mod._evict_shared_system_cache(str(chroma_dir), client=chroma_client)
+
+
+
 
