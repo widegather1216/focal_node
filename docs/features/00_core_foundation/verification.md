@@ -1,8 +1,8 @@
 # 🧪 [00_core_foundation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-07 해결 완료 — DEFECT-08~11 4건 해결 대기)`
-- **인수 조건 통과율**: `8 / 12 (67%)`
-- **미해결 티켓**: `🚨 DEFECT: 4건` | `🧐 REFACTOR: 0건`
+- **검증 상태**: `🩹 Debugging (DEFECT-08 해결 완료 — DEFECT-09~11 3건 해결 대기)`
+- **인수 조건 통과율**: `9 / 12 (75%)`
+- **미해결 티켓**: `🚨 DEFECT: 3건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -32,7 +32,7 @@
 | **Negative**| `TC-CF-06` | 비쓰기 macOS 릴리즈 `.app` 번들 사이드카 부팅 | `0o555` 읽기전용 `.app` 실행 | 심볼릭 링크 없이 `_internal` 정상 기동 | `PASS (Fixed in DEFECT-05)` |
 | **Negative**| `TC-CF-07` | 부분 다운로드 스냅샷(`tokenizer.json` > 5MB) 검증 | 가중치 없이 `tokenizer.json`만 존재 | `is_snapshot_weights_valid() == False` 반환 | `PASS (Fixed in DEFECT-06)` |
 | **Boundary**| `TC-CF-08` | 활성 VLM 요청 중 동시 비평 취소/언로드 경합 | `active_requests == 1` 중 `unload_model` | 활성 추론 보호 및 `NoneType` 크래시 방지 | `PASS (Fixed in DEFECT-07)` |
-| **Negative**| `TC-CF-09` | `huggingface_hub==1.21.0` 손상 인덱스/샤드 재복구 | 손상된 `index.json` 로컬 캐시 잔존 | `force_download=True`로 정상 덮어쓰기 복구 | `FAIL (DEFECT-08)` |
+| **Negative**| `TC-CF-09` | `huggingface_hub==1.21.0` 손상 인덱스/샤드 재복구 | 손상된 `index.json` 로컬 캐시 잔존 | `force_download=True`로 정상 덮어쓰기 복구 | `PASS (Fixed in DEFECT-08)` |
 | **Negative**| `TC-CF-10` | ChromaDB Self-Healing 복구 및 벡터 재동기화 | 손상된 `chroma.sqlite3` 주입 후 기동/sync | 크래시 없이 초기화 및 누락 벡터 재임베딩 | `FAIL (DEFECT-09)` |
 | **Negative**| `TC-CF-11` | `GemmaAdapter` 추론 예외 시 파이프라인 전파 | MLX OOM/`RuntimeError` 발생 | 빈 메타데이터 커밋 차단 및 오류 격리 | `FAIL (DEFECT-10)` |
 | **Security**| `TC-CF-12` | Tauri `save_binary_file` IPC 경로/CSP 경계 검증 | 임의 시스템 경로 쓰기 요청 | 허용 경로/확장자 외 차단 및 CSP 적용 | `FAIL (DEFECT-11)` |
@@ -79,11 +79,11 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_concurrency_hardening.py backend/tests/test_critique_cancellation.py backend/tests/test_unipercept.py -v` (`40 passed`, `TC-CF-08` Red ➔ Green) & `./venv/bin/pytest backend/tests/ -q` (`159 passed`) & `npx tsc --noEmit` (`PASS`)
 
 ### [DEFECT-08] `huggingface_hub==1.21.0` `force_download=False` 단락으로 인한 손상 인덱스/샤드 캐시 복구 영구 실패
-- **심각도**: 🟠 P1 High (`Dependency Collision / Silent Recovery Failure`) | **실증**: `✅ Empirical Probe Reproduced`
-- **위치**: [`backend/app/services/model_downloader.py#L243-L275`](../../../backend/app/services/model_downloader.py#L243-L275), [`model_downloader.py#L308-L335`](../../../backend/app/services/model_downloader.py#L308-L335)
-- **근본 원인 및 증거**: `huggingface_hub==1.21.0`(`file_download.py#L1086`, `#L1225`)은 `force_download=False`일 때 로컬 포인터/블롭이 존재하면 네트워크 확인 없이 즉시 손상 파일을 반환함. 40자 `commit_hash` 스냅샷에 손상된 `model.safetensors.index.json` 배치 프로브 시 `hf_hub_download`가 손상 JSON을 그대로 반환하여 재시도 3회 모두 `RuntimeError`로 영구 실패함을 실증함.
-- **최소 수정 설계**: `_download_snapshot_and_shards()`에서 누락/손상 파일 재다운로드 시 `force_download=True` 전달 및 불완전 스냅샷 재진입 시 손상 파일 선삭제/강제 재수신.
-- **현재 상태**: 🟡 OPEN
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`model_downloader.py#L153-L203`](../../../backend/app/services/model_downloader.py#L153-L203), [`model_downloader.py#L318-L450`](../../../backend/app/services/model_downloader.py#L318-L450), [`test_model_downloader.py#L329-L540`](../../../backend/tests/test_model_downloader.py#L329-L540)
+  - **원인 및 조치**: `huggingface_hub==1.21.0`의 `hf_hub_download`가 `force_download=False`일 때 로컬 포인터/블롭 존재 시 즉시 반환하고, `force_download=True`여도 `os.path.exists(pointer_path)`가 참인 일반 파일/구(old) etag 심볼릭 링크를 갱신하지 않는 특성을 확인함. 이에 ① `_force_redownload_files()`와 `_remove_corrupted_snapshot_pointer()`를 도입해 손상된 포인터만 선제거 후 `force_download=True`로 재다운로드하여 정상 완료된 대용량 샤드는 보존하면서 손상 파일만 복구하도록 수정하고, ② `_repair_sharded_files()`에서 손상 `*.index.json` 복구 직후 인덱스 기반 누락/손상(`<=1MB`) 샤드까지 연쇄 재검증·강제 복구하도록 개선함, ③ 단일 가중치 모델 손상(`_find_undersized_weight_files`, `ensure_nested_safetensors_linked` 내부 심볼릭 링크 제외) 및 무인덱스/오프라인 불완전 스냅샷 시 `snapshot_download(..., force_download=True)` 폴백 복구를 추가하고, `_is_model_cached()`가 `local_files_only=True`와 `force_download=True`를 동시 전달하지 않도록 격리함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_model_downloader.py -v` (`13 passed`, `TC-CF-09` Red ➔ Green) & `./venv/bin/pytest backend/tests/ -q` (`162 passed`) & `npx tsc --noEmit` (`PASS`)
 
 ### [DEFECT-09] `chroma.py` Self-Healing 시 `chromadb==1.5.9` 캐시 오염 크래시 및 SQLite-ChromaDB 재동기화 단절
 - **심각도**: 🟠 P1 High (`Crash & Cross-Store Data Loss`) | **실증**: `✅ Empirical Probe Reproduced`

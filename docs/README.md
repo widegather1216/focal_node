@@ -7,11 +7,11 @@
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
-- **Active 도메인**: [`00_core_foundation`](./features/00_core_foundation/README.md) *(`DEFECT-07` 해결 완료 / P1 4건 `DEFECT-08~11` 해결 대기)*
-- **현재 단계 (Stage)**: `🩹 Debugging (00_core_foundation DEFECT-08~11 해결 대기 / 04_studio_ui_analytics Step 3~4 대기)`
-- **직전 완료 작업**: [`00_core_foundation`](./features/00_core_foundation/README.md) `DEFECT-07` 해결 완료 (`BaseKeepAliveModel.unload_model()` `active_requests > 0` 지연 해제 `pending_unload` 도입, `Gemma`/`UniPercept` 마지막 활성 요청 종료 시 자동 언로드·`_run_mlx_vlm_generation` 재적재 가드·`_acquire_model_for_request` 취소 공존 보호, `TC-CF-08` 40 passed·`pytest 159 passed`·`tsc` PASS)
+- **Active 도메인**: [`00_core_foundation`](./features/00_core_foundation/README.md) *(`DEFECT-08` 해결 완료 / P1 3건 `DEFECT-09~11` 해결 대기)*
+- **현재 단계 (Stage)**: `🩹 Debugging (00_core_foundation DEFECT-09~11 해결 대기 / 04_studio_ui_analytics Step 3~4 대기)`
+- **직전 완료 작업**: [`00_core_foundation`](./features/00_core_foundation/README.md) `DEFECT-08` 해결 완료 (`model_downloader.py` 손상 `*.index.json`·`<1MB` 샤드/단일 가중치 포인터 선제거 + `force_download=True` 표적 복구·인덱스 복구 후 누락 샤드 연쇄 재다운로드·무인덱스 스냅샷 폴백·`_is_model_cached` `force_download` 격리, `TC-CF-09` 13 passed·`pytest 162 passed`·`tsc` PASS)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"00_core_foundation 도메인의 DEFECT-08 티켓 해결해줘"` *(`systematic-debugger`로 다음 P1 결함 해결)*
+  > `"00_core_foundation 도메인의 DEFECT-09 티켓 해결해줘"` *(`systematic-debugger`로 다음 P1 결함 해결)*
 
 ---
 
@@ -19,7 +19,7 @@
 
 | 도메인 (Bounded Context) | 생명주기 상태 | 구현 진척도 (Active Step 1~4) | QA 인수 통과율 | 미해결 티켓 (`🚨D` / `🧐R`) | 최근 작업 요약 |
 | :--- | :--- :---: | :---: | :---: | :---: | :--- |
-| 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `8/12 (67%)` | `4 / 0` | `DEFECT-07` 해결 완료(`unload_model` `active_requests` 지연 해제·재적재 가드), `DEFECT-08~11` 4건 대기 |
+| 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🩹 Debugging | `[■■■■] 4/4` | `9/12 (75%)` | `3 / 0` | `DEFECT-08` 해결 완료(HF 캐시 `force_download=True` 표적·연쇄 복구), `DEFECT-09~11` 3건 대기 |
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `14/17 (82%)` | `0 / 0` | DEFECT-01~11·REFACTOR-01~02 전수 해결 완료(`folder_manager.py`·`photo_reindex.py` 분리, `ActionBar`/`Sidebar` 경량화), Active Step 1 대기 |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 0` | `REFACTOR-01` 해결 완료(SigLIP 폴백·`search.py` 로깅·`similar:` 버튼 연결), RRF·스마트 앨범 Step 1~4 대기 |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `15/15 (100%)` | `0 / 0` | `DEFECT-01~03`·`REFACTOR-01~08` 전수 해결 완료 (Headless MPS/MLX 가드·ADR-05 레거시 정리·300줄 이하 분할), Sign-Off 완료 |
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-17]` `[systematic-debugger]` [`00_core_foundation`]**: `DEFECT-08` 결함 해결 완료 (`eed8ba5` / `backend/app/services/model_downloader.py`에 `_force_redownload_files`·`_remove_corrupted_snapshot_pointer`·`_repair_sharded_files`·`_find_undersized_weight_files`를 도입해 `huggingface_hub==1.21.0`의 `force_download=False` 로컬 포인터 단락 및 일반 파일/구(old) etag 심볼릭 링크 미갱신을 우회하고 정상 대용량 샤드를 보존하며 손상 `*.index.json`·`<=1MB` 샤드/단일 가중치 파일만 표적 강제 재다운로드 및 인덱스 복구 후 누락 샤드 연쇄 복구, 무인덱스 불완전 스냅샷 `snapshot_download(..., force_download=True)` 폴백, `_is_model_cached()` `local_files_only=True`/`force_download=True` 동시 전달 차단 적용; `test_model_downloader.py` `TC-CF-09` 3종 포함 `13 passed`·전체 `pytest`(`162 passed`)·`tsc --noEmit` 전수 PASS).
 
 - **`[2026-11-17]` `[systematic-debugger]` [`00_core_foundation`]**: `DEFECT-07` 결함 해결 완료 (`fccd313` / Devil's Advocate 동시성 검증 후 `backend/app/services/base_model.py`에 `pending_unload` 지연 해제 플래그 및 `_defer_or_skip_unload_locked()`를 도입해 `active_requests > 0` 중 `unload_model()`의 모델/프로세서 파괴를 차단하고, `mlx_adapters.py` `_release_model_request()`·`unipercept_adapter.py` `_release_model_for_request()`가 `max(0, active_requests - 1)` 후 마지막 활성 요청 종료 시 지연/취소 언로드를 확정 실행하도록 교정; `_run_mlx_vlm_generation()` `GPU_LOCK -> self.lock` 재적재 가드 및 `_acquire_model_for_request()` 취소 공존 보호, `chat_service.py` `_has_active_requests()` 캐시 보호 가드 추가; `test_concurrency_hardening.py` `TC-CF-08` 4종 포함 `40 passed`·전체 `pytest`(`159 passed`)·`tsc --noEmit` 전수 PASS).
 
