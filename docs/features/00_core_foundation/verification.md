@@ -1,8 +1,8 @@
 # 🧪 [00_core_foundation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-08 해결 완료 — DEFECT-09~11 3건 해결 대기)`
-- **인수 조건 통과율**: `9 / 12 (75%)`
-- **미해결 티켓**: `🚨 DEFECT: 3건` | `🧐 REFACTOR: 0건`
+- **검증 상태**: `🩹 Debugging (DEFECT-09 해결 완료 — DEFECT-10~11 2건 해결 대기)`
+- **인수 조건 통과율**: `10 / 12 (83%)`
+- **미해결 티켓**: `🚨 DEFECT: 2건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -33,7 +33,7 @@
 | **Negative**| `TC-CF-07` | 부분 다운로드 스냅샷(`tokenizer.json` > 5MB) 검증 | 가중치 없이 `tokenizer.json`만 존재 | `is_snapshot_weights_valid() == False` 반환 | `PASS (Fixed in DEFECT-06)` |
 | **Boundary**| `TC-CF-08` | 활성 VLM 요청 중 동시 비평 취소/언로드 경합 | `active_requests == 1` 중 `unload_model` | 활성 추론 보호 및 `NoneType` 크래시 방지 | `PASS (Fixed in DEFECT-07)` |
 | **Negative**| `TC-CF-09` | `huggingface_hub==1.21.0` 손상 인덱스/샤드 재복구 | 손상된 `index.json` 로컬 캐시 잔존 | `force_download=True`로 정상 덮어쓰기 복구 | `PASS (Fixed in DEFECT-08)` |
-| **Negative**| `TC-CF-10` | ChromaDB Self-Healing 복구 및 벡터 재동기화 | 손상된 `chroma.sqlite3` 주입 후 기동/sync | 크래시 없이 초기화 및 누락 벡터 재임베딩 | `FAIL (DEFECT-09)` |
+| **Negative**| `TC-CF-10` | ChromaDB Self-Healing 복구 및 벡터 재동기화 | 손상된 `chroma.sqlite3` 주입 후 기동/sync | 크래시 없이 초기화 및 누락 벡터 재임베딩 | `PASS (Fixed in DEFECT-09)` |
 | **Negative**| `TC-CF-11` | `GemmaAdapter` 추론 예외 시 파이프라인 전파 | MLX OOM/`RuntimeError` 발생 | 빈 메타데이터 커밋 차단 및 오류 격리 | `FAIL (DEFECT-10)` |
 | **Security**| `TC-CF-12` | Tauri `save_binary_file` IPC 경로/CSP 경계 검증 | 임의 시스템 경로 쓰기 요청 | 허용 경로/확장자 외 차단 및 CSP 적용 | `FAIL (DEFECT-11)` |
 
@@ -86,11 +86,11 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_model_downloader.py -v` (`13 passed`, `TC-CF-09` Red ➔ Green) & `./venv/bin/pytest backend/tests/ -q` (`162 passed`) & `npx tsc --noEmit` (`PASS`)
 
 ### [DEFECT-09] `chroma.py` Self-Healing 시 `chromadb==1.5.9` 캐시 오염 크래시 및 SQLite-ChromaDB 재동기화 단절
-- **심각도**: 🟠 P1 High (`Crash & Cross-Store Data Loss`) | **실증**: `✅ Empirical Probe Reproduced`
-- **위치**: [`backend/app/chroma.py#L23-L37`](../../../backend/app/chroma.py#L23-L37), [`indexing_service.py#L148-L165`](../../../backend/app/services/indexing_service.py#L148-L165), [`search_service.py#L86-L106`](../../../backend/app/services/search_service.py#L86-L106)
-- **근본 원인 및 증거**: 손상된 `chroma.sqlite3` 주입 프로브 시 `SharedSystemClient._create_system_if_not_exists`가 실패한 `System`을 `_identifier_to_system[CHROMA_DB_PATH]`에 잔류시켜, `chroma.py#L34` 재초기화가 `[ChromaDB] Fatal: Self-healing failed: bindings` (`AttributeError: bindings`)로 100% 크래시함을 실증. 또한 Self-Healing이 성공해도 `/api/index/sync`의 `_find_existing_id_or_skip()`이 SQLite `file_mtime`/`file_size`만 검사해 기존 사진을 전량 `skipped` 처리하므로 벡터 검색이 영구 불능화됨.
-- **최소 수정 설계**: `chroma.py` 백업 후 재시도 전 `SharedSystemClient.clear_system_cache()`(또는 해당 키 제거) 호출 및 Self-Healing 플래그/Chroma ID 대조를 통해 누락 임베딩 재인덱싱 연결.
-- **현재 상태**: 🟡 OPEN
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`chroma.py#L19-L159`](../../../backend/app/chroma.py#L19-L159), [`vector_repository.py#L25-L37`](../../../backend/app/repositories/vector_repository.py#L25-L37), [`indexing_service.py#L148-L270`](../../../backend/app/services/indexing_service.py#L148-L270), [`indexing_service.py#L348-L352`](../../../backend/app/services/indexing_service.py#L348-L352), [`test_backend_hardening.py#L2415-L2660`](../../../backend/tests/test_backend_hardening.py#L2415-L2660)
+  - **원인 및 조치**: Devil's Advocate 사전 검증을 거쳐 ① `chroma.py`에 `_resolve_system_identifiers()`·`_evict_shared_system_cache()`·`_backup_corrupted_chroma_dir()`·`_heal_chroma_client_locked()`를 도입해 손상 `chroma.sqlite3`로 `PersistentClient` 또는 `get_or_create_collection` 초기화 실패 시 `SharedSystemClient._refcount_lock` 하에서 해당 경로의 `System`만 정밀 제거하고 락 외부에서 안전 `stop()` 후 `_collection = None` 동기화·백업(`%Y%m%d%H%M%S_%f`)·재초기화(이중 백업 및 mock DB 훼손 방지 가드 포함)를 수행해 `AttributeError: bindings`를 해소하고 타 클라이언트를 보존함, ② `VectorRepository.has_embedding(photo_id)`를 추가해 실제 Chroma `dict["ids"]` 응답에서는 누락 여부를 정확히 판정하고 `conftest.py` 미설정 `MagicMock` 환경과 호환을 유지함, ③ `indexing_service.py`의 `_find_existing_id_or_skip()`·`_resolve_hash_conflict()`·`_ensure_existing_photo_vector()`·`_repair_missing_vector_sync()`가 Chroma 벡터 누락 감지 시 `replaces_image_id`로 기존 행을 삭제하지 않고 SQLite `ImageMetadata`(`None` 안전 처리) + SigLIP 2 임베딩만 In-place 업서트(`"vector_repaired"`)하여 `ai_analysis`(`is_user_edited`, 사용자 수정 캡션/태그, `critique`, `overall_score` 등) 및 즐겨찾기를 100% 보존하고 `GemmaAdapter` 재호출을 차단함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py backend/tests/test_api_indexing.py backend/tests/test_api_search.py -v` (`43 passed`, `TC-CF-10` Red ➔ Green) & `./venv/bin/pytest backend/tests/ -q` (`164 passed`) & `npx tsc --noEmit` (`PASS`)
 
 ### [DEFECT-10] `GemmaAdapter.generate_caption_and_tags` 예외 은폐로 빈 AI 메타데이터 영구 커밋 및 재인덱싱 스킵
 - **심각도**: 🟠 P1 High (`Silent Degradation / Data Loss`) | **실증**: `✅ Empirical Probe Reproduced`
