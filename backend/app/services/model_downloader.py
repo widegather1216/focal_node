@@ -150,6 +150,11 @@ class ModelDownloadStatusTracker:
 def get_model_download_tracker() -> ModelDownloadStatusTracker:
     return ModelDownloadStatusTracker()
 
+def _to_repo_relative_path(snapshot_dir: str, root: str, filename: str) -> str:
+    rel_path = os.path.relpath(os.path.join(root, filename), snapshot_dir)
+    return rel_path.replace(os.sep, "/")
+
+
 def get_missing_sharded_files(snapshot_dir: str) -> list[str]:
     """Returns a list of missing or incomplete sharded weight filenames from model index."""
     if not snapshot_dir or not os.path.isdir(snapshot_dir):
@@ -160,33 +165,35 @@ def get_missing_sharded_files(snapshot_dir: str) -> list[str]:
             if not idx_file.endswith(_INDEX_SUFFIXES):
                 continue
             idx_path = os.path.join(root, idx_file)
+            idx_rel = _to_repo_relative_path(snapshot_dir, root, idx_file)
             try:
                 with open(idx_path, "r", encoding="utf-8") as index_fp:
                     idx_data = json.load(index_fp)
                 if not isinstance(idx_data, dict):
                     logger.warning(f"[Downloader] Corrupted index format in {idx_path}: expected dict, got {type(idx_data)}")
-                    if idx_file not in missing:
-                        missing.append(idx_file)
+                    if idx_rel not in missing:
+                        missing.append(idx_rel)
                     continue
 
                 weight_map = idx_data.get("weight_map")
                 if not isinstance(weight_map, dict) or not weight_map:
                     logger.warning(f"[Downloader] Corrupted or missing weight_map in {idx_path}")
-                    if idx_file not in missing:
-                        missing.append(idx_file)
+                    if idx_rel not in missing:
+                        missing.append(idx_rel)
                     continue
 
                 sharded_files = set(weight_map.values())
                 for s_file in sorted(sharded_files):
                     s_path = os.path.join(root, s_file)
+                    s_rel = _to_repo_relative_path(snapshot_dir, root, s_file)
                     if not (os.path.exists(s_path) and os.path.getsize(s_path) > _MIN_WEIGHT_BYTES):
-                        if s_file not in missing:
-                            missing.append(s_file)
+                        if s_rel not in missing:
+                            missing.append(s_rel)
             except Exception as err:
                 logger.warning(f"[Downloader] Error parsing index file {idx_path}: {err}")
                 print(f"[Downloader] Error parsing index file {idx_path}: {err}", flush=True)
-                if idx_file not in missing:
-                    missing.append(idx_file)
+                if idx_rel not in missing:
+                    missing.append(idx_rel)
     return missing
 
 
@@ -308,20 +315,100 @@ def clear_stale_hf_locks(repo_id: str):
                 except Exception as e:
                     logger.warning(f"[Downloader] Failed to remove stale lock file {lock_file}: {e}")
 
+def _is_internal_snapshot_symlink(snapshot_dir: str, file_path: str) -> bool:
+    if not os.path.islink(file_path):
+        return False
+    try:
+        link_target = os.readlink(file_path)
+    except OSError as err:
+        logger.debug(f"[Downloader] Failed to read symlink {file_path}: {err}")
+        return False
+    abs_snapshot = os.path.abspath(snapshot_dir)
+    resolved_target = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(file_path)), link_target))
+    return resolved_target == abs_snapshot or resolved_target.startswith(abs_snapshot + os.sep)
+
+
+def _find_undersized_weight_files(snapshot_dir: str) -> list[str]:
+    if not snapshot_dir or not os.path.isdir(snapshot_dir):
+        return []
+    undersized: list[str] = []
+    for root, _, files in os.walk(snapshot_dir):
+        for filename in files:
+            if _SHARD_FILENAME_RE.search(filename):
+                continue
+            if os.path.splitext(filename)[1].lower() not in _WEIGHT_EXTENSIONS:
+                continue
+            file_path = os.path.join(root, filename)
+            if _is_internal_snapshot_symlink(snapshot_dir, file_path):
+                continue
+            if not _is_valid_single_weight_file(file_path, filename):
+                undersized.append(_to_repo_relative_path(snapshot_dir, root, filename))
+    return undersized
+
+
+def _remove_corrupted_snapshot_pointer(snapshot_dir: str, rel_filename: str) -> None:
+    pointer_path = os.path.join(snapshot_dir, *rel_filename.split("/"))
+    if not os.path.lexists(pointer_path):
+        return
+    if not (os.path.islink(pointer_path) or os.path.isfile(pointer_path)):
+        return
+    try:
+        # Remove stale/corrupted pointer so huggingface_hub refreshes the symlink even if a regular file existed
+        os.remove(pointer_path)
+    except OSError as err:
+        logger.warning(f"[Downloader] Failed to remove corrupted snapshot pointer {pointer_path}: {err}")
+
+
+def _force_redownload_files(
+    repo_id: str,
+    snapshot_dir: str,
+    filenames: list[str],
+    ignore_patterns: list,
+    **kwargs,
+) -> None:
+    forced_kwargs = {**kwargs, "force_download": True}
+    for rel_filename in filenames:
+        print(f"[Downloader] Force-downloading incomplete/corrupted file: {rel_filename} for {repo_id}...", flush=True)
+        _remove_corrupted_snapshot_pointer(snapshot_dir, rel_filename)
+        download_hf_smart(
+            repo_id=repo_id,
+            filename=rel_filename,
+            ignore_patterns=ignore_patterns,
+            **forced_kwargs,
+        )
+
+
+def _repair_sharded_files(repo_id: str, snapshot_dir: str, ignore_patterns: list, **kwargs) -> None:
+    missing_shards = get_missing_sharded_files(snapshot_dir)
+    if not missing_shards:
+        return
+    _force_redownload_files(repo_id, snapshot_dir, missing_shards, ignore_patterns, **kwargs)
+    ensure_nested_safetensors_linked(snapshot_dir)
+
+    if any(name.endswith(_INDEX_SUFFIXES) for name in missing_shards):
+        remaining_shards = get_missing_sharded_files(snapshot_dir)
+        if remaining_shards:
+            _force_redownload_files(repo_id, snapshot_dir, remaining_shards, ignore_patterns, **kwargs)
+            ensure_nested_safetensors_linked(snapshot_dir)
+
+
 def _is_model_cached(repo_id: str, label: str, ignore_patterns: list, tracker, **kwargs) -> bool:
+    if kwargs.get("force_download"):
+        return False
+    cache_kwargs = {key: val for key, val in kwargs.items() if key != "force_download"}
     try:
         local_path = download_hf_smart(
             repo_id=repo_id,
             local_files_only=True,
             ignore_patterns=ignore_patterns,
-            **kwargs
+            **cache_kwargs,
         )
         ensure_nested_safetensors_linked(local_path)
         if is_snapshot_weights_valid(local_path):
             tracker.update_status(repo_id, label, status="cached")
             return True
-    except Exception as e:
-        logger.debug(f"[Downloader] Model {repo_id} ({label}) not cached or validation failed: {e}")
+    except Exception as err:
+        logger.debug(f"[Downloader] Model {repo_id} ({label}) not cached or validation failed: {err}")
     return False
 
 
@@ -331,21 +418,29 @@ def _download_snapshot_and_shards(repo_id: str, label: str, ignore_patterns: lis
         ignore_patterns=ignore_patterns,
         max_workers=8,
         etag_timeout=30,
-        **kwargs
+        **kwargs,
     )
     ensure_nested_safetensors_linked(local_path)
+    _repair_sharded_files(repo_id, local_path, ignore_patterns, **kwargs)
 
-    missing_shards = get_missing_sharded_files(local_path)
-    if missing_shards:
-        for m_file in missing_shards:
-            print(f"[Downloader] Explicitly downloading missing shard: {m_file} for {repo_id}...", flush=True)
-            download_hf_smart(
-                repo_id=repo_id,
-                filename=m_file,
-                ignore_patterns=ignore_patterns,
-                **kwargs
-            )
+    if not is_snapshot_weights_valid(local_path):
+        undersized_weights = _find_undersized_weight_files(local_path)
+        if undersized_weights:
+            _force_redownload_files(repo_id, local_path, undersized_weights, ignore_patterns, **kwargs)
+            ensure_nested_safetensors_linked(local_path)
+
+    if not is_snapshot_weights_valid(local_path) and not kwargs.get("force_download"):
+        logger.warning(f"[Downloader] Snapshot weights incomplete for {repo_id}; retrying snapshot with force_download=True.")
+        forced_kwargs = {**kwargs, "force_download": True}
+        local_path = download_hf_smart(
+            repo_id=repo_id,
+            ignore_patterns=ignore_patterns,
+            max_workers=8,
+            etag_timeout=30,
+            **forced_kwargs,
+        )
         ensure_nested_safetensors_linked(local_path)
+        _repair_sharded_files(repo_id, local_path, ignore_patterns, **forced_kwargs)
 
     if not is_snapshot_weights_valid(local_path):
         raise RuntimeError(f"Snapshot weights incomplete for {repo_id}")

@@ -326,5 +326,218 @@ def test_tc_cf_07_is_snapshot_weights_valid_rejects_partial_non_weight_and_unind
     assert is_snapshot_weights_valid(str(sharded_dir)) is True
 
 
+def test_tc_cf_09_corrupted_index_and_shard_recovery_passes_force_download(tmp_path, monkeypatch):
+    """TC-CF-09 / DEFECT-08 (1 & 2): Corrupted index.json and <1MB shard must recover via force_download=True without re-downloading valid shards."""
+    import services.model_downloader as md
+
+    payload_2mb = b"w" * (2 * 1024 * 1024)
+
+    # Case 1: Corrupted index.json + valid shard1 -> only index.json is force-downloaded
+    snap_corrupted_idx = tmp_path / "snap_corrupted_idx"
+    snap_corrupted_idx.mkdir()
+    (snap_corrupted_idx / "model.safetensors.index.json").write_text("{corrupted_json")
+    (snap_corrupted_idx / "model-00001-of-00001.safetensors").write_bytes(payload_2mb)
+
+    calls_idx = []
+
+    def mock_smart_idx(repo_id, filename=None, **kwargs):
+        calls_idx.append((filename, dict(kwargs)))
+        if filename == "model.safetensors.index.json" and kwargs.get("force_download") is True:
+            (snap_corrupted_idx / "model.safetensors.index.json").write_text(
+                '{"weight_map": {"layer": "model-00001-of-00001.safetensors"}}'
+            )
+        return str(snap_corrupted_idx / filename) if filename else str(snap_corrupted_idx)
+
+    monkeypatch.setattr(md, "download_hf_smart", mock_smart_idx)
+    tracker = md.get_model_download_tracker()
+    tracker.reset_statuses()
+
+    assert md._download_snapshot_and_shards("test/corrupted-idx", "TestIdx", [], tracker) is True
+    file_calls_idx = [(fn, kw.get("force_download")) for fn, kw in calls_idx if fn is not None]
+    assert file_calls_idx == [("model.safetensors.index.json", True)]
+
+    # Case 2: Valid index.json, valid shard1, <1MB corrupted shard2 -> only shard2 is force-downloaded
+    snap_corrupted_shard = tmp_path / "snap_corrupted_shard"
+    snap_corrupted_shard.mkdir()
+    (snap_corrupted_shard / "model.safetensors.index.json").write_text(
+        '{"weight_map": {"a": "model-00001-of-00002.safetensors", "b": "model-00002-of-00002.safetensors"}}'
+    )
+    (snap_corrupted_shard / "model-00001-of-00002.safetensors").write_bytes(payload_2mb)
+    (snap_corrupted_shard / "model-00002-of-00002.safetensors").write_bytes(b"tiny_corrupt")
+
+    calls_shard = []
+
+    def mock_smart_shard(repo_id, filename=None, **kwargs):
+        calls_shard.append((filename, dict(kwargs)))
+        if filename == "model-00002-of-00002.safetensors" and kwargs.get("force_download") is True:
+            (snap_corrupted_shard / "model-00002-of-00002.safetensors").write_bytes(payload_2mb)
+        return str(snap_corrupted_shard / filename) if filename else str(snap_corrupted_shard)
+
+    monkeypatch.setattr(md, "download_hf_smart", mock_smart_shard)
+    assert md._download_snapshot_and_shards("test/corrupted-shard", "TestShard", [], tracker) is True
+    file_calls_shard = [(fn, kw.get("force_download")) for fn, kw in calls_shard if fn is not None]
+    assert file_calls_shard == [("model-00002-of-00002.safetensors", True)]
+
+
+def test_tc_cf_09_single_weight_recovery_and_kwargs_preservation(tmp_path, monkeypatch):
+    """TC-CF-09 / DEFECT-08 (3): <1MB single-file weight recovery, _is_model_cached force_download isolation, and hf_transfer fallback kwargs preservation."""
+    import sys
+    import types
+    import services.model_downloader as md
+
+    payload_2mb = b"w" * (2 * 1024 * 1024)
+
+    # 1. Single-file weight model (<1MB corrupted model.safetensors, no index.json)
+    snap_single = tmp_path / "snap_single"
+    snap_single.mkdir()
+    (snap_single / "config.json").write_text("{}")
+    (snap_single / "model.safetensors").write_bytes(b"corrupted_small_weight")
+
+    calls_single = []
+
+    def mock_smart_single(repo_id, filename=None, **kwargs):
+        calls_single.append((filename, dict(kwargs)))
+        if filename == "model.safetensors" and kwargs.get("force_download") is True:
+            (snap_single / "model.safetensors").write_bytes(payload_2mb)
+        return str(snap_single / filename) if filename else str(snap_single)
+
+    monkeypatch.setattr(md, "download_hf_smart", mock_smart_single)
+    tracker = md.get_model_download_tracker()
+    tracker.reset_statuses()
+
+    assert md._download_snapshot_and_shards("test/single-weight", "TestSingle", [], tracker) is True
+    file_calls_single = [(fn, kw.get("force_download")) for fn, kw in calls_single if fn is not None]
+    assert file_calls_single == [("model.safetensors", True)]
+
+    # 2. _is_model_cached must not pass force_download=True alongside local_files_only=True
+    cached_calls = []
+
+    def mock_smart_cached(repo_id, filename=None, **kwargs):
+        cached_calls.append(dict(kwargs))
+        return str(snap_single)
+
+    monkeypatch.setattr(md, "download_hf_smart", mock_smart_cached)
+    assert md._is_model_cached("test/single-weight", "TestSingle", [], tracker, force_download=True) is False
+    assert all(not (kw.get("local_files_only") and kw.get("force_download")) for kw in cached_calls)
+
+    # 3. download_hf_smart preserves force_download=True during hf_transfer fallback
+    monkeypatch.undo()
+    hf_calls = []
+
+    def fake_hf_hub_download(repo_id, filename, **kwargs):
+        hf_calls.append(dict(kwargs))
+        if len(hf_calls) == 1:
+            raise RuntimeError("client has been closed")
+        return "/tmp/fake"
+
+    monkeypatch.setitem(sys.modules, "hf_transfer", types.ModuleType("hf_transfer"))
+    monkeypatch.setattr("huggingface_hub.hf_hub_download", fake_hf_hub_download)
+    try:
+        result = md.download_hf_smart(
+            "test/single-weight",
+            filename="model.safetensors",
+            ignore_patterns=["*.pt"],
+            max_workers=8,
+            force_download=True,
+        )
+        assert result == "/tmp/fake"
+        assert len(hf_calls) == 2
+        assert hf_calls[0]["force_download"] is True
+        assert hf_calls[1]["force_download"] is True
+        assert "max_workers" not in hf_calls[1]
+        assert "ignore_patterns" not in hf_calls[1]
+    finally:
+        md.os.environ.pop("HF_HUB_ENABLE_HF_TRANSFER", None)
+
+
+def test_tc_cf_09_real_huggingface_hub_cache_shortcut_bypass(tmp_path, monkeypatch):
+    """TC-CF-09 / DEFECT-08 (4): End-to-end verification with real huggingface_hub==1.21.0 snapshot_download & hf_hub_download."""
+    import os
+    from huggingface_hub import constants
+    import services.model_downloader as md
+
+    repo_id = "test/hf-real-probe"
+    commit_hash = "a" * 40
+    storage = tmp_path / "models--test--hf-real-probe"
+    snap_dir = storage / "snapshots" / commit_hash
+    blobs_dir = storage / "blobs"
+    refs_dir = storage / "refs"
+    snap_dir.mkdir(parents=True)
+    blobs_dir.mkdir(parents=True)
+    refs_dir.mkdir(parents=True)
+    (refs_dir / "main").write_text(commit_hash)
+
+    # Seed corrupted index.json symlink and <1MB corrupted shard symlink in HF cache
+    idx_blob = blobs_dir / "etag_idx"
+    idx_blob.write_bytes(b"{corrupted_json")
+    os.symlink(os.path.relpath(idx_blob, snap_dir), snap_dir / "model.safetensors.index.json")
+
+    shard_blob = blobs_dir / "etag_shard1"
+    shard_blob.write_bytes(b"tiny")
+    os.symlink(os.path.relpath(shard_blob, snap_dir), snap_dir / "model-00001-of-00001.safetensors")
+
+    valid_idx = b'{"weight_map": {"w": "model-00001-of-00001.safetensors"}}'
+    valid_shard = b"W" * (2 * 1024 * 1024)
+
+    def fake_meta(**kwargs):
+        fn = kwargs["filename"]
+        if fn.endswith(".index.json"):
+            return ("http://example.com/idx", "etag_idx", commit_hash, len(valid_idx), None, None)
+        return ("http://example.com/s1", "etag_shard1", commit_hash, len(valid_shard), None, None)
+
+    def fake_dl_to_tmp(incomplete_path, destination_path, filename, **kwargs):
+        payload = valid_idx if filename.endswith(".index.json") else valid_shard
+        with open(destination_path, "wb") as fp:
+            fp.write(payload)
+
+    class FakeRepoInfo:
+        sha = commit_hash
+        siblings = [
+            type("Sibling", (), {"rfilename": "model.safetensors.index.json"})(),
+            type("Sibling", (), {"rfilename": "model-00001-of-00001.safetensors"})(),
+        ]
+
+    monkeypatch.setattr(constants, "HF_HUB_CACHE", str(tmp_path))
+    monkeypatch.setattr("huggingface_hub._snapshot_download.constants.HF_HUB_CACHE", str(tmp_path))
+    monkeypatch.setattr("huggingface_hub.file_download.constants.HF_HUB_CACHE", str(tmp_path))
+    monkeypatch.setattr("huggingface_hub._snapshot_download.HfApi.repo_info", lambda *a, **kw: FakeRepoInfo())
+    monkeypatch.setattr("huggingface_hub.file_download._get_metadata_or_catch_error", fake_meta)
+    monkeypatch.setattr("huggingface_hub.file_download._download_to_tmp_and_move", fake_dl_to_tmp)
+
+    tracker = md.get_model_download_tracker()
+    tracker.reset_statuses()
+
+    assert md._download_snapshot_and_shards(repo_id, "RealHFProbe", [], tracker) is True
+    assert md.is_snapshot_weights_valid(str(snap_dir)) is True
+    assert tracker.get_all_statuses()[repo_id]["status"] == "completed"
+
+    # Also verify single-file model (<1MB regular file pointer in snapshots/<sha>/) recovers via real hf_hub_download
+    single_repo = "test/hf-single-probe"
+    single_storage = tmp_path / "models--test--hf-single-probe"
+    single_snap = single_storage / "snapshots" / commit_hash
+    single_blobs = single_storage / "blobs"
+    single_refs = single_storage / "refs"
+    single_snap.mkdir(parents=True)
+    single_blobs.mkdir(parents=True)
+    single_refs.mkdir(parents=True)
+    (single_refs / "main").write_text(commit_hash)
+    (single_snap / "model.safetensors").write_bytes(b"corrupted_regular_file")
+
+    class FakeSingleRepoInfo:
+        sha = commit_hash
+        siblings = [type("Sibling", (), {"rfilename": "model.safetensors"})()]
+
+    monkeypatch.setattr("huggingface_hub._snapshot_download.HfApi.repo_info", lambda *a, **kw: FakeSingleRepoInfo())
+    monkeypatch.setattr(
+        "huggingface_hub.file_download._get_metadata_or_catch_error",
+        lambda **kw: ("http://example.com/model", "etag_single", commit_hash, len(valid_shard), None, None),
+    )
+
+    assert md._download_snapshot_and_shards(single_repo, "RealHFSingleProbe", [], tracker) is True
+    assert md.is_snapshot_weights_valid(str(single_snap)) is True
+
+
+
+
 
 
