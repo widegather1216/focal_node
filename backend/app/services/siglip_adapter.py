@@ -1,10 +1,14 @@
 """SigLIP 2 visual-text embedding adapter (resident lightweight model)."""
 
+import contextlib
+import logging
 import threading
 from typing import Any
 
 from core.ports import ImageEmbeddingPort, TextEmbeddingPort
 from services.base_model import GPU_LOCK
+
+logger = logging.getLogger("focal_node.siglip_adapter")
 
 SIGLIP_TEXT_MAX_LENGTH = 64
 
@@ -22,6 +26,10 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
         self.cached_taxonomy_embeddings = None
         self.lock = threading.RLock()
         self._load_model()
+
+    def _get_adapter_lock(self) -> Any:
+        adapter_lock = getattr(self, "lock", None)
+        return adapter_lock if adapter_lock is not None else contextlib.nullcontext()
 
     def _load_pretrained_with_fallback(self) -> tuple[Any, Any]:
         from transformers import AutoModel, AutoProcessor
@@ -44,15 +52,20 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
             return loaded_model, loaded_processor
 
     def _load_model(self) -> None:
-        if self.model is not None:
-            return
+        with self._get_adapter_lock():
+            if self.model is not None and self.processor is not None:
+                return
         with GPU_LOCK:
-            with self.lock:
-                if self.model is None:
-                    print(f"[SigLIP2Adapter] Loading model {self.model_id} on {self.device}...", flush=True)
-                    self.model, self.processor = self._load_pretrained_with_fallback()
-                    print("[SigLIP2Adapter] Model loaded successfully.", flush=True)
-        self._precompute_taxonomy_embeddings()
+            with self._get_adapter_lock():
+                self._load_model_and_taxonomy_locked()
+
+    def _load_model_and_taxonomy_locked(self) -> None:
+        """Assumes caller holds GPU_LOCK -> self.lock in strict hierarchy order."""
+        if self.model is None or self.processor is None:
+            print(f"[SigLIP2Adapter] Loading model {self.model_id} on {self.device}...", flush=True)
+            self.model, self.processor = self._load_pretrained_with_fallback()
+            print("[SigLIP2Adapter] Model loaded successfully.", flush=True)
+        self._precompute_taxonomy_embeddings_locked()
 
     def _resolve_text_max_length(self) -> int:
         text_config = getattr(getattr(self.model, "config", None), "text_config", None)
@@ -62,62 +75,101 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
         return SIGLIP_TEXT_MAX_LENGTH
 
     def _precompute_taxonomy_embeddings(self) -> None:
-        if self.cached_taxonomy_embeddings is not None:
-            return
-        try:
-            import torch
-            from services.taxonomy import SIGLIP_VISUAL_TAXONOMY
-
-            max_length = self._resolve_text_max_length()
-            encoded = self.processor(
-                text=SIGLIP_VISUAL_TAXONOMY,
-                padding="max_length",
-                truncation=True,
-                max_length=max_length,
-                return_tensors="pt",
-            ).to(self.device)
-            with GPU_LOCK:
-                with torch.no_grad():
-                    feature_output = self.model.get_text_features(**encoded)
-                text_features = feature_output.pooler_output
-                normalized = text_features / text_features.norm(p=2, dim=-1, keepdim=True)
-                self.cached_taxonomy_embeddings = normalized.cpu().numpy()
-            print(f"[SigLIP2Adapter] Precomputed taxonomy embeddings for {len(SIGLIP_VISUAL_TAXONOMY)} visual concepts.", flush=True)
-        except Exception as err:
-            print(f"[SigLIP2Adapter] Failed to precompute taxonomy embeddings: {err}", flush=True)
-            self.cached_taxonomy_embeddings = None
-
-    def get_image_embedding(self, image_path: str) -> list[float]:
-        import torch
-        from utils.image import load_pil_image
-
-        self._load_model()
-        pil_image = load_pil_image(image_path)
-        encoded = self.processor(images=pil_image, return_tensors="pt")
+        with self._get_adapter_lock():
+            if self.cached_taxonomy_embeddings is not None:
+                return
         with GPU_LOCK:
-            encoded = encoded.to(self.device)
-            with torch.no_grad():
-                feature_output = self.model.get_image_features(**encoded)
-                image_features = feature_output.pooler_output
-                normalized = image_features / image_features.norm(p=2, dim=-1, keepdim=True)
-                return normalized[0].tolist()
+            with self._get_adapter_lock():
+                self._precompute_taxonomy_embeddings_locked()
 
-    def get_text_embedding(self, text: str) -> list[float]:
+    def _run_taxonomy_inference_locked(self) -> Any:
+        """Runs taxonomy tokenization, MPS transfer, and text encoding under GPU_LOCK -> self.lock."""
         import torch
+        from services.taxonomy import SIGLIP_VISUAL_TAXONOMY
 
-        self._load_model()
         max_length = self._resolve_text_max_length()
-        encoded = self.processor(
-            text=[text],
+        encoded_batch = self.processor(
+            text=SIGLIP_VISUAL_TAXONOMY,
             padding="max_length",
             truncation=True,
             max_length=max_length,
             return_tensors="pt",
-        )
+        ).to(self.device)
+        with torch.no_grad():
+            feature_output = self.model.get_text_features(**encoded_batch)
+        text_features = feature_output.pooler_output
+        normalized = text_features / text_features.norm(p=2, dim=-1, keepdim=True)
+        return normalized.cpu().numpy()
+
+    def _precompute_taxonomy_embeddings_locked(self) -> None:
+        """Assumes caller holds GPU_LOCK -> self.lock in strict hierarchy order."""
+        if self.cached_taxonomy_embeddings is not None:
+            return
+        if self.model is None or self.processor is None:
+            return
+        from services.taxonomy import SIGLIP_VISUAL_TAXONOMY
+
+        try:
+            self.cached_taxonomy_embeddings = self._run_taxonomy_inference_locked()
+            print(
+                f"[SigLIP2Adapter] Precomputed taxonomy embeddings for {len(SIGLIP_VISUAL_TAXONOMY)} visual concepts.",
+                flush=True,
+            )
+        except Exception as err:
+            logger.exception("[SigLIP2Adapter] Failed to precompute taxonomy embeddings: %s", err)
+            print(f"[SigLIP2Adapter] Failed to precompute taxonomy embeddings: {err}", flush=True)
+            self.cached_taxonomy_embeddings = None
+
+    def _get_taxonomy_embeddings_snapshot(self) -> Any:
+        with self._get_adapter_lock():
+            return self.cached_taxonomy_embeddings
+
+    def get_image_embedding(self, image_path: str) -> list[float]:
+        from utils.image import load_pil_image
+
+        self._load_model()
+        pil_image = load_pil_image(image_path)
+        with self._get_adapter_lock():
+            encoded_batch = self.processor(images=pil_image, return_tensors="pt")
+        return self._encode_image_batch(encoded_batch)
+
+    def _encode_image_batch(self, encoded_batch: Any) -> list[float]:
+        import torch
+
         with GPU_LOCK:
-            encoded = encoded.to(self.device)
+            with self._get_adapter_lock():
+                active_model = self.model
+                target_device = self.device
+            device_batch = encoded_batch.to(target_device)
             with torch.no_grad():
-                feature_output = self.model.get_text_features(**encoded)
+                feature_output = active_model.get_image_features(**device_batch)
+            image_features = feature_output.pooler_output
+            normalized = image_features / image_features.norm(p=2, dim=-1, keepdim=True)
+            return normalized[0].tolist()
+
+    def get_text_embedding(self, text: str) -> list[float]:
+        self._load_model()
+        with self._get_adapter_lock():
+            max_length = self._resolve_text_max_length()
+            encoded_batch = self.processor(
+                text=[text],
+                padding="max_length",
+                truncation=True,
+                max_length=max_length,
+                return_tensors="pt",
+            )
+        return self._encode_text_batch(encoded_batch)
+
+    def _encode_text_batch(self, encoded_batch: Any) -> list[float]:
+        import torch
+
+        with GPU_LOCK:
+            with self._get_adapter_lock():
+                active_model = self.model
+                target_device = self.device
+            device_batch = encoded_batch.to(target_device)
+            with torch.no_grad():
+                feature_output = active_model.get_text_features(**device_batch)
             text_features = feature_output.pooler_output
             normalized = text_features / text_features.norm(p=2, dim=-1, keepdim=True)
             return normalized[0].tolist()
@@ -127,7 +179,8 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
         import numpy as np
         from services.taxonomy import SIGLIP_VISUAL_TAXONOMY
 
-        if self.cached_taxonomy_embeddings is None:
+        taxonomy_embeddings = self._get_taxonomy_embeddings_snapshot()
+        if taxonomy_embeddings is None:
             return []
 
         image_emb = self.get_image_embedding(image_input) if isinstance(image_input, str) else image_input
@@ -135,8 +188,11 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
             return []
 
         image_vector = np.array(image_emb)
-        image_vector = image_vector / np.linalg.norm(image_vector)
-        similarity_scores = np.dot(self.cached_taxonomy_embeddings, image_vector)
+        vector_norm = np.linalg.norm(image_vector)
+        if vector_norm == 0:
+            return []
+        image_vector = image_vector / vector_norm
+        similarity_scores = np.dot(taxonomy_embeddings, image_vector)
         sorted_indices = np.argsort(similarity_scores)[::-1]
 
         filtered_hints = [
