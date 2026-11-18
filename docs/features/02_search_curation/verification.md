@@ -1,8 +1,8 @@
 # 🧪 [02_search_curation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-01~04 해결 완료 — DEFECT-05~10 해결 대기)`
+- **검증 상태**: `🩹 Debugging (DEFECT-01~05 해결 완료 — DEFECT-06~10 해결 대기)`
 - **인수 조건 통과율**: `1 / 3 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 6건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 5건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -45,7 +45,7 @@
 | **Boundary**| `TC-SRC-09` | 비ASCII(한글) 태그 `ensure_ascii=False` 검색 (`DEFECT-02`) | 한글 태그 저장/수정 후 SQLite 폴백 검색 | `\uXXXX` 이스케이프 없이 한글 태그 정상 매칭 | `PASS (Fixed in DEFECT-02)` |
 | **Boundary**| `TC-SRC-10` | `date_to` 날짜 문자열 종료일 전체 포함 (`DEFECT-03`) | `date_from=2025-11-18`, `date_to=2025-11-18` + `14:30` 촬영 | 종료일 `23:59:59`까지 당일 사진 포함 반환 | `PASS (Fixed in DEFECT-03)` |
 | **Happy** | `TC-SRC-11` | 검색/필터/`similar:` 시 `selectedFolder` 스코프 유지 (`DEFECT-04`) | 특정 폴더 선택 후 검색어/필터/유사사진 실행 | 선택한 폴더(및 하위) 내부 사진만 반환 | `PASS (Fixed in DEFECT-04)` |
-| **Boundary**| `TC-SRC-12` | 즐겨찾기 필터 해제 시 `undefined` 잔존 키 제거 (`DEFECT-05`) | 하트 필터 ON ➔ OFF 토글 후 배지/목록 확인 | 배지 소멸 및 `fetchPhotos(..., selectedFolder)` 복귀 | `FAIL (DEFECT-05)` |
+| **Boundary**| `TC-SRC-12` | 즐겨찾기 필터 해제 시 `undefined` 잔존 키 제거 (`DEFECT-05`) | 하트 필터 ON ➔ OFF 토글 후 배지/목록 확인 | 배지 소멸 및 `fetchPhotos(..., selectedFolder)` 복귀 | `PASS (Fixed in DEFECT-05)` |
 | **Boundary**| `TC-SRC-13` | `PhotoGallery` 조건부 마운트 `ResizeObserver` 재결합 (`DEFECT-06`) | 초기 로딩/빈 결과 후 그리드 마운트 및 리사이즈 | `columnCount` 반응형 갱신 정상 동작 | `FAIL (DEFECT-06)` |
 | **Boundary**| `TC-SRC-14` | `SigLIP2Adapter` taxonomy 사전계산 `GPU_LOCK`/`self.lock` 보호 (`DEFECT-07`) | `_precompute_taxonomy_embeddings()` 동시 호출 | `.to(device)` 및 캐시가 락 경계 내에서만 실행 | `FAIL (DEFECT-07)` |
 | **Boundary**| `TC-SRC-15` | 32,766 변수 초과·음수 `limit`/`offset`·`ILIKE` 이스케이프·정렬 tie-breaker (`DEFECT-08`) | 35k ID 필터, `limit=-1`, `Z6_2` 검색, 동시각 연사 | SQL 오류/전량 누출/와일드카드 누출/페이지 역전 차단 | `FAIL (DEFECT-08)` |
@@ -85,9 +85,11 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_api_search.py -v` (`12 passed`), `./venv/bin/pytest backend/tests/ -q` (`181 passed`), `npx tsc --noEmit && npm run build` (`PASS`), `node --test tests/frontend/*.test.mjs` (`19 passed`)
 
 ### [DEFECT-05] 즐겨찾기 필터 해제 시 `{ is_favorite: undefined }` 잔존 키로 인한 유령 배지(`1`) 및 폴더 스코프 붕괴
-- **현재 상태**: 🟡 OPEN (`🟠 P1 High`)
-- **발생 위치**: [`SidebarSearchControls.tsx`](../../../src/components/sidebar/SidebarSearchControls.tsx#L55-L61), [`SearchFilterMenu.tsx`](../../../src/components/SearchFilterMenu.tsx#L34), [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx#L58)
-- **원인 및 재현**: 즐겨찾기 필터 OFF 시 `is_favorite: undefined` 키를 객체에 남겨 `Object.keys().length === 1`이 유지되어 배지 `1` 표시 및 `api.searchPhotos` 경로 고정 발생.
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`searchFilters.ts`](../../../src/utils/searchFilters.ts#L1-L49), [`SidebarSearchControls.tsx`](../../../src/components/sidebar/SidebarSearchControls.tsx#L4-L59), [`useAppStore.ts`](../../../src/store/useAppStore.ts#L5-L123), [`SearchFilterMenu.tsx`](../../../src/components/SearchFilterMenu.tsx#L4-L39), [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx#L8-L65), [`searchFilters.test.mjs`](../../../tests/frontend/searchFilters.test.mjs#L1-L95)
+  - **원인 및 조치**: 즐겨찾기 필터 해제 시 `{ ...searchFilters, is_favorite: undefined }`로 키를 남겨 `Object.keys().length === 1`이 유지되고, `useAppStore.setSearchFilters`가 `undefined`/`''`/`NaN` 키를 정규화하지 않아 `SearchFilterMenu`의 유령 배지(`1`)와 `PhotoGallery`의 `hasFilters === true` 오라우팅(`api.searchPhotos` 고정)이 발생하던 결함을 확인함. 순수 유틸 [`searchFilters.ts`](../../../src/utils/searchFilters.ts#L1-L49)에 `sanitizeSearchFilters`, `toggleFavoriteFilter`, `countActiveSearchFilters`, `hasActiveSearchFilters`를 분리해 OFF 토글 시 `is_favorite` 키 자체를 제거(`rest` 반환)하고, `useAppStore.setSearchFilters`에서 `undefined`/`null`/공백 문자열/`NaN`·비유한 숫자를 정규화하며, `SearchFilterMenu`와 `PhotoGallery`가 유효 필터 값 기준으로 배지 수와 엔드포인트(`api.fetchPhotos` 복귀)를 판정하도록 교정함.
+  - **회귀 테스트 결과**: `node --test tests/frontend/*.test.mjs` (`23 passed`, `TC-SRC-12` 4종 포함), `npx tsc --noEmit && npm run build` (`PASS`), `./venv/bin/pytest backend/tests/test_api_search.py -v` (`12 passed`)
 
 ### [DEFECT-06] `PhotoGallery` 조건부 마운트 `parentRef`에 대한 `useEffect(..., [])` `ResizeObserver` 영구 미등록
 - **현재 상태**: 🟡 OPEN (`🟠 P1 High`)
