@@ -1,8 +1,8 @@
 # 💾 [01_indexing_storage] Indexing Pipeline, Storage & RAW Media
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-17 해결 대기)`
+- **현재 상태 (Lifecycle)**: `🛠️ Implementing (DEFECT-01~17 및 REFACTOR-01~02 해결 완료 / Active Step 1 대기)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 1건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -35,9 +35,11 @@
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-11-18 / systematic-debugger / 01_indexing_storage DEFECT-16 해결 및 회귀 검증 완료`
+- **직전 완료 작업**: `2026-11-18 / systematic-debugger / 01_indexing_storage DEFECT-17 해결 및 회귀 검증 완료`
 - **Working Tree State**: 🟢 Clean (No uncommitted changes)
 - **Recent Commits (2026-11-18)**:
+  - `715ad62` - `fix(media): clamp thumbnail height and normalize mode for JPEG encoding`
+  - `2ce1566` - `docs(indexing): mark DEFECT-16 resolved and sync export module tree`
   - `8fc0483` - `fix(ui): abort stale export requests and reset feedback on empty selection`
   - `3bace5a` - `docs(indexing): mark DEFECT-15 resolved and sync favorite module tree`
   - `2e3fa8b` - `fix(ui): synchronize photos and photoDetail caches on favorite toggle`
@@ -63,6 +65,7 @@
   - `6ffe113` - `fix(indexing): propagate batch commit errors and isolate run lifecycle`
   - `6cba0eb` - `fix(ui): surface indexing errors in tauri bridge and progress card`
 - **해결된 결함 (Resolved Defect)**:
+  - `DEFECT-17`: [`backend/app/services/photo.py`](../../../backend/app/services/photo.py#L21-L165)에 `MAX_JPEG_DIMENSION = 65500`·`MAX_THUMBNAIL_HEIGHT = 4096` 상한과 `_calculate_thumbnail_dimensions`·`_ensure_jpeg_compatible`를 도입해 `_resize_image_to_jpeg_bytes`가 초장축 세로 이미지(`10x5000`, `100x20000`, `1x100000`) 저장 시 libjpeg 65,500px 한계를 넘지 않고 비율 유지 축소(`width <= 360`, `height <= 4096`, `>= 1`) 및 `RGB` 정규화(`RGBA`/`P`/`CMYK` 방어)를 수행하도록 수정함. 또한 `get_original_image_bytes`의 RAW 디코딩 인메모리 JPEG 경로에도 `_ensure_jpeg_compatible`(`RGB` + `65,500px` 상한) 및 `except HTTPException: raise`를 적용함(신규 회귀 테스트 `TC-IDX-23` [`test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py#L3285-L3371) 포함 도메인 `pytest` `70 passed, 1 deselected`·전체 `pytest` `170 passed, 1 deselected`·`node --test` `19 passed`·`tsc && vite build` PASS).
   - `DEFECT-16`: 순수 내보내기 수명주기 컨트롤러 [`src/utils/photoExport.ts`](../../../src/utils/photoExport.ts)(`createPhotoExportController`)를 신설하고 [`src/hooks/usePhotoExport.ts`](../../../src/hooks/usePhotoExport.ts)에서 `useAppStore.subscribe`로 `selectedPhotoIds.size === 0` 전환(동기 `1 -> 0 -> 1` 포함)을 즉시 감지해 `resetOnEmptySelection()`으로 타이머 정리·`requestId` 세대 무효화·`AbortController.abort()`·`isBusy=false`·`setExporting(false)`·`setFeedback(null)`를 수행하도록 교정함. 부분 실패(`partial`) 시 `deselectPhotoIds(exported_ids)` 후 `failed_ids`가 남아 `size > 0`인 경우에는 피드백을 유지하며, [`src/utils/exportStream.ts`](../../../src/utils/exportStream.ts) `parseExportSseStream(stream, signal)` 및 [`src/services/api.ts`](../../../src/services/api.ts) `exportPhotos`에 `AbortSignal` 전달·청크 루프 내/종료 시 abort 우선 검사를 적용함(신규 단위/회귀 테스트 `TC-IDX-22` [`tests/frontend/photoExport.test.mjs`](../../../tests/frontend/photoExport.test.mjs) 7종 포함 `19 passed`·`tsc && vite build`·관련 `pytest` `69 passed, 1 deselected` PASS).
   - `DEFECT-15`: 순수 즐겨찾기 캐시 오케스트레이터 [`src/utils/photoFavorite.ts`](../../../src/utils/photoFavorite.ts)를 신설하고 [`src/hooks/usePhotosQuery.ts`](../../../src/hooks/usePhotosQuery.ts)의 `useToggleFavoriteMutation` 인자 의존성을 제거해 모든 `['photos']` prefix 캐시와 `['photoDetail', photoId]`를 양방향 낙관적 갱신·서버 확정값(`response.is_favorite`) 반영으로 동기화함. `QueryClient` 단위 사진별 직렬화 큐(`tailPromise`)·`activeSeqs`·`confirmedFavorite`·`baseline` 스냅샷으로 연속 더블클릭 부분 실패/성공 레이스를 방지하고, `{ updatedAt }` 보존·초기 `pending` 쿼리 `cancelQueries` 제외·`is_favorite` 필터 활성 쿼리 안전 무효화를 적용했으며 [`src/hooks/usePhotoDetail.ts`](../../../src/hooks/usePhotoDetail.ts)의 `selectedFolder=null` 하드코딩 제거 및 [`src/components/PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx) `handleToggleFavorite` 통합을 완료함(신규 단위/회귀 테스트 `TC-IDX-21` [`tests/frontend/photoFavorite.test.mjs`](../../../tests/frontend/photoFavorite.test.mjs) 6종 포함 `12 passed`·`tsc && vite build`·관련 `pytest` `69 passed, 1 deselected` PASS).
   - `DEFECT-14`: 순수 재분석 오케스트레이터 [`src/utils/photoReindex.ts`](../../../src/utils/photoReindex.ts)를 신설해 `cancelQueries(['photoDetail', targetId])` 후 `setQueryData(['photoDetail', targetId], updatedPhoto)` 및 `['photos']`·`['analyticsStats']`·`['critiques']` 무효화를 사진 전환·언마운트와 무관하게 확정 반영하도록 교정함. [`src/hooks/usePhotoDetail.ts`](../../../src/hooks/usePhotoDetail.ts)에서 단일 `reindexing` 불리언을 사진별 `reindexingPhotoIds(Set)`·`reindexingErrors(Record)`로 격리하고 `inFlightReindexIdsRef`·`reindexRequestSeqRef`·`isMountedRef`(StrictMode 대응)·`useAppStore.getState().selectedPhotoId` 실시간 가드·`shouldSyncPhotoEditFields`를 적용해 사진 전환 시 편집 버퍼 오염과 중복 클릭·오류 누수·편집 중 백그라운드 덮어쓰기를 차단했으며, [`src/components/DetailPanel.tsx`](../../../src/components/DetailPanel.tsx) 및 [`src/components/detail/PhotoAiAnalysisView.tsx`](../../../src/components/detail/PhotoAiAnalysisView.tsx)에 `재분석 중...` 상태, 재분석 중 `[편집]`/`[저장]` 비활성화, 사진별 인라인 오류 배너/닫기 버튼을 연동함(신규 단위/회귀 테스트 `TC-IDX-20` [`tests/frontend/photoReindex.test.mjs`](../../../tests/frontend/photoReindex.test.mjs) `6 passed`·`tsc && vite build`·관련 `pytest` `69 passed, 1 deselected` PASS).
@@ -82,9 +85,11 @@
 - **잔여 우선순위 리팩토링 (Open REFACTOR Logs)**: `없음 (0건)`
   - `REFACTOR-02` (`🟢 RESOLVED`): `folder_manager.py`(333줄)·`photo_reindex.py`(167줄) SRP 분리 및 `indexing_service.py`(494줄) 위임 래퍼 유지, `_commit_batch_with_retry`/`run_indexing_background`/`_stream_export_events` 헬퍼 분할, `usePhotoExport.ts`(148줄)·`ExportActionControls.tsx`(211줄)·`ActionBar.tsx`(62줄) 및 `SidebarViewTabs.tsx`(91줄)·`SidebarSearchControls.tsx`(98줄)·`SidebarFolderActions.tsx`(138줄)·`Sidebar.tsx`(86줄) 분할, `IndexingProgressCard.tsx`·`SidebarFolderActions.tsx` `unknown` 예외 처리 및 `exportStream.ts#L69` `console.debug` 로깅 추가.
 - **검증 완료된 테스트 실행 명령어**:
+  - `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_23 -v` (`1 passed`)
+  - `./venv/bin/pytest backend/tests/test_api_photos.py backend/tests/test_api_folders.py backend/tests/test_api_search.py backend/tests/test_backend_hardening.py backend/tests/test_concurrency_hardening.py -k "not test_base_keep_alive_model_lifecycle" -v` (`70 passed, 1 deselected`)
+  - `./venv/bin/pytest backend/tests/ -k "not test_base_keep_alive_model_lifecycle" -q` (`170 passed, 1 deselected`)
   - `node --test tests/frontend/*.test.mjs` (`19 passed`: `photoExport.test.mjs` 7 + `photoFavorite.test.mjs` 6 + `photoReindex.test.mjs` 6)
   - `npx tsc --noEmit && npm run build` (`PASS`, `0 Errors`)
-  - `./venv/bin/pytest backend/tests/test_api_photos.py backend/tests/test_api_folders.py backend/tests/test_api_search.py backend/tests/test_backend_hardening.py backend/tests/test_concurrency_hardening.py -k "not test_base_keep_alive_model_lifecycle" -v` (`69 passed, 1 deselected`)
   - `python3 -B ~/.gemini/config/skills/interactive-feature-planner/scripts/check_wiki_health.py docs` (`exit 0`)
 - **다음 세션 포커스 및 추천 프롬프트**:
-  - `DEFECT-17` 해결 (`systematic-debugger`): `"01_indexing_storage 도메인의 DEFECT-17 티켓 해결해줘"`
+  - Active Iteration Step 1 착수 (`clean-code-developer`): `"01_indexing_storage 도메인 Step 1 개발 진행해줘"`

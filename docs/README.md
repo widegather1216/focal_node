@@ -7,11 +7,11 @@
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
-- **Active 도메인**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) *(`DEFECT-17` 1건 해결 대기)*
-- **현재 단계 (Stage)**: `🩹 Debugging (01_indexing_storage DEFECT-17 해결 중)`
-- **직전 완료 작업**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) `DEFECT-16` 해결 완료 (`src/utils/photoExport.ts` 순수 컨트롤러 신설 및 `usePhotoExport.ts` `useAppStore.subscribe` 연동으로 `selectedPhotoIds.size === 0` 시 진행 중 폴더 선택·SSE 내보내기 즉시 `abort()`/세대 무효화·`isBusy=false`·`setExporting(false)`·`setFeedback(null)` 초기화, 부분 실패(`partial`) 시 `failed_ids` 잔류 피드백 보존, `exportStream.ts`/`api.ts` `AbortSignal` 스트림 취소 방어 적용, `TC-IDX-22` 포함 `node --test` `19 passed`·`tsc && vite build`·관련 `pytest` `69 passed, 1 deselected` PASS)
+- **Active 도메인**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) *(`DEFECT-01~17`·`REFACTOR-01~02` 전수 해결 완료 / Active Step 1 대기)*
+- **현재 단계 (Stage)**: `🛠️ Implementing (01_indexing_storage Active Step 1 개발 대기)`
+- **직전 완료 작업**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) `DEFECT-17` 해결 완료 (`backend/app/services/photo.py`에 `MAX_JPEG_DIMENSION = 65500`·`MAX_THUMBNAIL_HEIGHT = 4096` 상한과 `_calculate_thumbnail_dimensions`·`_ensure_jpeg_compatible`를 도입해 `_resize_image_to_jpeg_bytes`의 초장축 세로 이미지(`10x5000`, `100x20000`, `1x100000`) 65,500px 초과 `OSError` 및 `RGBA`/`P`/`CMYK` 비호환 모드 크래시를 차단하고 `get_original_image_bytes` RAW 인메모리 JPEG 경로에도 동일 상한·RGB 정규화 가드를 적용, `TC-IDX-23` 포함 도메인 `pytest` `70 passed, 1 deselected`·전체 `pytest` `170 passed, 1 deselected`·`node --test` `19 passed`·`tsc && vite build` PASS)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"01_indexing_storage 도메인의 DEFECT-17 티켓 해결해줘"` *(`systematic-debugger`로 순차 해결 계속)*
+  > `"01_indexing_storage 도메인 Step 1 개발 진행해줘"` *(`clean-code-developer`로 Active Iteration Step 1 착수)*
 
 ---
 
@@ -20,7 +20,7 @@
 | 도메인 (Bounded Context) | 생명주기 상태 | 구현 진척도 (Active Step 1~4) | QA 인수 통과율 | 미해결 티켓 (`🚨D` / `🧐R`) | 최근 작업 요약 |
 | :--- | :--- | :---: | :---: | :---: | :--- |
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `12/12 (100%)` | `0 / 0` | `DEFECT-01~11`·`REFACTOR-01` 전수 해결 완료(`save_binary_file` 경로 검증·`tauri.conf.json` CSP 적용), Sign-Off 복귀 |
-| 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `19/23 (83%)` | `1 / 0` | `DEFECT-16` 해결 완료(선택 해제 시 내보내기 abort/세대 무효화·SSE 스트림 취소 방어·partial 보존), `DEFECT-17` 1건 해결 대기 |
+| 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `20/23 (87%)` | `0 / 0` | `DEFECT-01~17`·`REFACTOR-01~02` 전수 해결 완료(초장축 세로 썸네일 JPEG 65,500px 상한·RGB 정규화 방어), 스마트 오프라인·Relocation Step 1~4 대기 |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 0` | `REFACTOR-01` 해결 완료(SigLIP 폴백·`search.py` 로깅·`similar:` 버튼 연결), RRF·스마트 앨범 Step 1~4 대기 |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `15/15 (100%)` | `0 / 0` | `DEFECT-01~03`·`REFACTOR-01~08` 전수 해결 완료 (Headless MPS/MLX 가드·ADR-05 레거시 정리·300줄 이하 분할), Sign-Off 완료 |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 🛠️ Implementing | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 0` | `REFACTOR-01~02` 전수 해결 완료(`src/` 전역 `any` 0건·`api.ts`/훅/컴포넌트 타입 엄격화), 차트 드릴다운 Step 3~4 대기 |
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-18]` `[systematic-debugger]` [`01_indexing_storage`]**: `DEFECT-17` 결함 해결 완료 (`backend/app/services/photo.py`에 `MAX_JPEG_DIMENSION = 65500`·`MAX_THUMBNAIL_HEIGHT = 4096` 상한과 `_calculate_thumbnail_dimensions`·`_ensure_jpeg_compatible`를 도입해 `_resize_image_to_jpeg_bytes`가 `10x5000`·`100x20000`·`1x100000` 초장축 세로 이미지를 비율 유지(`width <= 360`, `height <= 4096`, `>= 1`)로 축소하고 `RGBA`/`P`/`CMYK` 등 비-RGB 모드를 `RGB`로 정규화해 libjpeg 65,500px 초과 `OSError`를 차단했으며, `get_original_image_bytes`의 RAW 디코딩 인메모리 JPEG 경로에도 동일 상한·RGB 정규화 및 `except HTTPException: raise`를 적용; `TC-IDX-23` 포함 도메인 `pytest` `70 passed, 1 deselected`·전체 `pytest` `170 passed, 1 deselected`·`node --test tests/frontend/*.test.mjs` `19 passed`·`tsc && vite build` 전수 PASS).
 
 - **`[2026-11-18]` `[systematic-debugger]` [`01_indexing_storage`]**: `DEFECT-16` 결함 해결 완료 (`src/utils/photoExport.ts` 순수 수명주기 컨트롤러 신설 및 `usePhotoExport.ts` `useAppStore.subscribe` 연동으로 `selectedPhotoIds.size === 0` 전환 시 진행 중 폴더 선택·SSE 내보내기 요청을 즉시 `abort()` 및 `requestId` 세대 무효화하고 `isBusy=false`·`setExporting(false)`·`setFeedback(null)`로 정리하며, `partial` 실패 시 `failed_ids` 잔류(`size > 0`) 피드백을 보존하고, `src/utils/exportStream.ts` `parseExportSseStream(stream, signal)`·`src/services/api.ts` `exportPhotos`에 `AbortSignal` 전달 및 청크 루프 내/종료 시 abort 우선 검사를 적용해 반쪽 JSON 파싱 에러 누수를 차단; `TC-IDX-22` 7종 포함 `node --test tests/frontend/*.test.mjs` `19 passed`·`tsc && vite build`·관련 `pytest` `69 passed, 1 deselected` 전수 PASS).
 

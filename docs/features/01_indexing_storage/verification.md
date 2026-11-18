@@ -1,8 +1,8 @@
 # 🧪 [01_indexing_storage] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-17 해결 대기)`
+- **검증 상태**: `🛠️ Implementing (DEFECT-01~17 및 REFACTOR-01~02 해결 완료 / Active Step 1 대기)`
 - **인수 조건 통과율**: `1 / 4 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 1건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -65,7 +65,7 @@
 | **Boundary**| `TC-IDX-20` | 단일 사진 재분석 캐시 동기화 및 사진 전환 격리 | 상세 재분석 중 타 사진 선택 또는 완료 대기 | `photoDetail` 캐시 즉시 갱신 및 전환 후 버퍼 오염 차단 | `PASS (Fixed in DEFECT-14)` |
 | **Boundary**| `TC-IDX-21` | 상세 패널/갤러리 즐겨찾기 토글 양방향 캐시 동기화 | 폴더 선택 중 상세 패널 하트 토글 | `photos` 및 `photoDetail` 캐시 모두 서버 상태와 일치 | `PASS (Fixed in DEFECT-15)` |
 | **Boundary**| `TC-IDX-22` | 내보내기 중 전체 선택 해제 시 피드백 누수 차단 | SSE 내보내기 진행 중 선택 해제 후 새 사진 선택 | 진행 중 요청 중단 및 이전 실패/완료 배너 잔류 차단 | `PASS (Fixed in DEFECT-16)` |
-| **Boundary**| `TC-IDX-23` | 초장축 세로 파노라마 썸네일 JPEG 65,500px 상한 방어 | 10x5000 또는 100x20000 이미지 썸네일 생성 | libjpeg 65,500px 초과 OSError 없이 썸네일 생성 | `FAIL (DEFECT-17)` |
+| **Boundary**| `TC-IDX-23` | 초장축 세로 파노라마 썸네일 JPEG 65,500px 상한 방어 | 10x5000 또는 100x20000 이미지 썸네일 생성 | libjpeg 65,500px 초과 OSError 없이 썸네일 생성 | `PASS (Fixed in DEFECT-17)` |
 
 ---
 
@@ -140,10 +140,11 @@
   - **회귀 테스트 결과**: `node --test tests/frontend/*.test.mjs` (`19 passed`: `photoExport.test.mjs` 7 + `photoFavorite.test.mjs` 6 + `photoReindex.test.mjs` 6), `npx tsc --noEmit && npm run build` (`PASS`, `0 Errors`), `./venv/bin/pytest backend/tests/test_api_photos.py backend/tests/test_api_folders.py backend/tests/test_api_search.py backend/tests/test_backend_hardening.py backend/tests/test_concurrency_hardening.py -k "not test_base_keep_alive_model_lifecycle" -v` (`69 passed, 1 deselected`)
 
 ### [DEFECT-17] `_resize_image_to_jpeg_bytes`의 세로 초장축 이미지 JPEG 65,500px 한계 초과 `OSError` 크래시
-- **현재 상태**: 🟡 OPEN
-- **심각도**: 🟠 P1 High (Edge-Case Crash / Indexing & Thumbnail Failure)
-- **발생 위치**: [`backend/app/services/photo.py#L28-L39`](../../../backend/app/services/photo.py#L28-L39)
-- **증상 및 재현**: 가로폭만 `360px`로 고정하고 세로 상한을 제한하지 않아 `height/width > 181.94` 초장축 이미지(`10x5000`, `100x20000`) 저장 시 libjpeg 65,500px 한계 초과 `OSError`로 인덱싱/썸네일 서빙이 실패함 (`✅ Empirical Probe Reproduced`).
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`backend/app/services/photo.py`](../../../backend/app/services/photo.py#L21-L165), [`backend/tests/test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py#L3285-L3371)
+  - **원인 및 조치**: `_resize_image_to_jpeg_bytes`가 가로폭(`360px`)만 고정하고 세로 상한을 제한하지 않아 `height/width > 181.94` 초장축 이미지(`10x5000`, `100x20000`) 저장 시 libjpeg 65,500px 한계를 초과하며 `OSError`로 실패하고 `RGBA`/`P`/`CMYK` 등 비-RGB 모드 방어가 없던 결함을 수정함. `MAX_JPEG_DIMENSION = 65500`·`MAX_THUMBNAIL_HEIGHT = 4096` 상한과 `_calculate_thumbnail_dimensions`를 도입해 세로 초과 시 비율을 유지하며 `new_width >= 1`, `new_height >= 1`로 축소(`width <= 360`, `height <= 4096 <= 65500`)하고, `RGB` 정규화를 적용함. 또한 인메모리 JPEG 인코딩 경로인 `get_original_image_bytes`의 RAW 디코딩 출력에도 `_ensure_jpeg_compatible`로 `RGB` 변환 및 `65,500px` 상한 가드(`except HTTPException: raise`)를 추가함(`load_pil_image`·`decode_raw_to_pil`은 기존 `RGB` 변환 확인).
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_23 -v` (`1 passed`), `./venv/bin/pytest backend/tests/test_api_photos.py backend/tests/test_api_folders.py backend/tests/test_api_search.py backend/tests/test_backend_hardening.py backend/tests/test_concurrency_hardening.py -k "not test_base_keep_alive_model_lifecycle" -v` (`70 passed, 1 deselected`), `./venv/bin/pytest backend/tests/ -k "not test_base_keep_alive_model_lifecycle" -q` (`170 passed, 1 deselected`), `node --test tests/frontend/*.test.mjs` (`19 passed`), `npx tsc --noEmit && npm run build` (`PASS`, `0 Errors`)
 
 ---
 
