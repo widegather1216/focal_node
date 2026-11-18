@@ -178,7 +178,7 @@ class ApiClient {
       throw new Error('No response body');
     }
 
-    return parseExportSseStream(response.body);
+    return parseExportSseStream(response.body, signal);
   }
 
   async fetchFolders(): Promise<FolderResponse[]> {

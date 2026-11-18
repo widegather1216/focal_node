@@ -17,12 +17,14 @@ export interface ExportFeedback {
   detail?: string;
 }
 
+export interface SseStreamReader {
+  read(): Promise<{ value?: Uint8Array; done: boolean }>;
+  releaseLock(): void;
+  cancel(reason?: unknown): Promise<unknown>;
+}
+
 export interface SseByteStream {
-  getReader(): {
-    read(): Promise<{ value?: Uint8Array; done: boolean }>;
-    releaseLock(): void;
-    cancel(reason?: unknown): Promise<unknown>;
-  };
+  getReader(): SseStreamReader;
 }
 
 interface SseParserState {
@@ -202,7 +204,82 @@ function processChunkLines(state: SseParserState, isFinalFlush: boolean): void {
   }
 }
 
-export async function parseExportSseStream(stream: SseByteStream): Promise<ExportResult> {
+function createAbortError(): Error {
+  const abortError = new Error('Export aborted');
+  abortError.name = 'AbortError';
+  return abortError;
+}
+
+function bindStreamAbortSignal(reader: SseStreamReader, signal?: AbortSignal): () => void {
+  if (!signal) {
+    return () => undefined;
+  }
+  const handleAbort = (): void => {
+    void reader.cancel().catch((cancelErr: unknown) => {
+      console.debug('SSE reader cancel on abort ignored:', cancelErr);
+    });
+  };
+  signal.addEventListener('abort', handleAbort, { once: true });
+  return () => signal.removeEventListener('abort', handleAbort);
+}
+
+function handleStreamChunkValue(
+  chunkValue: Uint8Array | undefined,
+  decoder: TextDecoder,
+  parserState: SseParserState,
+): boolean {
+  if (!chunkValue) {
+    return false;
+  }
+  parserState.buffer += decoder.decode(chunkValue, { stream: true });
+  processChunkLines(parserState, false);
+  return Boolean(parserState.streamError || parserState.finalResult);
+}
+
+async function readSseChunkLoop(
+  reader: SseStreamReader,
+  decoder: TextDecoder,
+  parserState: SseParserState,
+  signal?: AbortSignal,
+): Promise<boolean> {
+  while (true) {
+    if (signal?.aborted) {
+      throw createAbortError();
+    }
+    const chunkResult = await reader.read();
+    // Check abort before flushing partial SSE buffers so cancelled truncated JSON is not parsed.
+    if (signal?.aborted) {
+      throw createAbortError();
+    }
+    if (chunkResult.done) {
+      parserState.buffer += decoder.decode();
+      processChunkLines(parserState, true);
+      return true;
+    }
+    if (handleStreamChunkValue(chunkResult.value, decoder, parserState)) {
+      return false;
+    }
+  }
+}
+
+async function cleanupSseReader(reader: SseStreamReader, streamCompleted: boolean): Promise<void> {
+  if (!streamCompleted) {
+    try {
+      await reader.cancel();
+    } catch (cancelErr: unknown) {
+      console.warn('SSE reader cancel ignored:', cancelErr);
+    }
+  }
+  reader.releaseLock();
+}
+
+export async function parseExportSseStream(
+  stream: SseByteStream,
+  signal?: AbortSignal,
+): Promise<ExportResult> {
+  if (signal?.aborted) {
+    throw createAbortError();
+  }
   const reader = stream.getReader();
   const decoder = new TextDecoder('utf-8');
   const parserState: SseParserState = {
@@ -212,41 +289,21 @@ export async function parseExportSseStream(stream: SseByteStream): Promise<Expor
     finalResult: null,
     streamError: null,
   };
+  const unbindAbort = bindStreamAbortSignal(reader, signal);
   let streamCompleted = false;
 
   try {
-    while (true) {
-      const chunkResult = await reader.read();
-      if (chunkResult.done) {
-        streamCompleted = true;
-        parserState.buffer += decoder.decode();
-        processChunkLines(parserState, true);
-        break;
-      }
-      if (chunkResult.value) {
-        parserState.buffer += decoder.decode(chunkResult.value, { stream: true });
-        processChunkLines(parserState, false);
-        if (parserState.streamError || parserState.finalResult) {
-          break;
-        }
-      }
-    }
+    streamCompleted = await readSseChunkLoop(reader, decoder, parserState, signal);
   } finally {
-    if (!streamCompleted) {
-      try {
-        await reader.cancel();
-      } catch (cancelErr) {
-        console.warn('SSE reader cancel ignored:', cancelErr);
-      }
-    }
-    reader.releaseLock();
+    unbindAbort();
+    await cleanupSseReader(reader, streamCompleted);
   }
 
   if (parserState.streamError) {
     throw new Error(parserState.streamError);
   }
   if (!parserState.finalResult) {
-    throw new Error('Export stream ended without final data');
+    throw signal?.aborted ? createAbortError() : new Error('Export stream ended without final data');
   }
   return parserState.finalResult;
 }
