@@ -6,6 +6,8 @@ from typing import Any
 from core.ports import ImageEmbeddingPort, TextEmbeddingPort
 from services.base_model import GPU_LOCK
 
+SIGLIP_TEXT_MAX_LENGTH = 64
+
 
 class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
     """Generates normalized 768-d image/text embeddings and zero-shot visual tags."""
@@ -52,6 +54,13 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
                     print("[SigLIP2Adapter] Model loaded successfully.", flush=True)
         self._precompute_taxonomy_embeddings()
 
+    def _resolve_text_max_length(self) -> int:
+        text_config = getattr(getattr(self.model, "config", None), "text_config", None)
+        configured_limit = getattr(text_config, "max_position_embeddings", None)
+        if isinstance(configured_limit, int) and not isinstance(configured_limit, bool) and configured_limit > 0:
+            return configured_limit
+        return SIGLIP_TEXT_MAX_LENGTH
+
     def _precompute_taxonomy_embeddings(self) -> None:
         if self.cached_taxonomy_embeddings is not None:
             return
@@ -59,7 +68,14 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
             import torch
             from services.taxonomy import SIGLIP_VISUAL_TAXONOMY
 
-            encoded = self.processor(text=SIGLIP_VISUAL_TAXONOMY, padding="max_length", return_tensors="pt").to(self.device)
+            max_length = self._resolve_text_max_length()
+            encoded = self.processor(
+                text=SIGLIP_VISUAL_TAXONOMY,
+                padding="max_length",
+                truncation=True,
+                max_length=max_length,
+                return_tensors="pt",
+            ).to(self.device)
             with GPU_LOCK:
                 with torch.no_grad():
                     feature_output = self.model.get_text_features(**encoded)
@@ -90,7 +106,14 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
         import torch
 
         self._load_model()
-        encoded = self.processor(text=[text], padding="max_length", return_tensors="pt")
+        max_length = self._resolve_text_max_length()
+        encoded = self.processor(
+            text=[text],
+            padding="max_length",
+            truncation=True,
+            max_length=max_length,
+            return_tensors="pt",
+        )
         with GPU_LOCK:
             encoded = encoded.to(self.device)
             with torch.no_grad():
@@ -108,7 +131,7 @@ class SigLIP2Adapter(ImageEmbeddingPort, TextEmbeddingPort):
             return []
 
         image_emb = self.get_image_embedding(image_input) if isinstance(image_input, str) else image_input
-        if not image_emb:
+        if image_emb is None or len(image_emb) == 0:
             return []
 
         image_vector = np.array(image_emb)

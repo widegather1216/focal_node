@@ -1,8 +1,13 @@
 import logging
+import threading
 import time
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import torch
+
 from models import AIAnalysis, Image, ImageMetadata
+from services.siglip_adapter import SigLIP2Adapter
 
 
 def _seed_photo(
@@ -155,3 +160,59 @@ def test_search_similar_photos_excludes_target_photo(client, db_session, monkeyp
     assert response.status_code == 200
     payload = response.json()
     assert [item["id"] for item in payload] == ["similar_photo_1"]
+
+
+class _EncodedBatch(dict):
+    def to(self, _device):
+        return self
+
+
+class _LengthStrictProcessor:
+    def __call__(self, text, padding=None, truncation=False, max_length=None, return_tensors=None):
+        token_count = len(text[0].split())
+        seq_len = max_length if (truncation and max_length is not None) else token_count
+        return _EncodedBatch({"input_ids": torch.ones((1, seq_len), dtype=torch.long)})
+
+
+class _LengthStrictTextModel:
+    config = SimpleNamespace(text_config=SimpleNamespace(max_position_embeddings=64))
+
+    def get_text_features(self, input_ids, **_kwargs):
+        if input_ids.shape[1] > 64:
+            raise ValueError("Sequence length exceeds max_position_embeddings")
+        return SimpleNamespace(pooler_output=torch.ones((1, 768), dtype=torch.float32))
+
+
+def _build_length_strict_siglip_adapter() -> SigLIP2Adapter:
+    adapter = SigLIP2Adapter.__new__(SigLIP2Adapter)
+    adapter.device = "cpu"
+    adapter.model_id = "google/siglip2-base-patch16-224"
+    adapter.model = _LengthStrictTextModel()
+    adapter.processor = _LengthStrictProcessor()
+    adapter.cached_taxonomy_embeddings = None
+    adapter.lock = threading.RLock()
+    return adapter
+
+
+def test_tc_src_08_search_photos_long_query_uses_siglip_truncation(client, db_session, monkeypatch):
+    _seed_photo(
+        db_session,
+        photo_id="long_query_match",
+        file_name="neon_alley.jpg",
+        caption="Rainy night street",
+        tags_json='["night"]',
+    )
+    adapter = _build_length_strict_siglip_adapter()
+    mock_collection = MagicMock()
+    mock_collection.count.return_value = 1
+    mock_collection.query.return_value = {"ids": [["long_query_match"]]}
+    monkeypatch.setattr("services.search_service.get_siglip_adapter", lambda: adapter)
+    monkeypatch.setattr("repositories.vector_repository.get_chroma_collection", lambda: mock_collection)
+
+    long_korean_english_query = " ".join(
+        ["비 내리는 밤거리 네온사인 시네마틱 골목길 젖은 아스팔트 반영 인물 스냅"] * 10
+    )
+    response = client.post("/api/search", json={"query": long_korean_english_query, "limit": 10, "offset": 0})
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()] == ["long_query_match"]
+    mock_collection.query.assert_called_once()
