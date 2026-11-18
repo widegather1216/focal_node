@@ -1,8 +1,8 @@
 # 🧪 [02_search_curation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (Round 2 딥버그 헌팅 완료 — DEFECT-11 등록, 해결 대기)`
+- **검증 상태**: `🛠️ Implementing (DEFECT-01~11 전수 해결 완료 — Active Step 1~4 및 To-Be QA 대기)`
 - **인수 조건 통과율**: `1 / 3 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 1건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -51,7 +51,7 @@
 | **Boundary**| `TC-SRC-15` | 32,766 변수 초과·음수 `limit`/`offset`·`ILIKE` 이스케이프·정렬 tie-breaker (`DEFECT-08`) | 35k ID 필터, `limit=-1`, `Z6_2` 검색, 동시각 연사 | SQL 오류/전량 누출/와일드카드 누출/페이지 역전 차단 | `PASS (Fixed in DEFECT-08)` |
 | **Negative**| `TC-SRC-16` | `search_similar_photos` 빈 벡터 인덱스 `404` 일관성 (`DEFECT-09`) | `vector_count == 0` 상태에서 `POST /api/search/similar` | `200 OK []` 위장 없이 `404` 반환 | `PASS (Fixed in DEFECT-09)` |
 | **Boundary**| `TC-SRC-17` | `SearchService` 스레드 세션 격리 및 `AbortSignal` 전달 (`DEFECT-10`) | `to_thread` 취소 경합 및 빠른 검색어 전환 | `Session` 크로스 스레드 `close()` 경합 차단 및 fetch 취소 | `PASS (Fixed in DEFECT-10)` |
-| **Boundary**| `TC-SRC-18` | `PhotoGallery` 검색/필터/폴더 전환 시 `useVirtualizer` `scrollOffset` 초기화 (`DEFECT-11`) | 하단 스크롤 후 소량/재마운트 검색 결과 전환 | 잔존 `scrollOffset` 초기화로 0번 행 누락 및 강제 하단 점프 차단 | `FAIL (DEFECT-11)` |
+| **Boundary**| `TC-SRC-18` | `PhotoGallery` 검색/필터/폴더 전환 시 `useVirtualizer` `scrollOffset` 초기화 (`DEFECT-11`) | 하단 스크롤 후 소량/재마운트 검색 결과 전환 | 잔존 `scrollOffset` 초기화로 0번 행 누락 및 강제 하단 점프 차단 | `PASS (Fixed in DEFECT-11)` |
 
 ---
 
@@ -128,9 +128,11 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_api_search.py backend/tests/test_concurrency_hardening.py -v` (`32 passed`, `TC-SRC-17` WAL 기반 취소 경합 테스트 포함), `./venv/bin/pytest backend/tests/ -q` (`191 passed`), `node --test tests/frontend/*.test.mjs` (`35 passed`, `TC-SRC-17` 4종 포함), `npx tsc --noEmit && npm run build` (`PASS`)
 
 ### [DEFECT-11] `PhotoGallery` 조건부 언마운트/재마운트 시 `useVirtualizer` 잔존 `scrollOffset`으로 인한 상단 행 영구 누락 및 강제 하단 점프
-- **현재 상태**: 🟡 OPEN (`🟠 P1 High`)
-- **발생 위치**: [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx#L80-L193), `@tanstack/virtual-core` (`Virtualizer.cleanup` / `_willUpdate`)
-- **원인 및 재현**: 하단 스크롤(`scrollOffset = 5000`) 상태에서 검색·필터·폴더·`similar:` 전환으로 `pending`/`empty` 분기를 거치거나 캐시 결과로 전환될 때 `Virtualizer.cleanup()`이 `scrollOffset`을 초기화하지 않아 새 컨테이너 마운트 시 `_willUpdate()`가 `_scrollToOffset(5000)`을 실행함. 소량 결과(`totalSize <= clientHeight`)에서는 0번 행이 영구 미렌더링되고, 대량 결과에서는 하단 강제 점프 및 `fetchNextPage()` 자동 발사가 발생함.
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`galleryLayout.ts`](../../../src/utils/galleryLayout.ts#L101-L162), [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx#L38-L113), [`galleryLayout.test.mjs`](../../../tests/frontend/galleryLayout.test.mjs#L179-L396)
+  - **원인 및 조치**: `@tanstack/virtual-core`의 `Virtualizer.cleanup()`이 `scrollElement = null`만 초기화하고 `scrollOffset`을 유지해 `pending`/`empty` 분기 후 새 컨테이너 마운트 시 `_willUpdate()`가 `_scrollToOffset(5000)`을 실행하고, 언마운트 없는 캐시 결과 전환에서도 잔존 `scrollOffset`/`scrollTop`으로 `getVirtualItems()`가 `[1, 2, 3, 4]`(0번 행 누락) 또는 하단 점프·자동 `fetchNextPage()`를 유발하던 결함을 확인함. [`galleryLayout.ts`](../../../src/utils/galleryLayout.ts#L101-L162)에 `buildGalleryQueryContextKey`·`resetVirtualizerScrollPosition`·`syncVirtualizerOnContainerMount`를 분리하고, [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx#L38-L113)에서 ① `handleScrollContainerRef` 언마운트(`null`) 및 신규 `containerElement.scrollTop === 0` 마운트 시 잔존 `scrollOffset` 정리, ② `queryContextKey`(`selectedFolder`, `effectiveSearchQuery`, 정렬된 유효 `searchFilters`) 변경 시 `getVirtualItems()` 호출 직전 동기 리셋 + `useLayoutEffect` 레이아웃 커밋 단계에서 `scrollElement.scrollTop = 0` 정리를 연동했으며, 동일 `queryContextKey`의 `fetchNextPage()` 무한 스크롤 추가 시에는 스크롤 위치가 100% 보존되도록 구현함.
+  - **회귀 테스트 결과**: `node --test tests/frontend/*.test.mjs` (`40 passed`, `TC-SRC-18` 5종 포함), `npx tsc --noEmit && npm run build` (`PASS`), `./venv/bin/pytest backend/tests/test_api_search.py -v` (`18 passed`)
 
 ---
 

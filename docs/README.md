@@ -7,11 +7,11 @@
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
-- **Active 도메인**: [`02_search_curation`](./features/02_search_curation/README.md) *(`DEFECT-11` 해결 대기)*
-- **현재 단계 (Stage)**: `🩹 Debugging (02_search_curation DEFECT-11 해결)`
-- **직전 완료 작업**: [`02_search_curation`](./features/02_search_curation/README.md) Round 2 3-Lens 딥버그 헌팅 완료 (`Lens B`/`C` `🟢 Zero Critical Defects`, `Lens A` `@tanstack/virtual-core` `cleanup()` 미초기화 `scrollOffset` 잔존으로 인한 상단 행 누락/강제 점프 `DEFECT-11` 실증 등록)
+- **Active 도메인**: [`02_search_curation`](./features/02_search_curation/README.md) *(Step 1 [DB & Types] 착수 대기 — `DEFECT-01~11` 해결 완료)*
+- **현재 단계 (Stage)**: `🛠️ Implementing (02_search_curation Step 1 착수 대기)`
+- **직전 완료 작업**: [`02_search_curation`](./features/02_search_curation/README.md) `DEFECT-11` 결함 해결 완료 (`PhotoGallery` 쿼리 전환·재마운트 시 `useVirtualizer` 잔존 `scrollOffset` 초기화 및 `@tanstack/virtual-core` `TC-SRC-18` 5종 통과)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"02_search_curation 도메인의 DEFECT-11 티켓 해결해줘"` *(`systematic-debugger`로 `DEFECT-11` 해결)*
+  > `"02_search_curation 도메인 Step 1 개발 진행해줘"` *(`clean-code-developer`로 `SmartAlbum` ORM 및 `SearchFilter` 확장 구현)*
 
 ---
 
@@ -21,7 +21,7 @@
 | :--- | :--- | :---: | :---: | :---: | :--- |
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `12/12 (100%)` | `0 / 0` | `DEFECT-01~11`·`REFACTOR-01` 전수 해결 완료(`save_binary_file` 경로 검증·`tauri.conf.json` CSP 적용), Sign-Off 복귀 |
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `20/23 (87%)` | `0 / 0` | `DEFECT-01~17`·`REFACTOR-01~02` 전수 해결 완료(초장축 세로 썸네일 JPEG 65,500px 상한·RGB 정규화 방어), 스마트 오프라인·Relocation Step 1~4 대기 |
-| 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `12/18 (67%)` | `1 / 0` | `DEFECT-01~10 해결 완료 / Round 2에서 PhotoGallery virtualizer scrollOffset 잔존 DEFECT-11 등록` |
+| 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `13/18 (72%)` | `0 / 0` | `DEFECT-01~11` 전수 해결 완료 (`PhotoGallery` `useVirtualizer` 잔존 `scrollOffset` 초기화), RRF/스마트 앨범 Step 1~4 대기 |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `15/15 (100%)` | `0 / 0` | `DEFECT-01~03`·`REFACTOR-01~08` 전수 해결 완료 (Headless MPS/MLX 가드·ADR-05 레거시 정리·300줄 이하 분할), Sign-Off 완료 |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 🛠️ Implementing | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 0` | `REFACTOR-01~02` 전수 해결 완료(`src/` 전역 `any` 0건·`api.ts`/훅/컴포넌트 타입 엄격화), 차트 드릴다운 Step 3~4 대기 |
 
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-18]` `[systematic-debugger]` [`02_search_curation`]**: `DEFECT-11` 결함 해결 완료 (`src/utils/galleryLayout.ts`에 `buildGalleryQueryContextKey`·`resetVirtualizerScrollPosition`·`syncVirtualizerOnContainerMount`를 추가하고, `src/components/PhotoGallery.tsx`에서 `handleScrollContainerRef` 마운트/언마운트 시 잔존 `scrollOffset` 정리, `queryContextKey` 전환 시 `getVirtualItems()` 직전 동기 리셋 및 `useLayoutEffect([queryContextKey])` `scrollTop = 0` 초기화를 연동해 `pending`/`empty` 재마운트 및 캐시 결과 전환 시 0번 행 영구 누락·강제 하단 점프를 차단하고 `fetchNextPage()` 무한 스크롤 위치는 보존함; `@tanstack/virtual-core` 실인스턴스 기반 `TC-SRC-18` 5종 포함 `node --test tests/frontend/*.test.mjs` `40 passed`, `tsc && vite build` `PASS`, `test_api_search.py` `18 passed`).
 
 - **`[2026-11-18]` `[deep-bug-hunter]` [`02_search_curation`]**: Round 2 3-Lens 적대적 재검증 및 비파괴 실증 프로빙 완료 (`Lens B`·`Lens C` `🟢 Zero Critical Defects Found` — 로컬 `google/siglip2-base-patch16-224`·`ChromaDB 1.5.9`·SQLite 마이그레이션·Pydantic `2.13.4`·35k 청크 실실행 통과; `Lens A` `@tanstack/virtual-core@3.14.5` 실증 프로브로 `PhotoGallery` 조건부 언마운트/재마운트 시 `useVirtualizer` 잔존 `scrollOffset`으로 인한 0번 행 영구 미렌더링 및 강제 하단 점프 `DEFECT-11` 발견 및 등록).
 

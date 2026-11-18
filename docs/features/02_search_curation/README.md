@@ -1,8 +1,8 @@
 # 🔍 [02_search_curation] Hybrid Search, K-NN Curation & Smart Albums
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (Round 2 딥버그 헌팅 완료 — DEFECT-11 해결 대기)`
+- **현재 상태 (Lifecycle)**: `🛠️ Implementing (DEFECT-01~11 전수 해결 완료 — Active Step 1~4 구현 대기)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 1건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -34,20 +34,18 @@ SigLIP 2 자연어 시맨틱 검색(코사인 거리 임계값 절삭)과 SQLite
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
 - **Recent Commits (2026-11-18)**:
-  - `c0a3008` - `fix(search): isolate worker DB sessions on cancellation and forward AbortSignal`
-  - `387f87e` - `docs(search): mark DEFECT-09 resolved and sync control tower`
-  - `d128c27` - `fix(search): raise 404 for missing embeddings even when vector index is empty`
-- **Working Tree State**: 🟢 Clean (Round 2 헌팅 — `DEFECT-11` 등록)
-- **직전 완료 작업**: `2026-11-18 / deep-bug-hunter / Round 2 3-Lens 재검증 완료 (Lens B·C Zero Critical Defects, Lens A @tanstack/virtual-core 잔존 scrollOffset DEFECT-11 등록)`
+  - `6c2f314` - `fix(search-ui): reset virtualizer scrollOffset on PhotoGallery query and remount transitions`
+  - `4486306` - `docs(search): register DEFECT-11 from Round 2 deep bug hunt`
+  - `e2298a6` - `docs(search): mark DEFECT-10 resolved and restore Implementing status`
+- **Working Tree State**: 🟢 Clean (No uncommitted changes; `DEFECT-01~11` 전수 해결 완료)
+- **직전 완료 작업**: `2026-11-18 / systematic-debugger / DEFECT-11 해결 완료 (PhotoGallery 쿼리 컨텍스트 전환·재마운트 시 useVirtualizer 잔존 scrollOffset 초기화, TC-SRC-18 5종 추가)`
 - **생성/수정된 핵심 파일**:
-  - `backend/app/api/search.py`: `Depends(get_db)` 제거 및 `SearchService()` 호출 전환
-  - `backend/app/services/search_service.py`: `db: Optional[Session] = None`/`session_factory` 도입, `_search_by_text_sync`·`_filter_and_paginate_sync` 워커 스레드 내부 `database.SessionLocal` 스코프 및 `_serialize_photo_rows` 평문 `dict` 반환 단일화
-  - `src/utils/searchRequest.ts` [신설], `src/utils/apiError.ts`, `src/services/api.ts`, `src/components/PhotoGallery.tsx`: `fetchPhotos`/`postJson`/`searchPhotos`·`useInfiniteQuery` `queryFn` `AbortSignal` 전달 및 `AbortError` 보존
-  - `backend/tests/test_api_search.py`, `tests/frontend/searchAbort.test.mjs` [신설]: `TC-SRC-17` WAL 취소 경합 격리 및 `AbortSignal`/TanStack `QueryClient` 단위 테스트 추가
+  - `src/utils/galleryLayout.ts`: `buildGalleryQueryContextKey`, `resetVirtualizerScrollPosition`, `syncVirtualizerOnContainerMount` 추가
+  - `src/components/PhotoGallery.tsx`: `handleScrollContainerRef` 마운트/언마운트 동기화, `getVirtualItems()` 직전 동기 리셋 및 `useLayoutEffect([queryContextKey])` `scrollTop` 초기화 연동 (`fetchNextPage` 스크롤 보존)
+  - `tests/frontend/galleryLayout.test.mjs`: `@tanstack/virtual-core` `Virtualizer` 실인스턴스 기반 `TC-SRC-18.1~18.5` 회귀 테스트 추가
 - **검증 완료된 테스트 실행 명령어**:
-  - `./venv/bin/pytest backend/tests/test_api_search.py backend/tests/test_concurrency_hardening.py -v` (`32 passed`)
-  - `./venv/bin/pytest backend/tests/ -q` (`191 passed`)
-  - `node --test tests/frontend/*.test.mjs` (`35 passed`)
+  - `node --test tests/frontend/*.test.mjs` (`40 passed`)
   - `npx tsc --noEmit && npm run build` (`PASS`)
+  - `./venv/bin/pytest backend/tests/test_api_search.py -v` (`18 passed`)
 - **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - `DEFECT-01~10` 전수 해결 완료. 다음 단계로 Active Iteration Step 1(`models.py` `SmartAlbum` 테이블, `schemas.py` 및 `src/types/photo.ts` `use_35mm_equivalent`/`min_*_score`/`SmartAlbum` 정의) 착수. Step 2 구현 시 `VectorRepository.query_similar_by_embedding`에서 `include=["distances"]`로 거리를 조회하여 `d <= max_distance`인 후보만 반환하도록 수정할 것.
+  - `DEFECT-01~11` 전수 해결 완료. 다음 단계로 Active Iteration Step 1(`models.py` `SmartAlbum` 테이블, `schemas.py` 및 `src/types/photo.ts` `use_35mm_equivalent`/`min_*_score`/`SmartAlbum` 정의) 착수. Step 2 구현 시 `VectorRepository.query_similar_by_embedding`에서 `include=["distances"]`로 거리를 조회하여 `d <= max_distance`인 후보만 반환하도록 수정할 것.
