@@ -1,8 +1,8 @@
 # 🔍 [02_search_curation] Hybrid Search, K-NN Curation & Smart Albums
 
-- **현재 상태 (Lifecycle)**: `🛠️ Implementing (DEFECT-01~11 전수 해결 완료 — Active Step 1~4 구현 대기)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (Round 3 교차 점검 완료 — DEFECT-12 해결 대기)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 1건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -37,8 +37,8 @@ SigLIP 2 자연어 시맨틱 검색(코사인 거리 임계값 절삭)과 SQLite
   - `6c2f314` - `fix(search-ui): reset virtualizer scrollOffset on PhotoGallery query and remount transitions`
   - `4486306` - `docs(search): register DEFECT-11 from Round 2 deep bug hunt`
   - `e2298a6` - `docs(search): mark DEFECT-10 resolved and restore Implementing status`
-- **Working Tree State**: 🟢 Clean (No uncommitted changes; `DEFECT-01~11` 전수 해결 완료)
-- **직전 완료 작업**: `2026-11-18 / systematic-debugger / DEFECT-11 해결 완료 (PhotoGallery 쿼리 컨텍스트 전환·재마운트 시 useVirtualizer 잔존 scrollOffset 초기화, TC-SRC-18 5종 추가)`
+- **Working Tree State**: 🟢 Clean (Round 3 교차 점검 — `DEFECT-12` 등록)
+- **직전 완료 작업**: `2026-11-18 / deep-bug-hunter / Round 3 검증 중 @tanstack/virtual-core observeElementOffset 150ms 디바운스 타이머 cleanup 누락에 의한 잔존 scrollOffset 부활 반례(DEFECT-12) 발견 및 등록`
 - **생성/수정된 핵심 파일**:
   - `src/utils/galleryLayout.ts`: `buildGalleryQueryContextKey`, `resetVirtualizerScrollPosition`, `syncVirtualizerOnContainerMount` 추가
   - `src/components/PhotoGallery.tsx`: `handleScrollContainerRef` 마운트/언마운트 동기화, `getVirtualItems()` 직전 동기 리셋 및 `useLayoutEffect([queryContextKey])` `scrollTop` 초기화 연동 (`fetchNextPage` 스크롤 보존)
