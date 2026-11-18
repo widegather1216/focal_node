@@ -764,3 +764,42 @@ def test_tc_src_15_exif_ilike_wildcard_escape_whitespace_and_deterministic_tie_b
         "null_z",
     ]
 
+
+def _build_mock_chroma_collection(count_val: int, embeddings=None, query_ids=None) -> MagicMock:
+    collection = MagicMock()
+    collection.count.return_value = count_val
+    if embeddings is not None:
+        collection.get.return_value = {"embeddings": embeddings}
+    if query_ids is not None:
+        collection.query.return_value = {"ids": [query_ids]}
+    return collection
+
+
+def test_tc_src_16_similar_search_returns_404_when_vector_index_empty_or_missing(
+    client, db_session, monkeypatch
+):
+    _seed_photo(db_session, "unindexed_photo", "unindexed.jpg", "Harbor dusk", '["harbor"]')
+    payload = {"photo_id": "unindexed_photo", "limit": 10, "offset": 0}
+
+    empty_collection = _build_mock_chroma_collection(count_val=0)
+    monkeypatch.setattr("repositories.vector_repository.get_chroma_collection", lambda: empty_collection)
+    empty_index_resp = client.post("/api/search/similar", json=payload)
+    assert empty_index_resp.status_code == 404
+    assert "unindexed_photo" in empty_index_resp.json()["detail"]
+
+    partial_collection = _build_mock_chroma_collection(count_val=3, embeddings=[])
+    monkeypatch.setattr("repositories.vector_repository.get_chroma_collection", lambda: partial_collection)
+    missing_emb_resp = client.post("/api/search/similar", json=payload)
+    assert missing_emb_resp.status_code == 404
+    assert "unindexed_photo" in missing_emb_resp.json()["detail"]
+
+    singleton_collection = _build_mock_chroma_collection(
+        count_val=1, embeddings=[[0.2] * 768], query_ids=["unindexed_photo"]
+    )
+    monkeypatch.setattr("repositories.vector_repository.get_chroma_collection", lambda: singleton_collection)
+    no_peers_resp = client.post("/api/search/similar", json=payload)
+    assert no_peers_resp.status_code == 200
+    assert no_peers_resp.json() == []
+
+
+

@@ -90,11 +90,6 @@ class SearchService:
 
     async def search_similar_photos(self, request: schemas.SimilarSearchRequest) -> List[models.Image]:
         """Executes K-NN reference search using existing ChromaDB embedding."""
-        vector_count = await asyncio.to_thread(self.vector_repo.count)
-        if vector_count == 0:
-            logger.warning("[SearchService] Vector index is empty; returning no similar photos.")
-            return []
-
         target_embedding = await asyncio.to_thread(self.vector_repo.get_embedding_by_id, request.photo_id)
         if target_embedding is None:
             logger.warning("[SearchService] Photo embedding for %s not found.", request.photo_id)
