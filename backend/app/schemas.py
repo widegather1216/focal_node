@@ -1,6 +1,25 @@
-from pydantic import BaseModel
-from typing import List, Optional
-from datetime import datetime
+from datetime import date, datetime, time
+import re
+from typing import Any, List, Optional
+from pydantic import BaseModel, field_validator
+
+_DATE_ONLY_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def normalize_date_filter_bound(raw_value: Any, *, end_of_day: bool) -> Any:
+    """Expands date-only values to full-day boundaries and strips tzinfo for naive SQLite comparison."""
+    if raw_value is None:
+        return None
+    if isinstance(raw_value, datetime):
+        return raw_value.replace(tzinfo=None) if raw_value.tzinfo is not None else raw_value
+    boundary_time = time.max if end_of_day else time.min
+    if isinstance(raw_value, date):
+        return datetime.combine(raw_value, boundary_time)
+    if isinstance(raw_value, str):
+        stripped = raw_value.strip()
+        if _DATE_ONLY_PATTERN.fullmatch(stripped):
+            return datetime.combine(date.fromisoformat(stripped), boundary_time)
+    return raw_value
 
 class PhotoListResponse(BaseModel):
     id: str
@@ -86,6 +105,23 @@ class SearchFilter(BaseModel):
     focal_length_max: Optional[float] = None
     date_from: Optional[datetime] = None
     date_to: Optional[datetime] = None
+
+    @field_validator("date_from", mode="before")
+    @classmethod
+    def _normalize_date_from(cls, raw_value: Any) -> Any:
+        return normalize_date_filter_bound(raw_value, end_of_day=False)
+
+    @field_validator("date_to", mode="before")
+    @classmethod
+    def _normalize_date_to(cls, raw_value: Any) -> Any:
+        return normalize_date_filter_bound(raw_value, end_of_day=True)
+
+    @field_validator("date_from", "date_to", mode="after")
+    @classmethod
+    def _ensure_naive_datetime(cls, parsed_dt: Optional[datetime]) -> Optional[datetime]:
+        if parsed_dt is not None and parsed_dt.tzinfo is not None:
+            return parsed_dt.replace(tzinfo=None)
+        return parsed_dt
 
 class SearchRequest(BaseModel):
     query: Optional[str] = None

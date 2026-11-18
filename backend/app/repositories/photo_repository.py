@@ -1,12 +1,25 @@
+from datetime import datetime
 from typing import Any, List, Optional
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_, func
 import models
+from schemas import normalize_date_filter_bound
 from utils.path import (
     is_path_within_folder,
     normalize_path_preserving_leaf_symlink,
     to_slash_bounded_prefix,
 )
+
+
+def _resolve_date_filter_bound(raw_value: Any, *, end_of_day: bool) -> Any:
+    """Normalizes date bounds for direct repository callers bypassing SearchFilter."""
+    normalized = normalize_date_filter_bound(raw_value, end_of_day=end_of_day)
+    if not isinstance(normalized, str):
+        return normalized
+    stripped = normalized.strip()
+    iso_text = f"{stripped[:-1]}+00:00" if stripped.endswith(("Z", "z")) else stripped
+    parsed_dt = datetime.fromisoformat(iso_text)
+    return parsed_dt.replace(tzinfo=None) if parsed_dt.tzinfo is not None else parsed_dt
 
 class PhotoRepository:
     def __init__(self, db: Session):
@@ -137,8 +150,8 @@ class PhotoRepository:
             ("f_number_max", models.ImageMetadata.f_number, lambda col, val: col <= val),
             ("focal_length_min", models.ImageMetadata.focal_length, lambda col, val: col >= val),
             ("focal_length_max", models.ImageMetadata.focal_length, lambda col, val: col <= val),
-            ("date_from", models.ImageMetadata.capture_date, lambda col, val: col >= val),
-            ("date_to", models.ImageMetadata.capture_date, lambda col, val: col <= val),
+            ("date_from", models.ImageMetadata.capture_date, lambda col, val: col >= _resolve_date_filter_bound(val, end_of_day=False)),
+            ("date_to", models.ImageMetadata.capture_date, lambda col, val: col <= _resolve_date_filter_bound(val, end_of_day=True)),
         ]
         for field_name, col, op in range_mappings:
             val = getattr(filters, field_name, None)

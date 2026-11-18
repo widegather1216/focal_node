@@ -1,3 +1,4 @@
+from datetime import date, datetime
 import json
 import logging
 import threading
@@ -12,6 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from database import Base, run_migrations
 from models import AIAnalysis, Image, ImageMetadata
 from repositories.photo_repository import PhotoRepository
+from schemas import SearchFilter
 from services.photo import register_photos_batch_atomic
 from services.photo_reindex import _update_ai_analysis_orm
 from services.siglip_adapter import SigLIP2Adapter
@@ -346,3 +348,83 @@ def test_tc_src_09_run_migrations_normalizes_escaped_ai_tags_and_skips_malformed
 
     assert "legacy_bad_2" in caplog.text
     run_migrations(fresh_engine)
+
+
+def _seed_dated_photo(db_session, photo_id: str, file_name: str, capture_date: datetime) -> None:
+    image_row = Image(
+        id=photo_id,
+        parent_dir="/test",
+        file_path=f"/test/{file_name}",
+        file_name=file_name,
+        file_size=100,
+        file_mtime=time.time(),
+        mime_type="image/jpeg",
+    )
+    metadata_row = ImageMetadata(image_id=photo_id, capture_date=capture_date)
+    db_session.add_all([image_row, metadata_row])
+    db_session.commit()
+
+
+def test_tc_src_10_date_filter_single_day_includes_full_day_and_preserves_explicit_timestamps(client, db_session):
+    _seed_dated_photo(db_session, "same_day_midnight", "0000.jpg", datetime(2025, 11, 18, 0, 0, 0))
+    _seed_dated_photo(db_session, "same_day_afternoon", "1430.jpg", datetime(2025, 11, 18, 14, 30, 0))
+    _seed_dated_photo(db_session, "same_day_end", "235959.jpg", datetime(2025, 11, 18, 23, 59, 59, 999999))
+    _seed_dated_photo(db_session, "next_day_midnight", "next.jpg", datetime(2025, 11, 19, 0, 0, 0))
+
+    same_day_resp = client.post(
+        "/api/search",
+        json={"filters": {"date_from": "2025-11-18", "date_to": "2025-11-18"}, "limit": 20, "offset": 0},
+    )
+    assert same_day_resp.status_code == 200
+    assert {item["id"] for item in same_day_resp.json()} == {
+        "same_day_midnight",
+        "same_day_afternoon",
+        "same_day_end",
+    }
+
+    midnight_cutoff_resp = client.post(
+        "/api/search",
+        json={"filters": {"date_from": "2025-11-18T00:00:00", "date_to": "2025-11-18T00:00:00"}, "limit": 20, "offset": 0},
+    )
+    assert midnight_cutoff_resp.status_code == 200
+    assert [item["id"] for item in midnight_cutoff_resp.json()] == ["same_day_midnight"]
+
+    noon_cutoff_resp = client.post(
+        "/api/search",
+        json={"filters": {"date_from": "2025-11-18T00:00:00", "date_to": "2025-11-18T12:00:00"}, "limit": 20, "offset": 0},
+    )
+    assert noon_cutoff_resp.status_code == 200
+    assert [item["id"] for item in noon_cutoff_resp.json()] == ["same_day_midnight"]
+
+
+def test_tc_src_10_date_filter_supports_date_objects_and_utc_z_iso_strings(client, db_session):
+    _seed_dated_photo(db_session, "year_end_2024", "ye2024.jpg", datetime(2024, 12, 31, 23, 59, 59))
+    _seed_dated_photo(db_session, "new_year_2025", "ny2025.jpg", datetime(2025, 1, 1, 0, 0, 0))
+    _seed_dated_photo(db_session, "nov_afternoon", "nov18.jpg", datetime(2025, 11, 18, 14, 30, 0))
+
+    date_obj_filter = SearchFilter(date_from=date(2025, 11, 18), date_to=date(2025, 11, 18))
+    assert date_obj_filter.date_from == datetime(2025, 11, 18, 0, 0, 0)
+    assert date_obj_filter.date_to == datetime(2025, 11, 18, 23, 59, 59, 999999)
+
+    explicit_dt_filter = SearchFilter(date_to=datetime(2025, 11, 18, 0, 0, 0))
+    assert explicit_dt_filter.date_to == datetime(2025, 11, 18, 0, 0, 0)
+
+    utc_filter = SearchFilter(date_from="2024-01-01T00:00:00Z", date_to="2024-12-31T23:59:59Z")
+    assert utc_filter.date_from == datetime(2024, 1, 1, 0, 0, 0)
+    assert utc_filter.date_to == datetime(2024, 12, 31, 23, 59, 59)
+    assert utc_filter.date_from.tzinfo is None and utc_filter.date_to.tzinfo is None
+
+    utc_resp = client.post(
+        "/api/search",
+        json={"filters": {"date_from": "2024-01-01T00:00:00Z", "date_to": "2024-12-31T23:59:59Z"}, "limit": 20, "offset": 0},
+    )
+    assert utc_resp.status_code == 200
+    assert [item["id"] for item in utc_resp.json()] == ["year_end_2024"]
+
+    repo_matches = PhotoRepository(db_session).filter_and_paginate(
+        None, SimpleNamespace(date_from=date(2025, 11, 18), date_to=date(2025, 11, 18)), 0, 20
+    )
+    assert [img.id for img in repo_matches] == ["nov_afternoon"]
+
+    invalid_resp = client.post("/api/search", json={"filters": {"date_to": "2025-02-30"}, "limit": 20, "offset": 0})
+    assert invalid_resp.status_code == 422
