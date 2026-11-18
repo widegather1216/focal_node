@@ -1,8 +1,8 @@
 # 🔍 [02_search_curation] Hybrid Search, K-NN Curation & Smart Albums
 
-- **현재 상태 (Lifecycle)**: `🛠️ Implementing (Baseline 및 REFACTOR-01 완료 / Active Step 1~4 대기)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (딥버그 헌팅 완료 — DEFECT-01~10 해결 대기)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 10건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -36,8 +36,8 @@ SigLIP 2 자연어 시맨틱 검색(코사인 거리 임계값 절삭)과 SQLite
 - **Recent Commits (2026-11-15)**:
   - `f6dabef` - `feat(search-ui): wire similar photo lookup into detail panel`
   - `2bf7ad9` - `refactor(search): fallback to sqlite on siglip errors and use logger`
-- **Working Tree State**: 🟢 Clean (No uncommitted changes)
-- **직전 완료 작업**: `2026-11-15 / systematic-debugger / REFACTOR-01 해결 완료 (SearchService SRP 분할 및 SigLIP 2 실패 시 SQLite 폴백, search.py 표준 로깅, DetailPanel 유사 사진 검색 버튼 연결)`
+- **Working Tree State**: 🟢 Clean (Baseline 커밋 기준; 현재 `DEFECT-01~10` 티켓 등록)
+- **직전 완료 작업**: `2026-11-18 / deep-bug-hunter / 02_search_curation 3-Lens 딥버그 헌팅 및 실증 프로빙 완료 (DEFECT-01~10 등록)`
 - **생성/수정된 핵심 파일**:
   - `backend/app/services/search_service.py`: `_extract_query_embedding_sync`, `_compute_search_limit`, `_query_vector_ids`, `_resolve_query_candidate_ids` 분할(`<=26줄`) 및 SigLIP/Chroma 예외 시 `logger.warning` 후 SQLite 폴백(`200 OK`) 적용
   - `backend/app/api/search.py`: `traceback.print_exc()` 제거 및 `logger.exception(...)` 표준 로깅 전환

@@ -1,8 +1,8 @@
 # 🧪 [02_search_curation] Verification & Ticket Logs
 
-- **검증 상태**: `🛠️ Implementing (Baseline 및 REFACTOR-01 완료 / RRF·스마트앨범 AC 2건 대기)`
+- **검증 상태**: `🩹 Debugging (딥버그 헌팅 완료 — DEFECT-01~10 등록, 해결 대기)`
 - **인수 조건 통과율**: `1 / 3 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 10건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -41,12 +41,70 @@
 | **Negative**| `TC-SRC-05` | 조건 없는 빈 스마트 앨범 저장 (`[To-Be]`) | 검색어와 필터 모두 비운 채 요청 | UI 버튼 비활성화 및 백엔드 422 방어 | `⏳ Pending` |
 | **Boundary**| `TC-SRC-06` | 무관한 검색어 거리 임계값 절삭 (`[To-Be]`) | 존재하지 않는 피사체 검색 (`d > 0.88`) | 무관한 하위 사진 절삭 및 빈 목록 반환 | `⏳ Pending` |
 | **Happy** | `TC-SRC-07` | 35mm 환산 화각 & 비평 점수 필터 (`[To-Be]`) | APS-C 23mm(환산 35mm) + IAA>=85 필터 | 크롭 바디 35mm 환산 사진 포함 반환 | `⏳ Pending` |
+| **Boundary**| `TC-SRC-08` | SigLIP 2 >64토큰 검색어 트런케이션 (`DEFECT-01`) | 64토큰 초과 한국어/영문 자연어 검색 | `ValueError` 없이 임베딩 추출 및 정상 검색 | `FAIL (DEFECT-01)` |
+| **Boundary**| `TC-SRC-09` | 비ASCII(한글) 태그 `ensure_ascii=False` 검색 (`DEFECT-02`) | 한글 태그 저장/수정 후 SQLite 폴백 검색 | `\uXXXX` 이스케이프 없이 한글 태그 정상 매칭 | `FAIL (DEFECT-02)` |
+| **Boundary**| `TC-SRC-10` | `date_to` 날짜 문자열 종료일 전체 포함 (`DEFECT-03`) | `date_from=2025-11-18`, `date_to=2025-11-18` + `14:30` 촬영 | 종료일 `23:59:59`까지 당일 사진 포함 반환 | `FAIL (DEFECT-03)` |
+| **Happy** | `TC-SRC-11` | 검색/필터/`similar:` 시 `selectedFolder` 스코프 유지 (`DEFECT-04`) | 특정 폴더 선택 후 검색어/필터/유사사진 실행 | 선택한 폴더(및 하위) 내부 사진만 반환 | `FAIL (DEFECT-04)` |
+| **Boundary**| `TC-SRC-12` | 즐겨찾기 필터 해제 시 `undefined` 잔존 키 제거 (`DEFECT-05`) | 하트 필터 ON ➔ OFF 토글 후 배지/목록 확인 | 배지 소멸 및 `fetchPhotos(..., selectedFolder)` 복귀 | `FAIL (DEFECT-05)` |
+| **Boundary**| `TC-SRC-13` | `PhotoGallery` 조건부 마운트 `ResizeObserver` 재결합 (`DEFECT-06`) | 초기 로딩/빈 결과 후 그리드 마운트 및 리사이즈 | `columnCount` 반응형 갱신 정상 동작 | `FAIL (DEFECT-06)` |
+| **Boundary**| `TC-SRC-14` | `SigLIP2Adapter` taxonomy 사전계산 `GPU_LOCK`/`self.lock` 보호 (`DEFECT-07`) | `_precompute_taxonomy_embeddings()` 동시 호출 | `.to(device)` 및 캐시가 락 경계 내에서만 실행 | `FAIL (DEFECT-07)` |
+| **Boundary**| `TC-SRC-15` | 32,766 변수 초과·음수 `limit`/`offset`·`ILIKE` 이스케이프·정렬 tie-breaker (`DEFECT-08`) | 35k ID 필터, `limit=-1`, `Z6_2` 검색, 동시각 연사 | SQL 오류/전량 누출/와일드카드 누출/페이지 역전 차단 | `FAIL (DEFECT-08)` |
+| **Negative**| `TC-SRC-16` | `search_similar_photos` 빈 벡터 인덱스 `404` 일관성 (`DEFECT-09`) | `vector_count == 0` 상태에서 `POST /api/search/similar` | `200 OK []` 위장 없이 `404` 반환 | `FAIL (DEFECT-09)` |
+| **Boundary**| `TC-SRC-17` | `SearchService` 스레드 세션 격리 및 `AbortSignal` 전달 (`DEFECT-10`) | `to_thread` 취소 경합 및 빠른 검색어 전환 | `Session` 크로스 스레드 `close()` 경합 차단 및 fetch 취소 | `FAIL (DEFECT-10)` |
 
 ---
 
 ## 🚨 3. 결함 리포트 (Defect Logs)
 
-*(현재 등록된 OPEN 결함 없음)*
+### [DEFECT-01] `SigLIP2Adapter` 64토큰 초과 검색어 `ValueError` 크래시 및 시맨틱 검색 전면 무력화
+- **현재 상태**: 🟡 OPEN (`🔴 P0 Critical`)
+- **발생 위치**: [`siglip_adapter.py`](../../../backend/app/services/siglip_adapter.py#L62-L115), [`search_service.py`](../../../backend/app/services/search_service.py#L20-L30)
+- **원인 및 재현**: `SiglipProcessor`의 `tokenizer.model_max_length`가 `10^30`인 반면 `max_position_embeddings`는 `64`인데 `truncation=True, max_length=64`가 누락되어 64토큰 초과 검색어(예: 한국어 3문장=83토큰) 시 `ValueError`가 발생하고 `SearchService`가 이를 `None`으로 폴백시켜 벡터 검색이 무력화됨 (`get_zero_shot_hints` `if not image_emb:` ndarray 평가 결함 포함).
+
+### [DEFECT-02] `tags`/`aesthetic_tags` `ensure_ascii=True` 직렬화로 인한 한글 태그 SQLite 검색 및 SigLIP 폴백 불능
+- **현재 상태**: 🟡 OPEN (`🔴 P0 Critical`)
+- **발생 위치**: [`photo.py`](../../../backend/app/services/photo.py#L186-L194), [`photo_repository.py`](../../../backend/app/repositories/photo_repository.py#L220-L235), [`photo_reindex.py`](../../../backend/app/services/photo_reindex.py#L63-L66), [`database.py`](../../../backend/app/database.py#L75-L83)
+- **원인 및 재현**: `json.dumps(tags)` 기본 `ensure_ascii=True`로 저장되어 `["바다"]`가 `'["\\ubc14\\ub2e4"]'`로 저장되며 `AIAnalysis.tags.ilike('%바다%')`가 0건을 반환함. `ensure_ascii=False` 적용 및 `run_migrations()` 내 기존 `\uXXXX` 데이터 정규화 백필 필요.
+
+### [DEFECT-03] `date_to` 날짜 필터 자정(`00:00:00`) 절삭으로 종료일 당일 촬영 사진 전량 누락
+- **현재 상태**: 🟡 OPEN (`🔴 P0 Critical`)
+- **발생 위치**: [`SearchFilterMenu.tsx`](../../../src/components/SearchFilterMenu.tsx#L173-L176), [`schemas.py`](../../../backend/app/schemas.py#L87-L88), [`photo_repository.py`](../../../backend/app/repositories/photo_repository.py#L140-L141)
+- **원인 및 재현**: `<input type="date">`의 `"YYYY-MM-DD"` 입력이 `datetime(Y, M, D, 0, 0, 0)`으로 파싱되어 `capture_date <= date_to` 비교 시 당일 `00:00:01~23:59:59` 사진이 전량 제외됨.
+
+### [DEFECT-04] 검색·EXIF 필터·`similar:` 활성 시 `selectedFolder` 컨텍스트 전면 소실
+- **현재 상태**: 🟡 OPEN (`🟠 P1 High`)
+- **발생 위치**: [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx#L55-L65), [`api.ts`](../../../src/services/api.ts#L94-L133), [`schemas.py`](../../../backend/app/schemas.py#L90-L100), [`photo_repository.py`](../../../backend/app/repositories/photo_repository.py#L166-L204)
+- **원인 및 재현**: `hasQuery || hasFilters` 분기 시 `selectedFolder`가 API 및 백엔드 `SearchRequest`/`SimilarSearchRequest`/`filter_and_paginate`로 전달되지 않아 폴더 선택 상태에서도 전체 라이브러리를 검색함.
+
+### [DEFECT-05] 즐겨찾기 필터 해제 시 `{ is_favorite: undefined }` 잔존 키로 인한 유령 배지(`1`) 및 폴더 스코프 붕괴
+- **현재 상태**: 🟡 OPEN (`🟠 P1 High`)
+- **발생 위치**: [`SidebarSearchControls.tsx`](../../../src/components/sidebar/SidebarSearchControls.tsx#L55-L61), [`SearchFilterMenu.tsx`](../../../src/components/SearchFilterMenu.tsx#L34), [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx#L58)
+- **원인 및 재현**: 즐겨찾기 필터 OFF 시 `is_favorite: undefined` 키를 객체에 남겨 `Object.keys().length === 1`이 유지되어 배지 `1` 표시 및 `api.searchPhotos` 경로 고정 발생.
+
+### [DEFECT-06] `PhotoGallery` 조건부 마운트 `parentRef`에 대한 `useEffect(..., [])` `ResizeObserver` 영구 미등록
+- **현재 상태**: 🟡 OPEN (`🟠 P1 High`)
+- **발생 위치**: [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx#L29-L46), [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx#L109-L189)
+- **원인 및 재현**: 최초 마운트(`status === 'pending'`) 및 빈 결과 시 `<div ref={parentRef}>`가 미렌더링되어 `parentRef.current === null` 상태에서 `useEffect(..., [])`가 조기 반환하고 이후 재마운트 시 `ResizeObserver`가 영구 미등록됨.
+
+### [DEFECT-07] `SigLIP2Adapter._precompute_taxonomy_embeddings()`의 `GPU_LOCK` 경계 밖 MPS 텐서 전송 및 락 경합
+- **현재 상태**: 🟡 OPEN (`🟠 P1 High`)
+- **발생 위치**: [`siglip_adapter.py`](../../../backend/app/services/siglip_adapter.py#L44-L72)
+- **원인 및 재현**: `_precompute_taxonomy_embeddings()` 62행에서 `.to(self.device)`를 `GPU_LOCK` 밖에서 호출하고 `self.lock` 없이 `cached_taxonomy_embeddings`를 초기화하여 MPS 동시 충돌 위험 존재.
+
+### [DEFECT-08] `PhotoRepository` 32,766 변수 초과 크래시, 음수 `limit`/`offset`, `ILIKE` 미이스케이프·정렬 누락 및 `parseError` 422 직렬화 결함
+- **현재 상태**: 🟡 OPEN (`🟠 P1 High`)
+- **발생 위치**: [`photo_repository.py`](../../../backend/app/repositories/photo_repository.py#L114-L204), [`schemas.py`](../../../backend/app/schemas.py#L90-L100), [`api.ts`](../../../src/services/api.ts#L62-L73)
+- **원인 및 재현**: `_build_chroma_id_filter` 35k ID 시 `too many SQL variables` 크래시, `SearchRequest`/`SimilarSearchRequest` 음수 `limit=-1` 시 SQLite 전량 반환, `camera_model`/`lens_model` `_`/`%` 미이스케이프, `L203` `Image.id` 2차 정렬 누락, `parseError` 배열 `detail` `"[object Object]"` 반환.
+
+### [DEFECT-09] `SearchService.search_similar_photos` 빈 벡터 인덱스(`vector_count == 0`) 시 `200 OK []` 거짓 성공 위장
+- **현재 상태**: 🟡 OPEN (`🟠 P1 High`)
+- **발생 위치**: [`search_service.py`](../../../backend/app/services/search_service.py#L86-L97)
+- **원인 및 재현**: `vector_count > 0`일 때 임베딩 미존재는 `ValueError(404)`를 발생시키지만 `vector_count == 0`일 때는 `return []`(`200 OK`)으로 조기 반환해 임베딩 누락을 정상 빈 결과로 은폐함.
+
+### [DEFECT-10] `SearchService` 취소 시 스레드 간 `Session` 동시 `close()` 경합 및 `PhotoGallery` `AbortSignal` 미전달
+- **현재 상태**: 🟡 OPEN (`🟠 P1 High`)
+- **발생 위치**: [`search.py`](../../../backend/app/api/search.py#L13-L48), [`search_service.py`](../../../backend/app/services/search_service.py#L14-L111), [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx#L56-L65), [`api.ts`](../../../src/services/api.ts#L81-L133)
+- **원인 및 재현**: `Depends(get_db)` 세션을 `asyncio.to_thread` 워커와 공유해 태스크 취소 시 `AsyncExitStack` `close()`와 워커 쿼리가 경합하며, 프론트엔드 `queryFn`이 `signal`을 전달하지 않아 이전 검색 HTTP 요청이 중단되지 않음.
 
 ---
 
