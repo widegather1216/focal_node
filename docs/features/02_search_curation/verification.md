@@ -1,8 +1,8 @@
 # 🧪 [02_search_curation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-01~09 해결 완료 — DEFECT-10 해결 대기)`
+- **검증 상태**: `🛠️ Implementing (DEFECT-01~10 해결 완료 / Active Step 1 대기)`
 - **인수 조건 통과율**: `1 / 3 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 1건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -50,7 +50,7 @@
 | **Boundary**| `TC-SRC-14` | `SigLIP2Adapter` taxonomy 사전계산 `GPU_LOCK`/`self.lock` 보호 (`DEFECT-07`) | `_precompute_taxonomy_embeddings()` 동시 호출 | `.to(device)` 및 캐시가 락 경계 내에서만 실행 | `PASS (Fixed in DEFECT-07)` |
 | **Boundary**| `TC-SRC-15` | 32,766 변수 초과·음수 `limit`/`offset`·`ILIKE` 이스케이프·정렬 tie-breaker (`DEFECT-08`) | 35k ID 필터, `limit=-1`, `Z6_2` 검색, 동시각 연사 | SQL 오류/전량 누출/와일드카드 누출/페이지 역전 차단 | `PASS (Fixed in DEFECT-08)` |
 | **Negative**| `TC-SRC-16` | `search_similar_photos` 빈 벡터 인덱스 `404` 일관성 (`DEFECT-09`) | `vector_count == 0` 상태에서 `POST /api/search/similar` | `200 OK []` 위장 없이 `404` 반환 | `PASS (Fixed in DEFECT-09)` |
-| **Boundary**| `TC-SRC-17` | `SearchService` 스레드 세션 격리 및 `AbortSignal` 전달 (`DEFECT-10`) | `to_thread` 취소 경합 및 빠른 검색어 전환 | `Session` 크로스 스레드 `close()` 경합 차단 및 fetch 취소 | `FAIL (DEFECT-10)` |
+| **Boundary**| `TC-SRC-17` | `SearchService` 스레드 세션 격리 및 `AbortSignal` 전달 (`DEFECT-10`) | `to_thread` 취소 경합 및 빠른 검색어 전환 | `Session` 크로스 스레드 `close()` 경합 차단 및 fetch 취소 | `PASS (Fixed in DEFECT-10)` |
 
 ---
 
@@ -120,9 +120,11 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_api_search.py -v` (`17 passed`, `TC-SRC-16` Red ➔ Green 포함), `./venv/bin/pytest backend/tests/ -q` (`190 passed`)
 
 ### [DEFECT-10] `SearchService` 취소 시 스레드 간 `Session` 동시 `close()` 경합 및 `PhotoGallery` `AbortSignal` 미전달
-- **현재 상태**: 🟡 OPEN (`🟠 P1 High`)
-- **발생 위치**: [`search.py`](../../../backend/app/api/search.py#L13-L48), [`search_service.py`](../../../backend/app/services/search_service.py#L14-L111), [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx#L56-L65), [`api.ts`](../../../src/services/api.ts#L81-L133)
-- **원인 및 재현**: `Depends(get_db)` 세션을 `asyncio.to_thread` 워커와 공유해 태스크 취소 시 `AsyncExitStack` `close()`와 워커 쿼리가 경합하며, 프론트엔드 `queryFn`이 `signal`을 전달하지 않아 이전 검색 HTTP 요청이 중단되지 않음.
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`search.py`](../../../backend/app/api/search.py#L11-L34), [`search_service.py`](../../../backend/app/services/search_service.py#L14-L163), [`searchRequest.ts`](../../../src/utils/searchRequest.ts#L1-L140), [`apiError.ts`](../../../src/utils/apiError.ts#L60-L76), [`api.ts`](../../../src/services/api.ts#L78-L128), [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx#L53-L70), [`test_api_search.py`](../../../backend/tests/test_api_search.py#L807-L972), [`searchAbort.test.mjs`](../../../tests/frontend/searchAbort.test.mjs#L1-L228)
+  - **원인 및 조치**: `api/search.py`가 `Depends(get_db)` 세션을 `SearchService(db)`에 전달하고 `asyncio.to_thread` 워커가 동일 `Session`을 공유해 `CancelledError` 발생 시 이벤트 루프 `AsyncExitStack`의 `db.close()`와 워커 스레드 쿼리가 경합하던 결함, 그리고 `PhotoGallery` `queryFn` 및 `api.ts`가 `AbortSignal`을 `fetch`에 전달하지 않던 결함을 확인함. Devil's Advocate 검증을 반영해 `api/search.py`에서 `Depends(get_db)`를 제거해 `SearchService()`를 호출하도록 전환하고, `SearchService.__init__(self, db: Optional[Session] = None, session_factory: Optional[Callable[[], Session]] = None)`가 `db is None`일 때 각 `asyncio.to_thread` 워커(`_search_by_text_sync`, `_filter_and_paginate_sync`) 내부에서 독립 `with self._open_thread_session() as thread_db:`(`database.SessionLocal`)를 열고 닫기 전 `_serialize_photo_rows`로 `to_list_response_dict()` 평문 `dict` 리스트를 반환하도록 반환 계약을 단일화함(`SearchService(mock_db)` 단위 테스트 100% 호환). 프론트엔드는 순수 유틸 [`searchRequest.ts`](../../../src/utils/searchRequest.ts)로 `fetchPhotosRequest`·`postJsonRequest`·`buildSearchRequestSpec`·`searchPhotosRequest`를 분리하고 `ApiClient.fetchPhotos`/`postJson`/`searchPhotos`와 `PhotoGallery` `queryFn({ pageParam = 0, signal })`에 `AbortSignal` 전달을 연동했으며, `extractResponseErrorMessage`가 바디 읽기 중 발생한 `AbortError`를 삼키지 않고 재전파하도록 보강함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_api_search.py backend/tests/test_concurrency_hardening.py -v` (`32 passed`, `TC-SRC-17` WAL 기반 취소 경합 테스트 포함), `./venv/bin/pytest backend/tests/ -q` (`191 passed`), `node --test tests/frontend/*.test.mjs` (`35 passed`, `TC-SRC-17` 4종 포함), `npx tsc --noEmit && npm run build` (`PASS`)
 
 ---
 

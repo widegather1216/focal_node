@@ -1,8 +1,8 @@
 # 🔍 [02_search_curation] Hybrid Search, K-NN Curation & Smart Albums
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-01~09 해결 완료 — DEFECT-10 해결 대기)`
+- **현재 상태 (Lifecycle)**: `🛠️ Implementing (DEFECT-01~10 해결 완료 / Active Step 1 대기)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 1건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -34,16 +34,20 @@ SigLIP 2 자연어 시맨틱 검색(코사인 거리 임계값 절삭)과 SQLite
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
 - **Recent Commits (2026-11-18)**:
+  - `c0a3008` - `fix(search): isolate worker DB sessions on cancellation and forward AbortSignal`
+  - `387f87e` - `docs(search): mark DEFECT-09 resolved and sync control tower`
   - `d128c27` - `fix(search): raise 404 for missing embeddings even when vector index is empty`
-  - `a297f8d` - `docs(search): mark DEFECT-08 resolved and sync control tower`
-  - `64202b1` - `fix(search): chunk large candidate filters, validate pagination, escape EXIF ILIKE, and format 422 details`
-- **Working Tree State**: 🟢 Clean (`DEFECT-09` 커밋 완료)
-- **직전 완료 작업**: `2026-11-18 / systematic-debugger / DEFECT-09 (SearchService.search_similar_photos의 vector_count == 0 조기 return [] 제거 및 VectorRepository.get_embedding_by_id 단일 경로 기반 404 Not Found 계약 일관화) 해결 및 회귀 검증 완료`
+- **Working Tree State**: 🟢 Clean (No uncommitted changes; `DEFECT-01~10` 전수 해결 완료)
+- **직전 완료 작업**: `2026-11-18 / systematic-debugger / DEFECT-10 (SearchService 워커 스레드 SessionLocal 격리·평문 dict 직렬화 및 PhotoGallery/ApiClient AbortSignal 전달) 해결 및 회귀 검증 완료`
 - **생성/수정된 핵심 파일**:
-  - `backend/app/services/search_service.py`: `search_similar_photos`에서 중복 `vector_repo.count()` 조기 반환 분기를 제거하고 `get_embedding_by_id` 단일 경로로 `None` 시 `ValueError`(`404`) 전파 일관화
-  - `backend/tests/test_api_search.py`: `_build_mock_chroma_collection` 헬퍼 및 `test_tc_src_16_similar_search_returns_404_when_vector_index_empty_or_missing` 추가 (`vector_count == 0` ➔ `404`, 임베딩 누락 ➔ `404`, 단일 사진 동료 없음 ➔ `200 []`)
+  - `backend/app/api/search.py`: `Depends(get_db)` 제거 및 `SearchService()` 호출 전환
+  - `backend/app/services/search_service.py`: `db: Optional[Session] = None`/`session_factory` 도입, `_search_by_text_sync`·`_filter_and_paginate_sync` 워커 스레드 내부 `database.SessionLocal` 스코프 및 `_serialize_photo_rows` 평문 `dict` 반환 단일화
+  - `src/utils/searchRequest.ts` [신설], `src/utils/apiError.ts`, `src/services/api.ts`, `src/components/PhotoGallery.tsx`: `fetchPhotos`/`postJson`/`searchPhotos`·`useInfiniteQuery` `queryFn` `AbortSignal` 전달 및 `AbortError` 보존
+  - `backend/tests/test_api_search.py`, `tests/frontend/searchAbort.test.mjs` [신설]: `TC-SRC-17` WAL 취소 경합 격리 및 `AbortSignal`/TanStack `QueryClient` 단위 테스트 추가
 - **검증 완료된 테스트 실행 명령어**:
-  - `./venv/bin/pytest backend/tests/test_api_search.py -v` (`17 passed`)
-  - `./venv/bin/pytest backend/tests/ -q` (`190 passed`)
+  - `./venv/bin/pytest backend/tests/test_api_search.py backend/tests/test_concurrency_hardening.py -v` (`32 passed`)
+  - `./venv/bin/pytest backend/tests/ -q` (`191 passed`)
+  - `node --test tests/frontend/*.test.mjs` (`35 passed`)
+  - `npx tsc --noEmit && npm run build` (`PASS`)
 - **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - 미해결 티켓 `DEFECT-10`(`P1 High` `SearchService` 스레드 세션 격리 및 `PhotoGallery` `AbortSignal` 전달) 해결 후 Active Iteration Step 1 착수. Step 2 구현 시 `VectorRepository.query_similar_by_embedding`에서 `include=["distances"]`로 거리를 조회하여 `d <= max_distance`인 후보만 반환하도록 수정할 것.
+  - `DEFECT-01~10` 전수 해결 완료. 다음 단계로 Active Iteration Step 1(`models.py` `SmartAlbum` 테이블, `schemas.py` 및 `src/types/photo.ts` `use_35mm_equivalent`/`min_*_score`/`SmartAlbum` 정의) 착수. Step 2 구현 시 `VectorRepository.query_similar_by_embedding`에서 `include=["distances"]`로 거리를 조회하여 `d <= max_distance`인 후보만 반환하도록 수정할 것.
