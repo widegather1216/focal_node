@@ -18,6 +18,10 @@ from config import THUMBNAILS_DIR
 logger = logging.getLogger("focal_node.photo_service")
 
 THUMBNAIL_CACHE_DIR = THUMBNAILS_DIR
+# libjpeg rejects any image dimension above 65,500px; cap thumbnails well below it to bound memory.
+MAX_JPEG_DIMENSION = 65500
+MAX_THUMBNAIL_HEIGHT = 4096
+
 
 def get_thumbnail_path(image_id: str) -> str:
     """
@@ -25,18 +29,71 @@ def get_thumbnail_path(image_id: str) -> str:
     """
     return os.path.join(THUMBNAIL_CACHE_DIR, f"{image_id}.jpg")
 
-def _resize_image_to_jpeg_bytes(img: Image.Image, target_width: int = 360) -> bytes:
-    width, height = img.size
+
+def _calculate_thumbnail_dimensions(
+    width: int,
+    height: int,
+    target_width: int = 360,
+    max_height: int = MAX_THUMBNAIL_HEIGHT,
+) -> tuple[int, int]:
+    """Computes aspect-preserving thumbnail dimensions bounded within JPEG limits."""
+    if width <= 0 or height <= 0 or target_width <= 0 or max_height <= 0:
+        raise HTTPException(status_code=422, detail="Invalid image dimensions")
+
+    capped_width = min(target_width, MAX_JPEG_DIMENSION)
+    capped_height = min(max_height, MAX_JPEG_DIMENSION)
+
+    new_width = capped_width
+    new_height = max(1, int(round((capped_width / width) * height)))
+
+    if new_height > capped_height:
+        height_scale = capped_height / height
+        new_height = capped_height
+        new_width = min(capped_width, max(1, int(round(width * height_scale))))
+
+    return new_width, new_height
+
+
+def _ensure_jpeg_compatible(img: Image.Image, max_dimension: int = MAX_JPEG_DIMENSION) -> Image.Image:
+    """Normalizes image mode to RGB and clamps dimensions within libjpeg limits."""
+    rgb_img = img if img.mode == "RGB" else img.convert("RGB")
+    width, height = rgb_img.size
     if width <= 0 or height <= 0:
         raise HTTPException(status_code=422, detail="Invalid image dimensions")
 
-    new_height = max(1, int((target_width / width) * height))
-    resample_filter = getattr(Image, "Resampling", Image).LANCZOS
-    img_thumb = img.resize((target_width, new_height), resample=resample_filter)
+    longest_side = max(width, height)
+    if longest_side <= max_dimension:
+        return rgb_img
 
-    buf = io.BytesIO()
-    img_thumb.save(buf, format="JPEG", quality=85)
-    return buf.getvalue()
+    scale = max_dimension / longest_side
+    bounded_size = (
+        min(max_dimension, max(1, int(round(width * scale)))),
+        min(max_dimension, max(1, int(round(height * scale)))),
+    )
+    resample_filter = getattr(Image, "Resampling", Image).LANCZOS
+    return rgb_img.resize(bounded_size, resample=resample_filter)
+
+
+def _resize_image_to_jpeg_bytes(
+    img: Image.Image,
+    target_width: int = 360,
+    max_height: int = MAX_THUMBNAIL_HEIGHT,
+) -> bytes:
+    """Resizes an image to a bounded sRGB thumbnail and encodes it as JPEG bytes."""
+    width, height = img.size
+    new_width, new_height = _calculate_thumbnail_dimensions(
+        width,
+        height,
+        target_width=target_width,
+        max_height=max_height,
+    )
+    rgb_img = img if img.mode == "RGB" else img.convert("RGB")
+    resample_filter = getattr(Image, "Resampling", Image).LANCZOS
+    img_thumb = rgb_img.resize((new_width, new_height), resample=resample_filter)
+
+    jpeg_buf = io.BytesIO()
+    img_thumb.save(jpeg_buf, format="JPEG", quality=85)
+    return jpeg_buf.getvalue()
 
 
 def _atomic_write_cache_file(target_path: str, data: bytes, image_id: str, max_retries: int = 3) -> None:
@@ -94,12 +151,15 @@ def get_original_image_bytes(db_image: DBImage) -> tuple[bytes, str]:
     try:
         if is_raw_image(db_image.file_path):
             img = decode_raw_to_pil(db_image.file_path, min_dimension=1920)
-            buf = io.BytesIO()
-            img.save(buf, format="JPEG", quality=95)
-            return buf.getvalue(), "image/jpeg"
+            rgb_img = _ensure_jpeg_compatible(img)
+            jpeg_buf = io.BytesIO()
+            rgb_img.save(jpeg_buf, format="JPEG", quality=95)
+            return jpeg_buf.getvalue(), "image/jpeg"
         else:
             with open(db_image.file_path, "rb") as f:
                 return f.read(), db_image.mime_type
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"[Photo Service] Corrupt original image: {db_image.file_path}. Error: {e}", flush=True)
         raise HTTPException(status_code=422, detail="Unprocessable original image file")

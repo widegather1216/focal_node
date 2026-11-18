@@ -3282,6 +3282,96 @@ def test_tc_idx_19_list_photos_subfolders_nfd_and_pagination(client, db_session,
     assert deletion_ids == set(expected_order)
 
 
+def test_tc_idx_23_ultra_tall_panorama_thumbnail_jpeg_limit(client, db_session, tmp_path, monkeypatch):
+    """
+    TC-IDX-23 (DEFECT-17): Verifies _resize_image_to_jpeg_bytes, generate_and_cache_thumbnail,
+    GET /api/photos/{id}/thumbnail, and get_original_image_bytes handle ultra-tall aspect-ratio
+    images (height/width > 181.94 such as 10x5000, 100x20000, 1x100000) and non-RGB modes
+    (RGBA, P, CMYK) without exceeding libjpeg's 65,500px limit or raising OSError.
+    """
+    import io
+    from services.photo import _resize_image_to_jpeg_bytes, get_original_image_bytes
+
+    thumb_dir = tmp_path / "thumbs_tc23"
+    thumb_dir.mkdir()
+    photo_dir = tmp_path / "photos_tc23"
+    photo_dir.mkdir()
+    monkeypatch.setattr(photo_service, "THUMBNAIL_CACHE_DIR", str(thumb_dir))
+    monkeypatch.setattr("services.photo.THUMBNAIL_CACHE_DIR", str(thumb_dir))
+    monkeypatch.setattr(photo_service, "generate_and_cache_thumbnail", generate_and_cache_thumbnail)
+
+    # 1. Direct _resize_image_to_jpeg_bytes across ultra-tall, ultra-wide, and non-RGB images
+    for src_w, src_h, mode in [
+        (10, 5000, "RGB"),
+        (100, 20000, "RGB"),
+        (1, 100000, "RGB"),
+        (20000, 10, "RGB"),
+        (100, 100, "RGBA"),
+        (100, 100, "P"),
+        (100, 100, "CMYK"),
+    ]:
+        src_img = Image.new(mode, (src_w, src_h))
+        jpeg_bytes = _resize_image_to_jpeg_bytes(src_img, target_width=360)
+        assert jpeg_bytes[:2] == b"\xff\xd8"
+        with Image.open(io.BytesIO(jpeg_bytes)) as decoded:
+            out_w, out_h = decoded.size
+            assert 1 <= out_w <= 360
+            assert 1 <= out_h <= 65500
+            if src_h > src_w:
+                assert out_h >= out_w
+            elif src_w > src_h:
+                assert out_w >= out_h
+
+    # 2. Disk-backed generate_and_cache_thumbnail & API /thumbnail for 10x5000 and 100x20000 PNGs
+    tall_a_path = photo_dir / "tall_10x5000.png"
+    tall_b_path = photo_dir / "tall_100x20000.png"
+    Image.new("RGBA", (10, 5000), color=(20, 40, 60, 255)).save(str(tall_a_path), format="PNG")
+    Image.new("RGB", (100, 20000), color=(80, 120, 160)).save(str(tall_b_path), format="PNG")
+
+    thumb_a_bytes = generate_and_cache_thumbnail(str(tall_a_path), "tc23_tall_a")
+    assert thumb_a_bytes[:2] == b"\xff\xd8"
+    assert (thumb_dir / "tc23_tall_a.jpg").exists()
+
+    db_session.add(
+        models.Image(
+            id="tc23_tall_b",
+            parent_dir=str(photo_dir),
+            file_path=str(tall_b_path),
+            file_name="tall_100x20000.png",
+            file_size=tall_b_path.stat().st_size,
+            file_mtime=time.time(),
+            mime_type="image/png",
+            is_favorite=False,
+        )
+    )
+    db_session.commit()
+
+    resp = client.get("/api/photos/tc23_tall_b/thumbnail")
+    assert resp.status_code == 200
+    assert resp.content[:2] == b"\xff\xd8"
+    with Image.open(io.BytesIO(resp.content)) as decoded_resp:
+        assert 1 <= decoded_resp.width <= 360
+        assert 1 <= decoded_resp.height <= 65500
+
+    # 3. RAW original encoding guard for non-RGB or >65,500px decoded output
+    dummy_raw = photo_dir / "oversized.arw"
+    dummy_raw.write_bytes(b"raw-placeholder")
+    monkeypatch.setattr(
+        photo_service,
+        "decode_raw_to_pil",
+        lambda path, min_dimension=None: Image.new("RGBA", (10, 70000)),
+    )
+    raw_bytes, media_type = get_original_image_bytes(
+        models.Image(id="tc23_raw", file_path=str(dummy_raw), mime_type="image/x-sony-arw")
+    )
+    assert media_type == "image/jpeg"
+    assert raw_bytes[:2] == b"\xff\xd8"
+    with Image.open(io.BytesIO(raw_bytes)) as decoded_raw:
+        assert 1 <= decoded_raw.width <= 65500
+        assert 1 <= decoded_raw.height <= 65500
+
+
+
 
 
 
