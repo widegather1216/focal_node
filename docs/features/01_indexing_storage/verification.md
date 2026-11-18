@@ -1,8 +1,8 @@
 # 🧪 [01_indexing_storage] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-13~17 해결 대기)`
+- **검증 상태**: `🩹 Debugging (DEFECT-14~17 해결 대기)`
 - **인수 조건 통과율**: `1 / 4 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 5건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 4건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -61,7 +61,7 @@
 | **Negative**| `TC-IDX-16` | 사진 내보내기 실패 시 에러 보존 및 UI 피드백 | 0장 내보내기 에러 응답 수신 | 허위 녹색 완료 차단 및 실패 안내 | `PASS (Fixed in DEFECT-10)` |
 | **Security**| `TC-IDX-17` | 폴더 삭제 시 미등록 상위 경로 재귀 삭제 차단 | DELETE /api/folders?path=/ | 미등록 상위 경로 요청 거부 및 데이터 보호 | `PASS (Fixed in DEFECT-11)` |
 | **Boundary**| `TC-IDX-18` | 인덱싱 취소 직후 폴더 삭제 및 재시작 동시성 격리 | 워커 스레드 실행 중 cancel ➔ delete/start | 인플라이트 워커 종료 전 삭제/재시작 차단 및 좀비 방지 | `PASS (Fixed in DEFECT-12)` |
-| **Happy** | `TC-IDX-19` | 폴더 필터 조회 시 하위 디렉터리 및 NFD/NFC 정규화 | 하위 폴더/한글 NFD 포함 폴더 선택 | 하위 디렉터리 및 NFD/NFC 사진 정상 조회 | `FAIL (DEFECT-13)` |
+| **Happy** | `TC-IDX-19` | 폴더 필터 조회 시 하위 디렉터리 및 NFD/NFC 정규화 | 하위 폴더/한글 NFD 포함 폴더 선택 | 하위 디렉터리 및 NFD/NFC 사진 정상 조회 | `PASS (Fixed in DEFECT-13)` |
 | **Boundary**| `TC-IDX-20` | 단일 사진 재분석 캐시 동기화 및 사진 전환 격리 | 상세 재분석 중 타 사진 선택 또는 완료 대기 | `photoDetail` 캐시 즉시 갱신 및 전환 후 버퍼 오염 차단 | `FAIL (DEFECT-14)` |
 | **Boundary**| `TC-IDX-21` | 상세 패널/갤러리 즐겨찾기 토글 양방향 캐시 동기화 | 폴더 선택 중 상세 패널 하트 토글 | `photos` 및 `photoDetail` 캐시 모두 서버 상태와 일치 | `FAIL (DEFECT-15)` |
 | **Boundary**| `TC-IDX-22` | 내보내기 중 전체 선택 해제 시 피드백 누수 차단 | SSE 내보내기 진행 중 선택 해제 후 새 사진 선택 | 진행 중 요청 중단 및 이전 실패/완료 배너 잔류 차단 | `FAIL (DEFECT-16)` |
@@ -112,10 +112,11 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_18 -v` (`3 passed`), `./venv/bin/pytest backend/tests/ -k "not test_base_keep_alive_model_lifecycle" -q` (`168 passed, 1 deselected`), `npx tsc --noEmit && npm run build` (`PASS`, `0 Errors`)
 
 ### [DEFECT-13] `PhotoRepository.list_photos`의 `parent_dir ==` 정확 일치 필터로 인한 하위 폴더 및 macOS NFD 경로 사진 전면 누락
-- **현재 상태**: 🟡 OPEN
-- **심각도**: 🟠 P1 High (Seam Mismatch / Empty Folder View)
-- **발생 위치**: [`backend/app/repositories/photo_repository.py#L25-L30`](../../../backend/app/repositories/photo_repository.py#L25-L30), [`backend/app/api/photos.py#L115-L127`](../../../backend/app/api/photos.py#L115-L127)
-- **증상 및 재현**: `FolderList`는 루트 `IndexedFolder.path`를 전달하나 `list_photos`가 `Image.parent_dir == parent_dir` 정확 일치만 수행해 하위 디렉터리 사진과 macOS NFD/NFC 불일치 경로 사진이 모두 누락됨 (`✅ Empirical Probe Reproduced`).
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`backend/app/utils/path.py`](../../../backend/app/utils/path.py), [`backend/app/repositories/photo_repository.py`](../../../backend/app/repositories/photo_repository.py), [`backend/app/services/folder_manager.py`](../../../backend/app/services/folder_manager.py)
+  - **원인 및 조치**: 단방향 계층 의존성(`Services ➔ Repositories ➔ Utils`)을 준수하도록 [`backend/app/utils/path.py`](../../../backend/app/utils/path.py)를 신설해 `folder_manager.py`와 공유하는 `resolve_path_without_leaf_symlink`·`normalize_path_preserving_leaf_symlink`·`to_slash_bounded_prefix`·`is_path_within_folder`를 분리함. `PhotoRepository.list_photos`에서 `parent_dir` 지정 시 SQL `==` 정확 일치 대신 `capture_date DESC NULLS LAST, id ASC` 정렬된 `(id, parent_dir)` 경량 투영을 조회한 뒤, 디렉터리별 정규화 결과 캐시를 적용한 slash-bounded + NFC/대소문자/말단슬래시/리프 심볼릭 링크 비확장 필터(`_filter_matching_photo_ids`)로 `matching_ids`를 산출하고 `offset:offset+limit` 슬라이스 ID만 `get_by_ids`로 로드해 페이지네이션 정합성과 정렬을 보장함(공백 `parent_dir` 및 `limit<=0` 가드 포함).
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_19 -v` (`1 passed`), `./venv/bin/pytest backend/tests/test_api_photos.py backend/tests/test_api_folders.py backend/tests/test_api_search.py backend/tests/test_backend_hardening.py -k "not test_base_keep_alive_model_lifecycle" -v` (`55 passed, 1 deselected`), `./venv/bin/pytest backend/tests/ -k "not test_base_keep_alive_model_lifecycle" -q` (`169 passed, 1 deselected`), `npx tsc --noEmit && npm run build` (`PASS`, `0 Errors`)
 
 ### [DEFECT-14] `usePhotoDetail.handleReindex`의 React Query `photoDetail` 캐시 미갱신 및 사진 전환 시 타 사진 편집 버퍼 오염
 - **현재 상태**: 🟡 OPEN

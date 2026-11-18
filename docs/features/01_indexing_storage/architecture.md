@@ -39,7 +39,9 @@ backend/app/
 │   ├── photo_repository.py            # [수정대상] SQLite CRUD, SHA-256 경로 Relocation 및 오프라인 마킹 캡슐화
 │   ├── vector_repository.py           # [기존] ChromaDB photo_embeddings upsert/delete/query
 │   └── atomic_transaction.py          # [기존] ChromaDB <-> SQLite 원자적 보상 트랜잭션 매니저
-└── utils/image.py                     # [기존] rawpy 인메모리 디코딩, 35mm 환산 화각 및 EXIF 파싱
+└── utils/
+    ├── image.py                       # [기존] rawpy 인메모리 디코딩, 35mm 환산 화각 및 EXIF 파싱
+    └── path.py                        # [신설] NFC/대소문자/말단슬래시/리프 심볼릭 링크 비확장 경로 정규화 및 slash-bounded 매칭 유틸리티
 
 src/
 ├── components/
