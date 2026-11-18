@@ -3170,6 +3170,119 @@ def test_tc_idx_18_pipeline_step_cancellation_prevents_orphan_thumbnail_and_ai_i
         indexing_state_manager.reset_status()
 
 
+def test_tc_idx_19_list_photos_subfolders_nfd_and_pagination(client, db_session, tmp_path):
+    """
+    TC-IDX-19 (DEFECT-13): Verifies PhotoRepository.list_photos and GET /api/photos:
+    1. Include photos in nested subdirectories at arbitrary depth when root folder is selected.
+    2. Match macOS NFD vs NFC (and mixed NFC/NFD) + case + trailing-slash paths cleanly.
+    3. Exclude sibling prefix folders (e.g. '여행사진_백업' or '여행사진2') via slash-bounded prefix.
+    4. Respect leaf symlink boundaries (selecting a leaf symlink folder does not leak target siblings).
+    5. Preserve exact capture_date DESC NULLS LAST, id ASC ordering and contiguous limit/offset pagination.
+    """
+    import datetime
+    import unicodedata
+
+    root_nfc = unicodedata.normalize("NFC", str(tmp_path / "여행사진"))
+    root_nfd = unicodedata.normalize("NFD", str(tmp_path / "여행사진"))
+    sub_nfd = os.path.join(root_nfd, unicodedata.normalize("NFD", "제주도"))
+    deep_mixed = os.path.join(root_nfc, unicodedata.normalize("NFD", "제주도"), "2026")
+    sibling_dir = unicodedata.normalize("NFC", str(tmp_path / "여행사진_백업"))
+    sibling_sub = os.path.join(sibling_dir, "2026")
+    protected_dir = tmp_path / "Protected"
+    temp_link = tmp_path / "TempLink"
+
+    os.makedirs(deep_mixed, exist_ok=True)
+    os.makedirs(sibling_sub, exist_ok=True)
+    protected_dir.mkdir(exist_ok=True)
+    os.symlink(str(tmp_path), str(temp_link))
+
+    def _add_photo(photo_id: str, parent: str, fname: str, capture_dt):
+        db_session.add(
+            models.Image(
+                id=photo_id,
+                parent_dir=parent,
+                file_path=os.path.join(parent, fname),
+                file_name=fname,
+                file_size=128,
+                file_mtime=time.time(),
+                mime_type="image/jpeg",
+                is_favorite=False,
+            )
+        )
+        db_session.add(
+            models.ImageMetadata(
+                image_id=photo_id,
+                capture_date=capture_dt,
+            )
+        )
+
+    # Matching photos across root, NFD subfolder, and deep mixed subfolder (with dated + None capture_date)
+    _add_photo("tc19_p_root_nfc", root_nfc, "a.jpg", datetime.datetime(2026, 5, 1, 10, 0, 0))
+    _add_photo("tc19_p_sub_nfd", sub_nfd, "b.jpg", datetime.datetime(2026, 5, 3, 10, 0, 0))
+    _add_photo("tc19_p_deep_mixed", deep_mixed, "c.jpg", datetime.datetime(2026, 5, 2, 10, 0, 0))
+    _add_photo("tc19_p_nodate_b", root_nfd, "d.jpg", None)
+    _add_photo("tc19_p_nodate_a", sub_nfd, "e.jpg", None)
+
+    # Non-matching sibling prefix & protected target of leaf symlink
+    _add_photo("tc19_sibling_root", sibling_dir, "sib1.jpg", datetime.datetime(2026, 5, 4, 10, 0, 0))
+    _add_photo("tc19_sibling_sub", sibling_sub, "sib2.jpg", datetime.datetime(2026, 5, 5, 10, 0, 0))
+    _add_photo("tc19_protected", str(protected_dir), "prot.jpg", datetime.datetime(2026, 5, 6, 10, 0, 0))
+    _add_photo("tc19_link_direct", str(temp_link), "link.jpg", datetime.datetime(2026, 5, 7, 10, 0, 0))
+    db_session.commit()
+
+    expected_order = [
+        "tc19_p_sub_nfd",      # 2026-05-03
+        "tc19_p_deep_mixed",   # 2026-05-02
+        "tc19_p_root_nfc",     # 2026-05-01
+        "tc19_p_nodate_a",     # None, id asc
+        "tc19_p_nodate_b",     # None, id asc
+    ]
+
+    # 1. NFC query + trailing slash + NFD query + case variation all return exact ordered 5 photos
+    for query_path in (root_nfc, root_nfc + os.sep, root_nfd, root_nfc.upper()):
+        resp = client.get("/api/photos", params={"parent_dir": query_path, "limit": 50, "offset": 0})
+        assert resp.status_code == 200
+        assert [item["id"] for item in resp.json()] == expected_order
+
+    # 2. Pagination (limit/offset) remains exact without distortion
+    page_0 = client.get("/api/photos", params={"parent_dir": root_nfc, "limit": 2, "offset": 0}).json()
+    page_1 = client.get("/api/photos", params={"parent_dir": root_nfc, "limit": 2, "offset": 2}).json()
+    page_2 = client.get("/api/photos", params={"parent_dir": root_nfc, "limit": 2, "offset": 4}).json()
+    page_3 = client.get("/api/photos", params={"parent_dir": root_nfc, "limit": 2, "offset": 6}).json()
+    assert [p["id"] for p in page_0] == expected_order[0:2]
+    assert [p["id"] for p in page_1] == expected_order[2:4]
+    assert [p["id"] for p in page_2] == expected_order[4:5]
+    assert page_3 == []
+
+    # 3. Leaf symlink query does not expand into Protected sibling
+    link_resp = client.get("/api/photos", params={"parent_dir": str(temp_link), "limit": 50, "offset": 0})
+    assert link_resp.status_code == 200
+    assert [item["id"] for item in link_resp.json()] == ["tc19_link_direct"]
+
+    # 4. Unfiltered query still returns all 9 photos
+    all_resp = client.get("/api/photos", params={"limit": 50, "offset": 0})
+    assert all_resp.status_code == 200
+    assert len(all_resp.json()) == 9
+
+    # 5. Edge guards: whitespace parent_dir and limit<=0 return [], empty parent_dir returns all
+    assert client.get("/api/photos", params={"parent_dir": "   ", "limit": 50, "offset": 0}).json() == []
+    assert client.get("/api/photos", params={"parent_dir": root_nfc, "limit": 0, "offset": 0}).json() == []
+    assert len(client.get("/api/photos", params={"parent_dir": "", "limit": 50, "offset": 0}).json()) == 9
+
+    # 6. Parent symlink resolution (/var -> /private/var on macOS) and parity with folder_manager
+    from services.folder_manager import find_folder_image_ids, validate_folder_deletion_pair
+
+    if root_nfc.startswith("/private/var/"):
+        var_alias_root = root_nfc.replace("/private/var/", "/var/", 1)
+        alias_resp = client.get("/api/photos", params={"parent_dir": var_alias_root, "limit": 50, "offset": 0})
+        assert alias_resp.status_code == 200
+        assert [item["id"] for item in alias_resp.json()] == expected_order
+
+    deletion_ids = set(find_folder_image_ids(db_session, validate_folder_deletion_pair(root_nfc)))
+    assert deletion_ids == set(expected_order)
+
+
+
 
 
 

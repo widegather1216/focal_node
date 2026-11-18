@@ -18,6 +18,12 @@ from repositories.atomic_transaction import CompensatingTransactionManager
 from repositories.vector_repository import VectorRepository
 from services.indexing_state import indexing_state_manager
 from services.photo import get_thumbnail_path
+from utils.path import (
+    is_path_within_folder,
+    normalize_path_preserving_leaf_symlink,
+    resolve_path_without_leaf_symlink,
+    to_slash_bounded_prefix,
+)
 
 logger = logging.getLogger("focal_node.folder_manager")
 _default_vector_repo = VectorRepository()
@@ -173,29 +179,9 @@ def cleanup_zombie_records(
             active_db.close()
 
 
-def resolve_path_without_leaf_symlink(path: str) -> str:
-    """Normalizes path and resolves parent symlinks without expanding a leaf symlink."""
-    normalized_path = os.path.normpath(path)
-    if normalized_path.startswith("//"):
-        normalized_path = "/" + normalized_path.lstrip("/")
-    if normalized_path == os.sep:
-        return os.sep
-    if os.path.islink(normalized_path):
-        resolved_parent = os.path.realpath(os.path.dirname(normalized_path))
-        return os.path.join(resolved_parent, os.path.basename(normalized_path))
-    return os.path.realpath(normalized_path)
-
-
 def normalize_folder_deletion_path(path: str) -> str:
     """Normalizes a path for folder deletion without expanding leaf symlinks."""
-    if not isinstance(path, str) or not path.strip():
-        return ""
-    try:
-        resolved_path = resolve_path_without_leaf_symlink(path)
-    except Exception as path_err:
-        logger.debug("Safe path resolution failed for %s; falling back to normpath: %s", path, path_err)
-        resolved_path = os.path.normpath(path)
-    return unicodedata.normalize("NFC", resolved_path).lower()
+    return normalize_path_preserving_leaf_symlink(path)
 
 
 def validate_folder_deletion_pair(folder_path: str) -> tuple[str, str]:
@@ -207,8 +193,7 @@ def validate_folder_deletion_pair(folder_path: str) -> tuple[str, str]:
     normalized_root = normalize_folder_deletion_path(folder_path)
     if not normalized_root:
         raise ValueError(f"Invalid folder path: {folder_path}")
-    folder_prefix = normalized_root if normalized_root.endswith(os.sep) else normalized_root + os.sep
-    return normalized_root, folder_prefix
+    return normalized_root, to_slash_bounded_prefix(normalized_root)
 
 
 def is_target_or_nested_folder(
@@ -217,10 +202,7 @@ def is_target_or_nested_folder(
     target_prefix: str,
 ) -> bool:
     """Returns True if candidate_path equals normalized_target or is nested beneath target_prefix."""
-    normalized_candidate = normalize_folder_deletion_path(candidate_path)
-    if not normalized_candidate:
-        return False
-    return normalized_candidate == normalized_target or normalized_candidate.startswith(target_prefix)
+    return is_path_within_folder(candidate_path, normalized_target, target_prefix)
 
 
 def find_matching_indexed_folders(

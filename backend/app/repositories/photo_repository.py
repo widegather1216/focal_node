@@ -2,6 +2,11 @@ from typing import Any, List, Optional
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_, func
 import models
+from utils.path import (
+    is_path_within_folder,
+    normalize_path_preserving_leaf_symlink,
+    to_slash_bounded_prefix,
+)
 
 class PhotoRepository:
     def __init__(self, db: Session):
@@ -22,12 +27,61 @@ class PhotoRepository:
             return results
         return self.db.query(models.Image).options(joinedload(models.Image.metadata_rel)).filter(models.Image.id.in_(photo_ids)).all()
 
+    @staticmethod
+    def _filter_matching_photo_ids(
+        ordered_rows: list[tuple[str, str]],
+        target_root: str,
+        bounded_prefix: str,
+    ) -> List[str]:
+        """Filters ordered (id, parent_dir) rows using a per-directory normalization cache."""
+        dir_match_cache: dict[str, bool] = {}
+        matching_ids: List[str] = []
+        for photo_id, row_parent_dir in ordered_rows:
+            cache_key = row_parent_dir or ""
+            is_match = dir_match_cache.get(cache_key)
+            if is_match is None:
+                is_match = is_path_within_folder(cache_key, target_root, bounded_prefix)
+                dir_match_cache[cache_key] = is_match
+            if is_match:
+                matching_ids.append(photo_id)
+        return matching_ids
+
+    def _fetch_ordered_images_by_ids(self, page_ids: List[str]) -> List[models.Image]:
+        """Loads Image + metadata rows for page_ids while preserving page_ids order."""
+        page_images = self.get_by_ids(page_ids)
+        images_by_id = {img.id: img for img in page_images}
+        return [images_by_id[photo_id] for photo_id in page_ids if photo_id in images_by_id]
+
+    def _list_photos_in_folder(self, parent_dir: str, limit: int, offset: int) -> List[models.Image]:
+        """Lists photos inside parent_dir or its subdirectories with NFC/case/symlink parity."""
+        target_root = normalize_path_preserving_leaf_symlink(parent_dir)
+        if not target_root:
+            return []
+        bounded_prefix = to_slash_bounded_prefix(target_root)
+
+        ordered_rows = (
+            self.db.query(models.Image.id, models.Image.parent_dir)
+            .outerjoin(models.ImageMetadata)
+            .order_by(models.ImageMetadata.capture_date.desc().nullslast(), models.Image.id)
+            .all()
+        )
+        matching_ids = self._filter_matching_photo_ids(ordered_rows, target_root, bounded_prefix)
+        page_ids = matching_ids[offset : offset + limit]
+        if not page_ids:
+            return []
+        return self._fetch_ordered_images_by_ids(page_ids)
+
     def list_photos(self, limit: int = 50, offset: int = 0, parent_dir: Optional[str] = None) -> List[models.Image]:
-        query = self.db.query(models.Image).options(joinedload(models.Image.metadata_rel)).outerjoin(models.ImageMetadata)
+        """Lists photos ordered by capture_date DESC NULLS LAST, id ASC with optional folder scoping."""
+        if limit <= 0:
+            return []
+        safe_offset = max(0, offset)
         if parent_dir:
-            query = query.filter(models.Image.parent_dir == parent_dir)
+            return self._list_photos_in_folder(parent_dir, limit=limit, offset=safe_offset)
+
+        query = self.db.query(models.Image).options(joinedload(models.Image.metadata_rel)).outerjoin(models.ImageMetadata)
         query = query.order_by(models.ImageMetadata.capture_date.desc().nullslast(), models.Image.id)
-        return query.offset(offset).limit(limit).all()
+        return query.offset(safe_offset).limit(limit).all()
 
     def search_by_text(self, query_str: str, limit: Optional[int] = 500) -> List[str]:
         """
