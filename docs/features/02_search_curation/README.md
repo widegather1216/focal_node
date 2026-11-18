@@ -1,8 +1,8 @@
 # 🔍 [02_search_curation] Hybrid Search, K-NN Curation & Smart Albums
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-01~02 해결 완료 — DEFECT-03~10 해결 대기)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-01~03 해결 완료 — DEFECT-04~10 해결 대기)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 8건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 7건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -37,16 +37,15 @@ SigLIP 2 자연어 시맨틱 검색(코사인 거리 임계값 절삭)과 SQLite
   - `4c9f74d` - `fix(search): serialize AI tags with ensure_ascii=False and normalize legacy rows`
   - `51dfb8c` - `docs(search): mark DEFECT-01 resolved and sync control tower`
   - `96a6e23` - `fix(search): truncate SigLIP 2 text inputs to 64 tokens and guard ndarray hints`
-- **Working Tree State**: 🟢 Clean (`DEFECT-02` 커밋 완료)
-- **직전 완료 작업**: `2026-11-18 / systematic-debugger / DEFECT-02 (tags/aesthetic_tags ensure_ascii=False 직렬화 교정 및 run_migrations 기존 \uXXXX 백필) 해결 및 회귀 검증 완료`
+- **Working Tree State**: 🟡 Modified (`DEFECT-03` 수정·검증 완료, 커밋 대기)
+- **직전 완료 작업**: `2026-11-18 / systematic-debugger / DEFECT-03 (date_to 날짜 전용 입력 종료 시각 23:59:59.999999 확장, 명시적 타임스탬프 경계 보존 및 Z/tz-aware SQLite naive 비교 호환) 해결 및 회귀 검증 완료`
 - **생성/수정된 핵심 파일**:
-  - `backend/app/services/photo.py`: `_prepare_photo_models` 내 `tags`/`aesthetic_tags` `json.dumps(..., ensure_ascii=False)` 적용
-  - `backend/app/repositories/photo_repository.py`: `update_caption_and_tags` 내 `tags` `json.dumps(..., ensure_ascii=False)` 적용
-  - `backend/app/services/photo_reindex.py`: `_update_ai_analysis_orm` 내 `tags`/`aesthetic_tags` `json.dumps(..., ensure_ascii=False)` 적용
-  - `backend/app/database.py`: `_normalize_tag_json_column`·`_apply_ai_tag_normalization_row`·`_normalize_escaped_ai_tags` 추가 및 `run_migrations()` 백필 연동(잘못된 JSON 안전 스킵+경고 로깅)
-  - `backend/tests/test_api_search.py`: `TC-SRC-09` 한글 태그 인덱싱·메타데이터 수정·재인덱싱 SQLite/SigLIP 폴백 검색 및 `run_migrations` 백필·손상 JSON 스킵 회귀 테스트 2종 추가
+  - `backend/app/schemas.py`: `normalize_date_filter_bound()` 및 `SearchFilter` `date_from`/`date_to` `field_validator` 추가
+  - `backend/app/repositories/photo_repository.py`: `_resolve_date_filter_bound()` 추가 및 `_apply_exif_filters` `date_from`/`date_to` 경계 정규화 연동
+  - `backend/tests/test_api_search.py`: `TC-SRC-10` 단일 날짜 종일 포함·익일 제외·명시적 타임스탬프(`00:00:00`, `12:00:00`) 보존·`datetime.date`·UTC `Z` ISO 문자열·422 회귀 테스트 2종 추가
 - **검증 완료된 테스트 실행 명령어**:
-  - `./venv/bin/pytest backend/tests/test_api_search.py -v` (`8 passed`)
-  - `./venv/bin/pytest backend/tests/ -q` (`177 passed`)
+  - `./venv/bin/pytest backend/tests/test_api_search.py -v` (`10 passed`)
+  - `./venv/bin/pytest backend/tests/ -q` (`179 passed`)
+  - `npx tsc --noEmit` (`PASS`)
 - **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - 미해결 티켓 `DEFECT-03~10`(다음 타깃: `P0 Critical` `DEFECT-03` `date_to` 날짜 필터 종료일 전체 포함 교정) 순차 해결 후 Active Iteration Step 1 착수. Step 2 구현 시 `VectorRepository.query_similar_by_embedding`에서 `include=["distances"]`로 거리를 조회하여 `d <= max_distance`인 후보만 반환하도록 수정할 것.
+  - 미해결 티켓 `DEFECT-04~10`(다음 타깃: `P1 High` `DEFECT-04` 검색·필터·`similar:` 시 `selectedFolder` 스코프 유지) 순차 해결 후 Active Iteration Step 1 착수. Step 2 구현 시 `VectorRepository.query_similar_by_embedding`에서 `include=["distances"]`로 거리를 조회하여 `d <= max_distance`인 후보만 반환하도록 수정할 것.

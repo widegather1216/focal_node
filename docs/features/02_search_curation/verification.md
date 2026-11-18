@@ -1,8 +1,8 @@
 # 🧪 [02_search_curation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-01~02 해결 완료 — DEFECT-03~10 해결 대기)`
+- **검증 상태**: `🩹 Debugging (DEFECT-01~03 해결 완료 — DEFECT-04~10 해결 대기)`
 - **인수 조건 통과율**: `1 / 3 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 8건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 7건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -43,7 +43,7 @@
 | **Happy** | `TC-SRC-07` | 35mm 환산 화각 & 비평 점수 필터 (`[To-Be]`) | APS-C 23mm(환산 35mm) + IAA>=85 필터 | 크롭 바디 35mm 환산 사진 포함 반환 | `⏳ Pending` |
 | **Boundary**| `TC-SRC-08` | SigLIP 2 >64토큰 검색어 트런케이션 (`DEFECT-01`) | 64토큰 초과 한국어/영문 자연어 검색 | `ValueError` 없이 임베딩 추출 및 정상 검색 | `PASS (Fixed in DEFECT-01)` |
 | **Boundary**| `TC-SRC-09` | 비ASCII(한글) 태그 `ensure_ascii=False` 검색 (`DEFECT-02`) | 한글 태그 저장/수정 후 SQLite 폴백 검색 | `\uXXXX` 이스케이프 없이 한글 태그 정상 매칭 | `PASS (Fixed in DEFECT-02)` |
-| **Boundary**| `TC-SRC-10` | `date_to` 날짜 문자열 종료일 전체 포함 (`DEFECT-03`) | `date_from=2025-11-18`, `date_to=2025-11-18` + `14:30` 촬영 | 종료일 `23:59:59`까지 당일 사진 포함 반환 | `FAIL (DEFECT-03)` |
+| **Boundary**| `TC-SRC-10` | `date_to` 날짜 문자열 종료일 전체 포함 (`DEFECT-03`) | `date_from=2025-11-18`, `date_to=2025-11-18` + `14:30` 촬영 | 종료일 `23:59:59`까지 당일 사진 포함 반환 | `PASS (Fixed in DEFECT-03)` |
 | **Happy** | `TC-SRC-11` | 검색/필터/`similar:` 시 `selectedFolder` 스코프 유지 (`DEFECT-04`) | 특정 폴더 선택 후 검색어/필터/유사사진 실행 | 선택한 폴더(및 하위) 내부 사진만 반환 | `FAIL (DEFECT-04)` |
 | **Boundary**| `TC-SRC-12` | 즐겨찾기 필터 해제 시 `undefined` 잔존 키 제거 (`DEFECT-05`) | 하트 필터 ON ➔ OFF 토글 후 배지/목록 확인 | 배지 소멸 및 `fetchPhotos(..., selectedFolder)` 복귀 | `FAIL (DEFECT-05)` |
 | **Boundary**| `TC-SRC-13` | `PhotoGallery` 조건부 마운트 `ResizeObserver` 재결합 (`DEFECT-06`) | 초기 로딩/빈 결과 후 그리드 마운트 및 리사이즈 | `columnCount` 반응형 갱신 정상 동작 | `FAIL (DEFECT-06)` |
@@ -71,9 +71,11 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_api_search.py -v` (`8 passed`), `./venv/bin/pytest backend/tests/ -q` (`177 passed`)
 
 ### [DEFECT-03] `date_to` 날짜 필터 자정(`00:00:00`) 절삭으로 종료일 당일 촬영 사진 전량 누락
-- **현재 상태**: 🟡 OPEN (`🔴 P0 Critical`)
-- **발생 위치**: [`SearchFilterMenu.tsx`](../../../src/components/SearchFilterMenu.tsx#L173-L176), [`schemas.py`](../../../backend/app/schemas.py#L87-L88), [`photo_repository.py`](../../../backend/app/repositories/photo_repository.py#L140-L141)
-- **원인 및 재현**: `<input type="date">`의 `"YYYY-MM-DD"` 입력이 `datetime(Y, M, D, 0, 0, 0)`으로 파싱되어 `capture_date <= date_to` 비교 시 당일 `00:00:01~23:59:59` 사진이 전량 제외됨.
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`schemas.py`](../../../backend/app/schemas.py#L9-L125), [`photo_repository.py`](../../../backend/app/repositories/photo_repository.py#L14-L23), [`photo_repository.py`](../../../backend/app/repositories/photo_repository.py#L153-L155), [`test_api_search.py`](../../../backend/tests/test_api_search.py#L353-L430)
+  - **원인 및 조치**: `<input type="date">`의 `"YYYY-MM-DD"` 입력 또는 `datetime.date` 값이 Pydantic `datetime` 파싱 시 `datetime(Y, M, D, 0, 0, 0)`으로 변환되어 `capture_date <= date_to` 비교에서 당일 `00:00:01~23:59:59.999999` 촬영 사진이 누락되던 결함을 확인함. `schemas.py`에 `normalize_date_filter_bound()` 및 `SearchFilter` `field_validator(mode="before" / "after")`를 도입해 `"YYYY-MM-DD"` 문자열과 `datetime`이 아닌 `datetime.date`만 `date_from`=`00:00:00`·`date_to`=`23:59:59.999999`로 확장하고, 명시적 타임스탬프(`"2025-11-18T00:00:00"`, `"2025-11-18T12:00:00"`)는 정확한 시각 경계를 보존하며 `Z`/timezone-aware ISO 문자열(`"2024-12-31T23:59:59Z"`)은 `tzinfo=None` 정규화로 SQLite naive `capture_date` 비교와 호환되도록 교정함. 또한 `PhotoRepository._apply_exif_filters`에 `_resolve_date_filter_bound()`를 연동해 `SearchFilter`를 거치지 않는 직접 호출자도 동일 경계 규칙을 따르도록 보강함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_api_search.py -v` (`10 passed`), `./venv/bin/pytest backend/tests/ -q` (`179 passed`), `npx tsc --noEmit` (`PASS`)
 
 ### [DEFECT-04] 검색·EXIF 필터·`similar:` 활성 시 `selectedFolder` 컨텍스트 전면 소실
 - **현재 상태**: 🟡 OPEN (`🟠 P1 High`)
