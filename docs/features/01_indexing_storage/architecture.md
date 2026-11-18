@@ -62,13 +62,14 @@ src/
 ├── hooks/
 │   ├── useIndexingStatus.ts           # [기존] 인덱싱 진행 상태 Polling 커스텀 훅
 │   ├── usePhotoDetail.ts              # [기존] 상세 패널 상태·사진별 재분석/비평 오케스트레이션 훅
-│   ├── usePhotoExport.ts              # [기존] SSE 사진 내보내기 실행, AbortController 및 결과 피드백 훅
+│   ├── usePhotoExport.ts              # [기존] Zustand 선택 구독 연동 및 내보내기 수명주기 컨트롤러 위임 훅
 │   └── usePhotosQuery.ts              # [기존] 사진 즐겨찾기 토글 Mutation 훅 (`photoFavorite.ts` 위임)
 ├── services/api.ts                    # [기존] exportPhotos SSE 스트림 클라이언트 및 AbortSignal 지원
 ├── store/useAppStore.ts               # [기존] selectedPhotoIds 원자적 선택/부분 해제(deselectPhotoIds) 상태 관리
 └── utils/
-    ├── exportStream.ts                # [기존] WHATWG SSE 청크 파서, ExportResult 정규화 및 내보내기 결과 판정 순수 유틸리티
-    ├── photoFavorite.ts               # [신설] 즐겨찾기 토글 직렬화 큐, `['photos']`/`['photoDetail']` 양방향 캐시 동기화 및 롤백 오케스트레이터
+    ├── exportStream.ts                # [기존] WHATWG SSE 청크 파서(AbortSignal 취소 방어), ExportResult 정규화 및 결과 판정 순수 유틸리티
+    ├── photoExport.ts                 # [신설] 내보내기 수명주기 컨트롤러(선택 해제 시 abort/세대 무효화, partial 피드백 보존)
+    ├── photoFavorite.ts               # [기존] 즐겨찾기 토글 직렬화 큐, `['photos']`/`['photoDetail']` 양방향 캐시 동기화 및 롤백 오케스트레이터
     └── photoReindex.ts                # [기존] 사진별 재분석 상태 전이, React Query 캐시 동기화 및 사진 전환 격리 오케스트레이터
 ```
 

@@ -1,8 +1,8 @@
 # 🧪 [01_indexing_storage] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-16~17 해결 대기)`
+- **검증 상태**: `🩹 Debugging (DEFECT-17 해결 대기)`
 - **인수 조건 통과율**: `1 / 4 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 2건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 1건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -64,7 +64,7 @@
 | **Happy** | `TC-IDX-19` | 폴더 필터 조회 시 하위 디렉터리 및 NFD/NFC 정규화 | 하위 폴더/한글 NFD 포함 폴더 선택 | 하위 디렉터리 및 NFD/NFC 사진 정상 조회 | `PASS (Fixed in DEFECT-13)` |
 | **Boundary**| `TC-IDX-20` | 단일 사진 재분석 캐시 동기화 및 사진 전환 격리 | 상세 재분석 중 타 사진 선택 또는 완료 대기 | `photoDetail` 캐시 즉시 갱신 및 전환 후 버퍼 오염 차단 | `PASS (Fixed in DEFECT-14)` |
 | **Boundary**| `TC-IDX-21` | 상세 패널/갤러리 즐겨찾기 토글 양방향 캐시 동기화 | 폴더 선택 중 상세 패널 하트 토글 | `photos` 및 `photoDetail` 캐시 모두 서버 상태와 일치 | `PASS (Fixed in DEFECT-15)` |
-| **Boundary**| `TC-IDX-22` | 내보내기 중 전체 선택 해제 시 피드백 누수 차단 | SSE 내보내기 진행 중 선택 해제 후 새 사진 선택 | 진행 중 요청 중단 및 이전 실패/완료 배너 잔류 차단 | `FAIL (DEFECT-16)` |
+| **Boundary**| `TC-IDX-22` | 내보내기 중 전체 선택 해제 시 피드백 누수 차단 | SSE 내보내기 진행 중 선택 해제 후 새 사진 선택 | 진행 중 요청 중단 및 이전 실패/완료 배너 잔류 차단 | `PASS (Fixed in DEFECT-16)` |
 | **Boundary**| `TC-IDX-23` | 초장축 세로 파노라마 썸네일 JPEG 65,500px 상한 방어 | 10x5000 또는 100x20000 이미지 썸네일 생성 | libjpeg 65,500px 초과 OSError 없이 썸네일 생성 | `FAIL (DEFECT-17)` |
 
 ---
@@ -133,10 +133,11 @@
   - **회귀 테스트 결과**: `node --test tests/frontend/*.test.mjs` (`12 passed`: `photoFavorite.test.mjs` 6 + `photoReindex.test.mjs` 6), `npx tsc --noEmit && npm run build` (`PASS`, `0 Errors`), `./venv/bin/pytest backend/tests/test_api_photos.py backend/tests/test_api_folders.py backend/tests/test_api_search.py backend/tests/test_backend_hardening.py backend/tests/test_concurrency_hardening.py -k "not test_base_keep_alive_model_lifecycle" -v` (`69 passed, 1 deselected`)
 
 ### [DEFECT-16] 내보내기 진행 중 전체 선택 해제 시 `usePhotoExport`의 완료/실패 피드백이 이후 새 선택에 잔류
-- **현재 상태**: 🟡 OPEN
-- **심각도**: 🟠 P1 High (Async Lifecycle / Stale State Leak)
-- **발생 위치**: [`src/hooks/usePhotoExport.ts#L64-L69,L96-L145`](../../../src/hooks/usePhotoExport.ts#L64-L69), [`src/components/ActionBar.tsx#L19,L49-L57`](../../../src/components/ActionBar.tsx#L19)
-- **증상 및 재현**: `selectedPhotoIds.size === 0`일 때 진행 중이던 SSE 요청을 abort/무효화하지 않아, 뒤늦게 완료/실패한 응답이 `feedback`을 세팅하고 다음 사진 선택(`0 -> 1`) 시 이전 배너가 새 `[내보내기]` 버튼을 가림 (`✅ Deterministic Trace Verified`).
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 및 신설 파일**: [`src/utils/photoExport.ts`](../../../src/utils/photoExport.ts), [`src/hooks/usePhotoExport.ts`](../../../src/hooks/usePhotoExport.ts), [`src/utils/exportStream.ts`](../../../src/utils/exportStream.ts), [`src/services/api.ts`](../../../src/services/api.ts), [`tests/frontend/photoExport.test.mjs`](../../../tests/frontend/photoExport.test.mjs)
+  - **원인 및 조치**: Devil's Advocate 검증을 반영해 순수 내보내기 수명주기 컨트롤러 [`src/utils/photoExport.ts`](../../../src/utils/photoExport.ts)(`createPhotoExportController`)를 신설하고, `usePhotoExport.ts`에서 `useAppStore.subscribe`를 통해 `selectedPhotoIds.size`가 `0`으로 비워지는 즉시(동기 `1 -> 0 -> 1` 전환 포함) `resetOnEmptySelection()`으로 타이머 정리·`requestId` 세대 무효화·`AbortController.abort()`·`isBusy=false`·`setExporting(false)`·`setFeedback(null)`를 수행하도록 교정함. 부분 실패(`partial`) 시 `deselectPhotoIds(exported_ids)` 후 `failed_ids`가 남아 `size > 0`인 경우에는 `partial` 피드백을 유지하며, `parseExportSseStream(stream, signal)` 및 `api.exportPhotos`에 `AbortSignal` 전달·청크 루프 내/종료 시 abort 우선 검사(`reader.cancel()` -> `done: true` 시 반쪽 JSON 파싱 에러 차단)를 적용함.
+  - **회귀 테스트 결과**: `node --test tests/frontend/*.test.mjs` (`19 passed`: `photoExport.test.mjs` 7 + `photoFavorite.test.mjs` 6 + `photoReindex.test.mjs` 6), `npx tsc --noEmit && npm run build` (`PASS`, `0 Errors`), `./venv/bin/pytest backend/tests/test_api_photos.py backend/tests/test_api_folders.py backend/tests/test_api_search.py backend/tests/test_backend_hardening.py backend/tests/test_concurrency_hardening.py -k "not test_base_keep_alive_model_lifecycle" -v` (`69 passed, 1 deselected`)
 
 ### [DEFECT-17] `_resize_image_to_jpeg_bytes`의 세로 초장축 이미지 JPEG 65,500px 한계 초과 `OSError` 크래시
 - **현재 상태**: 🟡 OPEN
