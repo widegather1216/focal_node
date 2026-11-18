@@ -1,8 +1,8 @@
 # 🧪 [02_search_curation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-01~07 해결 완료 — DEFECT-08~10 해결 대기)`
+- **검증 상태**: `🩹 Debugging (DEFECT-01~08 해결 완료 — DEFECT-09~10 해결 대기)`
 - **인수 조건 통과율**: `1 / 3 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 3건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 2건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -48,7 +48,7 @@
 | **Boundary**| `TC-SRC-12` | 즐겨찾기 필터 해제 시 `undefined` 잔존 키 제거 (`DEFECT-05`) | 하트 필터 ON ➔ OFF 토글 후 배지/목록 확인 | 배지 소멸 및 `fetchPhotos(..., selectedFolder)` 복귀 | `PASS (Fixed in DEFECT-05)` |
 | **Boundary**| `TC-SRC-13` | `PhotoGallery` 조건부 마운트 `ResizeObserver` 재결합 (`DEFECT-06`) | 초기 로딩/빈 결과 후 그리드 마운트 및 리사이즈 | `columnCount` 반응형 갱신 정상 동작 | `PASS (Fixed in DEFECT-06)` |
 | **Boundary**| `TC-SRC-14` | `SigLIP2Adapter` taxonomy 사전계산 `GPU_LOCK`/`self.lock` 보호 (`DEFECT-07`) | `_precompute_taxonomy_embeddings()` 동시 호출 | `.to(device)` 및 캐시가 락 경계 내에서만 실행 | `PASS (Fixed in DEFECT-07)` |
-| **Boundary**| `TC-SRC-15` | 32,766 변수 초과·음수 `limit`/`offset`·`ILIKE` 이스케이프·정렬 tie-breaker (`DEFECT-08`) | 35k ID 필터, `limit=-1`, `Z6_2` 검색, 동시각 연사 | SQL 오류/전량 누출/와일드카드 누출/페이지 역전 차단 | `FAIL (DEFECT-08)` |
+| **Boundary**| `TC-SRC-15` | 32,766 변수 초과·음수 `limit`/`offset`·`ILIKE` 이스케이프·정렬 tie-breaker (`DEFECT-08`) | 35k ID 필터, `limit=-1`, `Z6_2` 검색, 동시각 연사 | SQL 오류/전량 누출/와일드카드 누출/페이지 역전 차단 | `PASS (Fixed in DEFECT-08)` |
 | **Negative**| `TC-SRC-16` | `search_similar_photos` 빈 벡터 인덱스 `404` 일관성 (`DEFECT-09`) | `vector_count == 0` 상태에서 `POST /api/search/similar` | `200 OK []` 위장 없이 `404` 반환 | `FAIL (DEFECT-09)` |
 | **Boundary**| `TC-SRC-17` | `SearchService` 스레드 세션 격리 및 `AbortSignal` 전달 (`DEFECT-10`) | `to_thread` 취소 경합 및 빠른 검색어 전환 | `Session` 크로스 스레드 `close()` 경합 차단 및 fetch 취소 | `FAIL (DEFECT-10)` |
 
@@ -106,9 +106,11 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_siglip_zero_shot.py backend/tests/test_concurrency_hardening.py backend/tests/test_api_search.py -v` (`35 passed`, `TC-SRC-14` 4종 포함), `./venv/bin/pytest backend/tests/ -q` (`185 passed`)
 
 ### [DEFECT-08] `PhotoRepository` 32,766 변수 초과 크래시, 음수 `limit`/`offset`, `ILIKE` 미이스케이프·정렬 누락 및 `parseError` 422 직렬화 결함
-- **현재 상태**: 🟡 OPEN (`🟠 P1 High`)
-- **발생 위치**: [`photo_repository.py`](../../../backend/app/repositories/photo_repository.py#L114-L204), [`schemas.py`](../../../backend/app/schemas.py#L90-L100), [`api.ts`](../../../src/services/api.ts#L62-L73)
-- **원인 및 재현**: `_build_chroma_id_filter` 35k ID 시 `too many SQL variables` 크래시, `SearchRequest`/`SimilarSearchRequest` 음수 `limit=-1` 시 SQLite 전량 반환, `camera_model`/`lens_model` `_`/`%` 미이스케이프, `L203` `Image.id` 2차 정렬 누락, `parseError` 배열 `detail` `"[object Object]"` 반환.
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`photo_repository.py`](../../../backend/app/repositories/photo_repository.py#L14-L335), [`photo_repository.py`](../../../backend/app/repositories/photo_repository.py#L410-L453), [`schemas.py`](../../../backend/app/schemas.py#L126-L139), [`apiError.ts`](../../../src/utils/apiError.ts#L1-L73), [`api.ts`](../../../src/services/api.ts#L20-L65), [`test_api_search.py`](../../../backend/tests/test_api_search.py#L604-L765), [`apiError.test.mjs`](../../../tests/frontend/apiError.test.mjs#L1-L86)
+  - **원인 및 조치**: `_build_chroma_id_filter`의 단일 `or_(*conditions)` 바인딩으로 35,000개 ID 입력 시 SQLite 32,766 변수 상한 초과(`OperationalError`), `SearchRequest`/`SimilarSearchRequest` `limit`/`offset` 무검증, `camera_model`/`lens_model` `ILIKE` 미이스케이프·공백 문자열 처리 미비, `filter_and_paginate` 필터 단독 경로의 `nullslast()`/`Image.id` tie-breaker 누락, `parseError`의 Pydantic 422 배열 `"[object Object]"` 직렬화 결함을 확인함. Devil's Advocate 검증을 거쳐 `PhotoRepository`에 `CHROMA_ID_CHUNK_SIZE = 900` 청크별 DB 조회(`_query_chunk_matching_ids`·`_collect_matching_candidate_ids`, 중복 ID 제거 및 폴더 캐시 공유)와 `list_critiques` 청크 2-pass `DESC NULLS LAST` 정렬(`_sort_critique_rows`)을 도입하고, `_escape_like_pattern`·`_normalize_text_filter`를 `search_by_text`와 `_apply_exif_filters`에 공통 적용했으며, `filter_and_paginate` 직접 호출 가드(`limit <= 0 -> []`, `safe_offset = max(0, offset)`) 및 `.order_by(ImageMetadata.capture_date.desc().nullslast(), Image.id)`를 교정함. `schemas.py` `SearchRequest`/`SimilarSearchRequest`에 `Field(default=50, ge=1, le=500)`·`Field(default=0, ge=0)`를 적용하고, [`apiError.ts`](../../../src/utils/apiError.ts)에 `formatApiErrorDetail`·`extractResponseErrorMessage`를 분리해 `ApiClient.parseError`가 422 `loc`/`msg` 배열을 가독성 있게 직렬화하도록 조치함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_api_search.py -v` (`16 passed`), `./venv/bin/pytest backend/tests/ -q` (`189 passed`), `node --test tests/frontend/*.test.mjs` (`31 passed`), `npx tsc --noEmit && npm run build` (`PASS`)
 
 ### [DEFECT-09] `SearchService.search_similar_photos` 빈 벡터 인덱스(`vector_count == 0`) 시 `200 OK []` 거짓 성공 위장
 - **현재 상태**: 🟡 OPEN (`🟠 P1 High`)

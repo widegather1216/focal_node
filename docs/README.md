@@ -7,11 +7,11 @@
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
-- **Active 도메인**: [`02_search_curation`](./features/02_search_curation/README.md) *(`DEFECT-01~07` 해결 완료 — `DEFECT-08~10` 해결 대기)*
-- **현재 단계 (Stage)**: `🩹 Debugging (02_search_curation DEFECT-08~10 해결)`
-- **직전 완료 작업**: [`02_search_curation`](./features/02_search_curation/README.md) `DEFECT-07` 결함 해결 완료 (`backend/app/services/siglip_adapter.py` `_precompute_taxonomy_embeddings()`의 `.to(self.device)` 및 `cached_taxonomy_embeddings` 초기화를 단방향 `GPU_LOCK -> self.lock` 임계 구역으로 통합하고 `_load_model()` 완료 시점까지 원자화했으며, `get_image_embedding`/`get_text_embedding` 프로세서·디바이스 스냅샷 및 `get_zero_shot_hints()` `_get_taxonomy_embeddings_snapshot()`·영벡터 가드를 적용; `TC-SRC-14` 4종 포함 `test_siglip_zero_shot.py`+`test_concurrency_hardening.py`+`test_api_search.py` `35 passed`·전체 `pytest` `185 passed`)
+- **Active 도메인**: [`02_search_curation`](./features/02_search_curation/README.md) *(`DEFECT-01~08` 해결 완료 — `DEFECT-09~10` 해결 대기)*
+- **현재 단계 (Stage)**: `🩹 Debugging (02_search_curation DEFECT-09~10 해결)`
+- **직전 완료 작업**: [`02_search_curation`](./features/02_search_curation/README.md) `DEFECT-08` 결함 해결 완료 (`PhotoRepository` `_collect_matching_candidate_ids`/`_fetch_critique_rows_chunked` 900청킹으로 35k ID SQLite 변수 초과 크래시 해소, `_escape_like_pattern`·`_normalize_text_filter` `ILIKE` 이스케이프/공백 정규화 및 `filter_and_paginate` `nullslast(), Image.id` 정렬 교정, `schemas.py` `SearchRequest`/`SimilarSearchRequest` `limit`/`offset` 422 검증 추가, `src/utils/apiError.ts` 분리 및 `ApiClient.parseError` 422 배열 `detail` 직렬화 교정; `TC-SRC-15` 포함 `test_api_search.py` `16 passed`·전체 `pytest` `189 passed`·`node --test tests/frontend/*.test.mjs` `31 passed`·`tsc && vite build` `PASS`)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"02_search_curation 도메인의 DEFECT-08 티켓 해결해줘"` *(`systematic-debugger`로 남은 P1 High 티켓 순차 해결)*
+  > `"02_search_curation 도메인의 DEFECT-09 티켓 해결해줘"` *(`systematic-debugger`로 남은 P1 High 티켓 순차 해결)*
 
 ---
 
@@ -21,7 +21,7 @@
 | :--- | :--- | :---: | :---: | :---: | :--- |
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `12/12 (100%)` | `0 / 0` | `DEFECT-01~11`·`REFACTOR-01` 전수 해결 완료(`save_binary_file` 경로 검증·`tauri.conf.json` CSP 적용), Sign-Off 복귀 |
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `20/23 (87%)` | `0 / 0` | `DEFECT-01~17`·`REFACTOR-01~02` 전수 해결 완료(초장축 세로 썸네일 JPEG 65,500px 상한·RGB 정규화 방어), 스마트 오프라인·Relocation Step 1~4 대기 |
-| 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `9/17 (53%)` | `3 / 0` | `DEFECT-01~07 해결(SigLIP 64토큰·한글 태그·date_to 종일·selectedFolder 스코프·즐겨찾기 키 제거·PhotoGallery ResizeObserver 재결합·SigLIP taxonomy GPU_LOCK/self.lock 보호); DEFECT-08~10 해결 대기` |
+| 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `10/17 (59%)` | `2 / 0` | `DEFECT-01~08 해결(SigLIP 64토큰·한글 태그·date_to 종일·selectedFolder 스코프·즐겨찾기 키 제거·PhotoGallery ResizeObserver 재결합·SigLIP taxonomy GPU_LOCK/self.lock 보호·35k ID 청킹/422/ILIKE/정렬/parseError); DEFECT-09~10 해결 대기` |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `15/15 (100%)` | `0 / 0` | `DEFECT-01~03`·`REFACTOR-01~08` 전수 해결 완료 (Headless MPS/MLX 가드·ADR-05 레거시 정리·300줄 이하 분할), Sign-Off 완료 |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 🛠️ Implementing | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 0` | `REFACTOR-01~02` 전수 해결 완료(`src/` 전역 `any` 0건·`api.ts`/훅/컴포넌트 타입 엄격화), 차트 드릴다운 Step 3~4 대기 |
 
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-18]` `[systematic-debugger]` [`02_search_curation`]**: `DEFECT-08` 결함 해결 완료 (`backend/app/repositories/photo_repository.py`의 단일 `or_(*conditions)`를 `CHROMA_ID_CHUNK_SIZE = 900` 청크별 DB 조회 `_query_chunk_matching_ids`·`_collect_matching_candidate_ids` 및 `list_critiques` `_fetch_critique_rows_chunked`+`_sort_critique_rows`로 전환해 35k ID SQLite 변수 한도 초과 크래시를 차단하고, `_escape_like_pattern`·`_normalize_text_filter`로 `camera_model`/`lens_model` `ILIKE` 와일드카드·공백 문자열을 정규화하며, `filter_and_paginate` 필터 단독 경로에 `.nullslast(), models.Image.id` tie-breaker를 추가함. `backend/app/schemas.py` `SearchRequest`/`SimilarSearchRequest`에 `limit(1..500)`·`offset(>=0)` `Field` 검증을 도입하고, `src/utils/apiError.ts` 분리 및 `src/services/api.ts` `parseError` 연동을 통해 Pydantic 422 배열 `detail`을 `loc`/`msg` 문자열로 직렬화함; `TC-SRC-15` 포함 `test_api_search.py` `16 passed`·전체 `pytest` `189 passed`·`node --test tests/frontend/*.test.mjs` `31 passed`·`tsc && vite build` `PASS`).
 
 - **`[2026-11-18]` `[systematic-debugger]` [`02_search_curation`]**: `DEFECT-07` 결함 해결 완료 (`backend/app/services/siglip_adapter.py`에 `_get_adapter_lock`·`_load_model_and_taxonomy_locked`·`_precompute_taxonomy_embeddings_locked`·`_run_taxonomy_inference_locked`·`_get_taxonomy_embeddings_snapshot`·`_encode_image_batch`·`_encode_text_batch`를 분리해 `.to(self.device)` 및 `cached_taxonomy_embeddings` 읽고 쓰기를 단방향 `GPU_LOCK -> self.lock` 임계 구역 안에 원자적으로 배치하고 `logger.exception` 로깅 및 `get_zero_shot_hints()` 스냅샷·영벡터 가드를 적용함; `TC-SRC-14` 4종 포함 `test_siglip_zero_shot.py`+`test_concurrency_hardening.py`+`test_api_search.py` `35 passed`·전체 `pytest` `185 passed`).
 

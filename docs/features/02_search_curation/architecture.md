@@ -39,6 +39,7 @@ backend/app/
 src/
 ├── types/photo.ts                     # [수정대상] SearchFilters(use_35mm_equivalent, min_*_score), SmartAlbum 타입 정의
 ├── utils/
+│   ├── apiError.ts                    # [기존/신설] Pydantic 422 배열 detail 직렬화 및 HTTP 응답 오류 파싱 순수 유틸
 │   ├── galleryLayout.ts               # [기존/신설] 반응형 갤러리 열 수 계산 및 ResizeObserver 재바인딩 순수 유틸
 │   └── searchFilters.ts               # [기존/신설] 즐겨찾기 토글 키 제거, 필터 정규화 및 유효 필터 카운트 순수 유틸
 ├── services/api.ts                    # [수정대상] searchPhotos, getSmartAlbums, createSmartAlbum, deleteSmartAlbum
