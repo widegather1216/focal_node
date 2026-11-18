@@ -31,9 +31,11 @@ class SearchService:
 
     @staticmethod
     def _compute_search_limit(limit: int, offset: int, has_filters: bool, extra_buffer: int = 0) -> int:
+        safe_offset = max(0, offset)
+        safe_limit = max(1, limit)
         if has_filters:
-            return offset + max(limit * 10, 500)
-        return max(1, limit + offset + extra_buffer)
+            return safe_offset + max(safe_limit * 10, 500)
+        return max(1, safe_limit + safe_offset + extra_buffer)
 
     async def _query_vector_ids(
         self, query_text: str, request: schemas.SearchRequest
@@ -43,7 +45,8 @@ class SearchService:
         if not query_embedding:
             return []
 
-        search_limit = self._compute_search_limit(request.limit, request.offset, bool(request.filters))
+        has_scoping = bool(request.filters or request.parent_dir)
+        search_limit = self._compute_search_limit(request.limit, request.offset, has_scoping)
         try:
             return await asyncio.to_thread(
                 self.vector_repo.query_similar_by_embedding,
@@ -61,7 +64,8 @@ class SearchService:
         self, query_text: str, request: schemas.SearchRequest
     ) -> List[str]:
         """Combines SQLite text matches and vector matches, prioritizing text hits."""
-        text_search_ids = await asyncio.to_thread(self.photo_repo.search_by_text, query_text)
+        text_limit = None if request.parent_dir else 500
+        text_search_ids = await asyncio.to_thread(self.photo_repo.search_by_text, query_text, text_limit)
         chroma_ids = await self._query_vector_ids(query_text, request)
         return list(dict.fromkeys(text_search_ids + chroma_ids))
 
@@ -81,6 +85,7 @@ class SearchService:
             request.filters,
             request.offset,
             request.limit,
+            parent_dir=request.parent_dir,
         )
 
     async def search_similar_photos(self, request: schemas.SimilarSearchRequest) -> List[models.Image]:
@@ -95,8 +100,9 @@ class SearchService:
             logger.warning("[SearchService] Photo embedding for %s not found.", request.photo_id)
             raise ValueError(f"Photo embedding for {request.photo_id} not found")
 
+        has_scoping = bool(request.filters or request.parent_dir)
         search_limit = self._compute_search_limit(
-            request.limit, request.offset, bool(request.filters), extra_buffer=1
+            request.limit, request.offset, has_scoping, extra_buffer=1
         )
         chroma_ids = await asyncio.to_thread(
             self.vector_repo.query_similar_by_embedding, target_embedding, search_limit
@@ -107,5 +113,9 @@ class SearchService:
 
         return await asyncio.to_thread(
             self.photo_repo.filter_and_paginate,
-            similar_photo_ids, request.filters, request.offset, request.limit,
+            similar_photo_ids,
+            request.filters,
+            request.offset,
+            request.limit,
+            parent_dir=request.parent_dir,
         )

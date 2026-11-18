@@ -126,12 +126,14 @@ class SearchFilter(BaseModel):
 class SearchRequest(BaseModel):
     query: Optional[str] = None
     filters: Optional[SearchFilter] = None
+    parent_dir: Optional[str] = None
     limit: int = 50
     offset: int = 0
 
 class SimilarSearchRequest(BaseModel):
     photo_id: str
     filters: Optional[SearchFilter] = None
+    parent_dir: Optional[str] = None
     limit: int = 50
     offset: int = 0
 

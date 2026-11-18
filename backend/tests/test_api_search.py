@@ -428,3 +428,180 @@ def test_tc_src_10_date_filter_supports_date_objects_and_utc_z_iso_strings(clien
 
     invalid_resp = client.post("/api/search", json={"filters": {"date_to": "2025-02-30"}, "limit": 20, "offset": 0})
     assert invalid_resp.status_code == 422
+
+
+def _seed_scoped_photo(
+    db_session,
+    photo_id: str,
+    parent_dir: str,
+    file_name: str,
+    caption: str,
+    tags_json: str,
+    iso: int = 200,
+    capture_date: datetime | None = None,
+) -> None:
+    image_row = Image(
+        id=photo_id,
+        parent_dir=parent_dir,
+        file_path=f"{parent_dir}/{file_name}",
+        file_name=file_name,
+        file_size=100,
+        file_mtime=time.time(),
+        mime_type="image/jpeg",
+    )
+    metadata_row = ImageMetadata(
+        image_id=photo_id,
+        iso=iso,
+        f_number=2.8,
+        focal_length=50.0,
+        capture_date=capture_date,
+    )
+    analysis_row = AIAnalysis(
+        image_id=photo_id,
+        caption=caption,
+        tags=tags_json,
+    )
+    db_session.add_all([image_row, metadata_row, analysis_row])
+    db_session.commit()
+
+
+def _seed_folder_scope_library(db_session) -> None:
+    _seed_scoped_photo(
+        db_session,
+        "a_root",
+        "/folder_a",
+        "a_root.jpg",
+        "Sunset on coast",
+        '["sunset"]',
+        iso=200,
+        capture_date=datetime(2026, 5, 1, 10, 0, 0),
+    )
+    _seed_scoped_photo(
+        db_session,
+        "a_sub",
+        "/folder_a/sub",
+        "a_sub.jpg",
+        "Sunset in sub",
+        '["sunset"]',
+        iso=200,
+        capture_date=datetime(2026, 5, 2, 10, 0, 0),
+    )
+    _seed_scoped_photo(
+        db_session,
+        "a_other",
+        "/folder_a_other",
+        "a_other.jpg",
+        "Sunset in sibling",
+        '["sunset"]',
+        iso=200,
+        capture_date=datetime(2026, 5, 3, 10, 0, 0),
+    )
+    _seed_scoped_photo(
+        db_session,
+        "b_root",
+        "/folder_b",
+        "b_root.jpg",
+        "Sunset in b",
+        '["sunset"]',
+        iso=200,
+        capture_date=datetime(2026, 5, 4, 10, 0, 0),
+    )
+
+
+def test_tc_src_11_search_and_similar_respect_parent_dir_scope(client, db_session, monkeypatch):
+    _seed_folder_scope_library(db_session)
+
+    mock_siglip = MagicMock()
+    mock_siglip.get_text_embedding.return_value = [0.1] * 768
+    monkeypatch.setattr("services.search_service.get_siglip_adapter", lambda: mock_siglip)
+
+    mock_collection = MagicMock()
+    mock_collection.count.return_value = 1000
+    mock_collection.get.return_value = {"embeddings": [[0.2] * 768]}
+    mock_collection.query.return_value = {"ids": [["b_root", "a_other", "a_sub", "a_root"]]}
+    monkeypatch.setattr("repositories.vector_repository.get_chroma_collection", lambda: mock_collection)
+
+    nl_resp = client.post(
+        "/api/search",
+        json={"query": "sunset", "parent_dir": "/folder_a", "limit": 2, "offset": 0},
+    )
+    assert nl_resp.status_code == 200
+    assert {item["id"] for item in nl_resp.json()} == {"a_root", "a_sub"}
+    assert mock_collection.query.call_args.kwargs["n_results"] >= 500
+
+    nl_exif_resp = client.post(
+        "/api/search",
+        json={
+            "query": "sunset",
+            "filters": {"iso_min": 100, "iso_max": 400},
+            "parent_dir": "/folder_a",
+            "limit": 10,
+            "offset": 0,
+        },
+    )
+    assert nl_exif_resp.status_code == 200
+    assert {item["id"] for item in nl_exif_resp.json()} == {"a_root", "a_sub"}
+
+    filter_only_resp = client.post(
+        "/api/search",
+        json={
+            "filters": {"iso_min": 100, "iso_max": 400},
+            "parent_dir": "/folder_a",
+            "limit": 10,
+            "offset": 0,
+        },
+    )
+    assert filter_only_resp.status_code == 200
+    assert [item["id"] for item in filter_only_resp.json()] == ["a_sub", "a_root"]
+
+    similar_resp = client.post(
+        "/api/search/similar",
+        json={"photo_id": "a_root", "parent_dir": "/folder_a", "limit": 10, "offset": 0},
+    )
+    assert similar_resp.status_code == 200
+    assert [item["id"] for item in similar_resp.json()] == ["a_sub"]
+    assert mock_collection.query.call_args.kwargs["n_results"] >= 500
+
+
+def test_tc_src_11_parent_dir_nfd_symlink_whitespace_and_text_pool_boundaries(client, db_session, tmp_path, monkeypatch):
+    import os
+    import unicodedata
+
+    root_nfc = unicodedata.normalize("NFC", str(tmp_path / "여행폴더"))
+    root_nfd = unicodedata.normalize("NFD", str(tmp_path / "여행폴더"))
+    sub_nfd = os.path.join(root_nfd, unicodedata.normalize("NFD", "부산"))
+    sibling_dir = unicodedata.normalize("NFC", str(tmp_path / "여행폴더_백업"))
+    symlink_folder = tmp_path / "LinkFolder"
+    os.makedirs(sub_nfd, exist_ok=True)
+    os.makedirs(sibling_dir, exist_ok=True)
+    os.symlink(str(tmp_path), str(symlink_folder))
+
+    _seed_scoped_photo(db_session, "ko_root", root_nfc, "a.jpg", "Golden harbor", '["harbor"]')
+    _seed_scoped_photo(db_session, "ko_sub", sub_nfd, "b.jpg", "Golden harbor", '["harbor"]')
+    _seed_scoped_photo(db_session, "ko_sib", sibling_dir, "c.jpg", "Golden harbor", '["harbor"]')
+    _seed_scoped_photo(db_session, "ko_link", str(symlink_folder), "d.jpg", "Golden harbor", '["harbor"]')
+
+    for idx in range(505):
+        _seed_scoped_photo(db_session, f"bulk_b_{idx}", sibling_dir, f"b_{idx}.jpg", "Bulk sunset", '["sunset"]')
+    _seed_scoped_photo(db_session, "target_a_late", root_nfc, "late.jpg", "Bulk sunset", '["sunset"]')
+
+    monkeypatch.setattr(
+        "services.search_service.get_siglip_adapter",
+        lambda: (_ for _ in ()).throw(RuntimeError("SigLIP disabled")),
+    )
+
+    for folder_variant in (root_nfc, root_nfc + os.sep, root_nfd, root_nfc.upper()):
+        folder_response = client.post("/api/search", json={"query": "harbor", "parent_dir": folder_variant, "limit": 10, "offset": 0})
+        assert folder_response.status_code == 200
+        assert {item["id"] for item in folder_response.json()} == {"ko_root", "ko_sub"}
+
+    link_response = client.post("/api/search", json={"query": "harbor", "parent_dir": str(symlink_folder), "limit": 10, "offset": 0})
+    assert [item["id"] for item in link_response.json()] == ["ko_link"]
+
+    late_response = client.post("/api/search", json={"query": "sunset", "parent_dir": root_nfc, "limit": 10, "offset": 0})
+    assert [item["id"] for item in late_response.json()] == ["target_a_late"]
+
+    assert client.post("/api/search", json={"query": "harbor", "parent_dir": "   ", "limit": 10, "offset": 0}).json() == []
+    assert len(client.post("/api/search", json={"query": "harbor", "parent_dir": "", "limit": 10, "offset": 0}).json()) == 4
+    assert client.post("/api/search", json={"query": "harbor", "parent_dir": root_nfc, "limit": -1, "offset": 0}).json() == []
+    assert len(client.post("/api/search", json={"query": "harbor", "parent_dir": root_nfc, "limit": 10, "offset": -5}).json()) == 2

@@ -65,24 +65,44 @@ class PhotoRepository:
         images_by_id = {img.id: img for img in page_images}
         return [images_by_id[photo_id] for photo_id in page_ids if photo_id in images_by_id]
 
-    def _list_photos_in_folder(self, parent_dir: str, limit: int, offset: int) -> List[models.Image]:
-        """Lists photos inside parent_dir or its subdirectories with NFC/case/symlink parity."""
+    @staticmethod
+    def _resolve_folder_bounds(parent_dir: Optional[str]) -> Optional[tuple[str, str]]:
+        """Returns (normalized_root, slash_bounded_prefix) for valid folder scopes."""
+        if not parent_dir:
+            return None
         target_root = normalize_path_preserving_leaf_symlink(parent_dir)
         if not target_root:
-            return []
-        bounded_prefix = to_slash_bounded_prefix(target_root)
+            return None
+        return target_root, to_slash_bounded_prefix(target_root)
 
-        ordered_rows = (
-            self.db.query(models.Image.id, models.Image.parent_dir)
-            .outerjoin(models.ImageMetadata)
-            .order_by(models.ImageMetadata.capture_date.desc().nullslast(), models.Image.id)
-            .all()
-        )
+    def _paginate_ordered_folder_query(
+        self,
+        ordered_query,
+        folder_bounds: tuple[str, str],
+        offset: int,
+        limit: int,
+    ) -> List[models.Image]:
+        """Filters an ordered query by folder bounds and loads only the requested slice."""
+        target_root, bounded_prefix = folder_bounds
+        ordered_rows = ordered_query.with_entities(models.Image.id, models.Image.parent_dir).all()
         matching_ids = self._filter_matching_photo_ids(ordered_rows, target_root, bounded_prefix)
         page_ids = matching_ids[offset : offset + limit]
         if not page_ids:
             return []
         return self._fetch_ordered_images_by_ids(page_ids)
+
+    def _list_photos_in_folder(self, parent_dir: str, limit: int, offset: int) -> List[models.Image]:
+        """Lists photos inside parent_dir or its subdirectories with NFC/case/symlink parity."""
+        folder_bounds = self._resolve_folder_bounds(parent_dir)
+        if folder_bounds is None:
+            return []
+
+        ordered_query = (
+            self.db.query(models.Image)
+            .outerjoin(models.ImageMetadata)
+            .order_by(models.ImageMetadata.capture_date.desc().nullslast(), models.Image.id)
+        )
+        return self._paginate_ordered_folder_query(ordered_query, folder_bounds, offset, limit)
 
     def list_photos(self, limit: int = 50, offset: int = 0, parent_dir: Optional[str] = None) -> List[models.Image]:
         """Lists photos ordered by capture_date DESC NULLS LAST, id ASC with optional folder scoping."""
@@ -159,61 +179,98 @@ class PhotoRepository:
                 query = query.filter(op(col, val))
         return query
 
+    def _build_filtered_image_query(self, filters: Any, has_active_filters: bool):
+        """Creates an Image query joined with ImageMetadata and optional EXIF filters."""
+        query = self.db.query(models.Image).outerjoin(
+            models.ImageMetadata, models.Image.id == models.ImageMetadata.image_id
+        )
+        if has_active_filters:
+            return self._apply_exif_filters(query, filters)
+        return query
+
     def _paginate_by_chroma_order(
         self,
         query,
         photo_ids: List[str],
         offset: int,
-        limit: int
+        limit: int,
+        folder_bounds: Optional[tuple[str, str]] = None,
     ) -> List[models.Image]:
-        matching_id_rows = query.with_entities(models.Image.id).all()
-        matching_ids = set(r[0] for r in matching_id_rows)
+        """Filters candidate IDs by SQLite/folder bounds while preserving vector/text rank order."""
+        if folder_bounds is None:
+            matching_id_rows = query.with_entities(models.Image.id).all()
+            matching_ids = {row[0] for row in matching_id_rows}
+        else:
+            target_root, bounded_prefix = folder_bounds
+            candidate_rows = query.with_entities(models.Image.id, models.Image.parent_dir).all()
+            matching_ids = set(self._filter_matching_photo_ids(candidate_rows, target_root, bounded_prefix))
+
         sorted_pids = [pid for pid in photo_ids if pid in matching_ids]
         page_pids = sorted_pids[offset : offset + limit]
         if not page_pids:
             return []
-        page_images = self.get_by_ids(page_pids)
-        image_map = {img.id: img for img in page_images}
-        return [image_map[pid] for pid in page_pids if pid in image_map]
+        return self._fetch_ordered_images_by_ids(page_pids)
+
+    def _filter_candidate_ids(
+        self,
+        photo_ids: List[str],
+        filters: Any,
+        has_active_filters: bool,
+        folder_bounds: Optional[tuple[str, str]],
+        offset: int,
+        limit: int,
+    ) -> List[models.Image]:
+        """Applies optional EXIF/folder scoping over candidate IDs, fast-pathing when unscoped."""
+        if not photo_ids:
+            return []
+        if not has_active_filters and folder_bounds is None:
+            page_pids = photo_ids[offset : offset + limit]
+            if not page_pids:
+                return []
+            return self._fetch_ordered_images_by_ids(page_pids)
+
+        query = self._build_chroma_id_filter(
+            self._build_filtered_image_query(filters, has_active_filters),
+            photo_ids,
+        )
+        return self._paginate_by_chroma_order(query, photo_ids, offset, limit, folder_bounds)
 
     def filter_and_paginate(
         self,
         photo_ids_from_chroma: Optional[List[str]],
         filters,
         offset: int,
-        limit: int
+        limit: int,
+        parent_dir: Optional[str] = None,
     ) -> List[models.Image]:
-        """
-        Applies EXIF filters and orders/paginates results.
-        Optimized with fast-path pagination when no EXIF filters are present.
-        """
-        query = (
-            self.db.query(models.Image)
-            .options(joinedload(models.Image.metadata_rel))
-            .outerjoin(models.ImageMetadata, models.Image.id == models.ImageMetadata.image_id)
-        )
+        """Applies EXIF/folder filters and orders/paginates results."""
+        if limit <= 0:
+            return []
+        safe_offset = max(0, offset)
+        folder_bounds = self._resolve_folder_bounds(parent_dir)
+        if parent_dir and folder_bounds is None:
+            return []
+
         has_active_filters = self._has_active_filters(filters)
-
         if photo_ids_from_chroma is not None:
-            if not photo_ids_from_chroma:
-                return []
-            if not has_active_filters:
-                page_pids = photo_ids_from_chroma[offset : offset + limit]
-                if not page_pids:
-                    return []
-                images = query.filter(models.Image.id.in_(page_pids)).all()
-                image_map = {img.id: img for img in images}
-                return [image_map[pid] for pid in page_pids if pid in image_map]
+            return self._filter_candidate_ids(
+                photo_ids_from_chroma, filters, has_active_filters, folder_bounds, safe_offset, limit
+            )
 
-            query = self._build_chroma_id_filter(query, photo_ids_from_chroma)
+        base_query = self._build_filtered_image_query(filters, has_active_filters)
+        if folder_bounds is not None:
+            ordered_query = base_query.order_by(
+                models.ImageMetadata.capture_date.desc().nullslast(), models.Image.id
+            )
+            return self._paginate_ordered_folder_query(ordered_query, folder_bounds, safe_offset, limit)
 
-        if has_active_filters:
-            query = self._apply_exif_filters(query, filters)
-
-        if photo_ids_from_chroma is not None:
-            return self._paginate_by_chroma_order(query, photo_ids_from_chroma, offset, limit)
-
-        return query.order_by(models.ImageMetadata.capture_date.desc()).offset(offset).limit(limit).all()
+        return (
+            base_query.options(joinedload(models.Image.metadata_rel))
+            .order_by(models.ImageMetadata.capture_date.desc())
+            .offset(safe_offset)
+            .limit(limit)
+            .all()
+        )
 
     def toggle_favorite(self, photo_id: str) -> Optional[models.Image]:
         db_image = self.get_by_id(photo_id)

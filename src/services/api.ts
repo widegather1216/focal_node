@@ -91,45 +91,43 @@ class ApiClient {
     return res.json();
   }
 
-  async searchPhotos(query: string | undefined, filters: SearchFilters | undefined, limit: number, offset: number): Promise<PhotoSummary[]> {
-    const cleanQuery = query ? query.trim() : undefined;
-    
-    // Check if it's a similar search
-    if (cleanQuery && cleanQuery.startsWith('similar:')) {
-      const photoId = cleanQuery.replace('similar:', '');
-      const res = await fetch(`${this.baseUrl}/api/search/similar`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          photo_id: photoId,
-          filters: filters,
-          limit,
-          offset
-        })
-      });
-      if (!res.ok) {
-        const err = await this.parseError(res, "Failed to search similar photos");
-        throw new Error(err);
-      }
-      return res.json();
-    }
-
-    // Normal semantic search
-    const res = await fetch(`${this.baseUrl}/api/search`, {
+  private async postJson<T>(endpoint: string, payload: Record<string, unknown>, errorContext: string): Promise<T> {
+    const response = await fetch(`${this.baseUrl}${endpoint}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query: cleanQuery,
-        filters: filters,
-        limit,
-        offset
-      })
+      body: JSON.stringify(payload),
     });
-    if (!res.ok) {
-      const err = await this.parseError(res, "Failed to search photos");
-      throw new Error(err);
+    if (!response.ok) {
+      const errorMessage = await this.parseError(response, errorContext);
+      throw new Error(errorMessage);
     }
-    return res.json();
+    return response.json();
+  }
+
+  async searchPhotos(
+    query: string | undefined,
+    filters: SearchFilters | undefined,
+    limit: number,
+    offset: number,
+    folder?: string | null,
+  ): Promise<PhotoSummary[]> {
+    const cleanQuery = query ? query.trim() : undefined;
+    const folderPayload = folder ? { parent_dir: folder } : {};
+
+    if (cleanQuery && cleanQuery.startsWith('similar:')) {
+      const photoId = cleanQuery.slice('similar:'.length);
+      return this.postJson<PhotoSummary[]>(
+        '/api/search/similar',
+        { photo_id: photoId, filters, limit, offset, ...folderPayload },
+        'Failed to search similar photos',
+      );
+    }
+
+    return this.postJson<PhotoSummary[]>(
+      '/api/search',
+      { query: cleanQuery, filters, limit, offset, ...folderPayload },
+      'Failed to search photos',
+    );
   }
 
   async getPhotoDetail(id: string): Promise<PhotoDetail> {

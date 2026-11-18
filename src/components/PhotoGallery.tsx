@@ -58,7 +58,7 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
       const hasFilters = searchFilters && Object.keys(searchFilters).length > 0;
       const hasQuery = effectiveSearchQuery && effectiveSearchQuery.trim() !== '';
       if (hasQuery || hasFilters) {
-        return api.searchPhotos(effectiveSearchQuery, searchFilters, 50, (pageParam as number) * 50);
+        return api.searchPhotos(effectiveSearchQuery, searchFilters, 50, (pageParam as number) * 50, selectedFolder);
       } else {
         return api.fetchPhotos(50, (pageParam as number) * 50, selectedFolder);
       }
