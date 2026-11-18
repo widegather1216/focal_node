@@ -26,12 +26,14 @@ export function DetailPanel() {
     critique,
     loadingCritique,
     reindexing,
+    reindexingError,
     handleSave,
     handleReveal,
     handleRequestCritique,
     handleCancelCritique,
     handleDeleteCritique,
     handleReindex,
+    dismissReindexError,
     handleToggleFavorite,
     handleTagClick
   } = usePhotoDetail();
@@ -207,6 +209,7 @@ export function DetailPanel() {
                     aiAnalysis={photo.ai_analysis}
                     editing={editing}
                     reindexing={reindexing}
+                    reindexingError={reindexingError}
                     saving={saving}
                     captionEdit={captionEdit}
                     tagsEdit={tagsEdit}
@@ -215,6 +218,7 @@ export function DetailPanel() {
                     setTagsEdit={setTagsEdit}
                     handleSave={handleSave}
                     handleReindex={handleReindex}
+                    onDismissReindexError={dismissReindexError}
                     handleTagClick={handleTagClick}
                   />
 

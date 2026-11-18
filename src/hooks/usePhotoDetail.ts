@@ -8,6 +8,14 @@ import { getActivePhotoList } from '../utils/activePhotoList';
 import { pollAndRecoverCritique } from './useCritiqueStatusPolling';
 import { usePhotoDetailQuery, useUpdatePhotoMetadataMutation } from './usePhotoDetailQuery';
 import { useToggleFavoriteMutation } from './usePhotosQuery';
+import {
+  addReindexingPhotoId,
+  clearPhotoReindexError,
+  executePhotoReindex,
+  removeReindexingPhotoId,
+  setPhotoReindexError,
+  shouldSyncPhotoEditFields,
+} from '../utils/photoReindex';
 
 export type { PhotoDetail };
 
@@ -33,8 +41,17 @@ export function usePhotoDetail() {
   const [tagsEdit, setTagsEdit] = useState<string[]>([]);
   const [critique, setCritique] = useState<string | null>(null);
   const loadingCritique = Boolean(selectedPhotoId && generatingCritiquePhotoIds.has(selectedPhotoId));
-  const [reindexing, setReindexing] = useState(false);
+  const [reindexingPhotoIds, setReindexingPhotoIds] = useState<Set<string>>(() => new Set());
+  const [reindexingErrors, setReindexingErrors] = useState<Record<string, string>>({});
+  const reindexing = Boolean(selectedPhotoId && reindexingPhotoIds.has(selectedPhotoId));
+  const reindexingError = selectedPhotoId ? (reindexingErrors[selectedPhotoId] ?? null) : null;
 
+  const isMountedRef = useRef(true);
+  const inFlightReindexIdsRef = useRef<Set<string>>(new Set());
+  const reindexRequestSeqRef = useRef<Map<string, number>>(new Map());
+  const lastSyncedPhotoIdRef = useRef<string | null>(null);
+  const editingRef = useRef(editing);
+  editingRef.current = editing;
   const critiqueAbortControllerRef = useRef<AbortController | null>(null);
   const clearJobTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -45,16 +62,43 @@ export function usePhotoDetail() {
     }
   };
 
-  useEffect(() => clearJobCleanupTimer, []);
+  useEffect(() => {
+    // Re-arm on mount because React.StrictMode invokes cleanup once between initial checks.
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      clearJobCleanupTimer();
+    };
+  }, []);
 
   useEffect(() => {
-    if (photo) {
-      setCaptionEdit(photo.ai_analysis?.caption || '');
-      setTagsEdit(photo.ai_analysis?.tags ? [...photo.ai_analysis.tags] : []);
-      setCritique(photo.ai_analysis?.critique || null);
-    } else {
+    editingRef.current = false;
+    setEditing(false);
+  }, [selectedPhotoId]);
+
+  useEffect(() => {
+    if (!photo) {
+      lastSyncedPhotoIdRef.current = null;
+      editingRef.current = false;
       setEditing(false);
       setCritique(null);
+      return;
+    }
+
+    const shouldSyncEdits = shouldSyncPhotoEditFields(
+      photo.id,
+      lastSyncedPhotoIdRef.current,
+      editingRef.current,
+    );
+    if (lastSyncedPhotoIdRef.current !== photo.id) {
+      editingRef.current = false;
+      setEditing(false);
+    }
+    lastSyncedPhotoIdRef.current = photo.id;
+    setCritique(photo.ai_analysis?.critique || null);
+    if (shouldSyncEdits) {
+      setCaptionEdit(photo.ai_analysis?.caption || '');
+      setTagsEdit(photo.ai_analysis?.tags ? [...photo.ai_analysis.tags] : []);
     }
   }, [photo]);
 
@@ -243,18 +287,39 @@ export function usePhotoDetail() {
     }
   };
 
+  const dismissReindexError = () => {
+    const activeId = useAppStore.getState().selectedPhotoId;
+    if (!activeId) return;
+    setReindexingErrors((prev) => clearPhotoReindexError(prev, activeId));
+  };
+
   const handleReindex = async () => {
-    if (!selectedPhotoId) return;
-    setReindexing(true);
-    try {
-      const updatedPhoto = await api.reindexPhoto(selectedPhotoId);
-      setCaptionEdit(updatedPhoto.ai_analysis?.caption || '');
-      setTagsEdit(updatedPhoto.ai_analysis?.tags ? [...updatedPhoto.ai_analysis.tags] : []);
-    } catch (error: unknown) {
-      console.error("Failed to reindex photo:", error);
-    } finally {
-      setReindexing(false);
-    }
+    await executePhotoReindex({
+      targetId: useAppStore.getState().selectedPhotoId,
+      inFlightIds: inFlightReindexIdsRef.current,
+      requestSeqByPhoto: reindexRequestSeqRef.current,
+      reindexPhoto: (photoId) => api.reindexPhoto(photoId),
+      queryClient,
+      getSelectedPhotoId: () => useAppStore.getState().selectedPhotoId,
+      isMounted: () => isMountedRef.current,
+      onStart: (targetId) => {
+        setReindexingPhotoIds((prev) => addReindexingPhotoId(prev, targetId));
+        setReindexingErrors((prev) => clearPhotoReindexError(prev, targetId));
+      },
+      onSuccessActive: (updatedPhoto) => {
+        editingRef.current = false;
+        setEditing(false);
+        setCaptionEdit(updatedPhoto.ai_analysis?.caption || '');
+        setTagsEdit(updatedPhoto.ai_analysis?.tags ? [...updatedPhoto.ai_analysis.tags] : []);
+        setCritique(updatedPhoto.ai_analysis?.critique || null);
+      },
+      onError: (targetId, errorMessage) => {
+        setReindexingErrors((prev) => setPhotoReindexError(prev, targetId, errorMessage));
+      },
+      onFinish: (targetId) => {
+        setReindexingPhotoIds((prev) => removeReindexingPhotoId(prev, targetId));
+      },
+    });
   };
 
   const handleToggleFavorite = async () => {
@@ -278,8 +343,8 @@ export function usePhotoDetail() {
     captionEdit, setCaptionEdit,
     tagsEdit, setTagsEdit,
     saving: updateMetadataMutation.isPending,
-    critique, loadingCritique, reindexing,
+    critique, loadingCritique, reindexing, reindexingError,
     handleSave, handleReveal, handleRequestCritique, handleCancelCritique,
-    handleDeleteCritique, handleReindex, handleToggleFavorite, handleTagClick
+    handleDeleteCritique, handleReindex, dismissReindexError, handleToggleFavorite, handleTagClick
   };
 }

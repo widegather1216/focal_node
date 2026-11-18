@@ -1,5 +1,5 @@
 import React from 'react';
-import { RefreshCw, Save } from 'lucide-react';
+import { AlertTriangle, RefreshCw, Save, X } from 'lucide-react';
 
 interface PhotoAiAnalysisViewProps {
   aiAnalysis: {
@@ -9,6 +9,7 @@ interface PhotoAiAnalysisViewProps {
   };
   editing: boolean;
   reindexing: boolean;
+  reindexingError?: string | null;
   saving: boolean;
   captionEdit: string;
   tagsEdit: string[];
@@ -17,6 +18,7 @@ interface PhotoAiAnalysisViewProps {
   setTagsEdit: (tags: string[]) => void;
   handleSave: () => void;
   handleReindex: () => void;
+  onDismissReindexError?: () => void;
   handleTagClick: (tag: string) => void;
 }
 
@@ -24,6 +26,7 @@ export const PhotoAiAnalysisView: React.FC<PhotoAiAnalysisViewProps> = ({
   aiAnalysis,
   editing,
   reindexing,
+  reindexingError = null,
   saving,
   captionEdit,
   tagsEdit,
@@ -32,6 +35,7 @@ export const PhotoAiAnalysisView: React.FC<PhotoAiAnalysisViewProps> = ({
   setTagsEdit,
   handleSave,
   handleReindex,
+  onDismissReindexError,
   handleTagClick
 }) => {
   return (
@@ -42,29 +46,106 @@ export const PhotoAiAnalysisView: React.FC<PhotoAiAnalysisViewProps> = ({
           <button
             onClick={handleReindex}
             disabled={reindexing}
-            style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: reindexing ? 'var(--accent-focal)' : 'var(--text-muted)',
+              cursor: reindexing ? 'not-allowed' : 'pointer',
+              opacity: reindexing ? 0.75 : 1,
+              fontSize: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+            }}
             title="AI 분석 다시 실행"
           >
-            <RefreshCw size={12} className={reindexing ? 'spin' : ''} /> 재분석
+            <RefreshCw size={12} className={reindexing ? 'spin' : ''} />
+            <span>{reindexing ? '재분석 중...' : '재분석'}</span>
           </button>
           {!editing ? (
             <button
               onClick={() => setEditing(true)}
-              style={{ background: 'none', border: 'none', color: 'var(--accent-focal)', cursor: 'pointer', fontSize: '12px', fontWeight: 500 }}
+              disabled={reindexing}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--accent-focal)',
+                cursor: reindexing ? 'not-allowed' : 'pointer',
+                opacity: reindexing ? 0.45 : 1,
+                fontSize: '12px',
+                fontWeight: 500,
+              }}
             >
               편집
             </button>
           ) : (
             <button
               onClick={handleSave}
-              disabled={saving}
-              style={{ background: 'var(--accent-focal)', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '12px', padding: '3px 10px', borderRadius: '4px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}
+              disabled={saving || reindexing}
+              style={{
+                background: 'var(--accent-focal)',
+                border: 'none',
+                color: '#fff',
+                cursor: saving || reindexing ? 'not-allowed' : 'pointer',
+                opacity: saving || reindexing ? 0.65 : 1,
+                fontSize: '12px',
+                padding: '3px 10px',
+                borderRadius: '4px',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}
             >
               <Save size={12} /> {saving ? '저장 중...' : '저장'}
             </button>
           )}
         </div>
       </div>
+
+      {reindexingError && (
+        <div
+          role="alert"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '8px',
+            padding: '8px 10px',
+            marginBottom: '10px',
+            borderRadius: '6px',
+            border: '1px solid rgba(225, 29, 72, 0.4)',
+            backgroundColor: 'rgba(225, 29, 72, 0.1)',
+            color: '#fda4af',
+            fontSize: '11.5px',
+            lineHeight: 1.4,
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+            <AlertTriangle size={13} color="var(--accent-focal-hover)" style={{ flexShrink: 0 }} />
+            <span style={{ wordBreak: 'break-word' }}>{reindexingError}</span>
+          </div>
+          {onDismissReindexError && (
+            <button
+              type="button"
+              onClick={onDismissReindexError}
+              title="오류 닫기"
+              style={{
+                background: 'none',
+                border: 'none',
+                color: '#fda4af',
+                cursor: 'pointer',
+                padding: '2px',
+                display: 'flex',
+                alignItems: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
+      )}
 
       {!editing ? (
         <div>
