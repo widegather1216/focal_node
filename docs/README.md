@@ -7,11 +7,11 @@
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
-- **Active 도메인**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) *(`DEFECT-15~17` 3건 해결 대기)*
-- **현재 단계 (Stage)**: `🩹 Debugging (01_indexing_storage DEFECT-15~17 해결 중)`
-- **직전 완료 작업**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) `DEFECT-14` 해결 완료 (`src/utils/photoReindex.ts` 신설 및 `cancelQueries(['photoDetail', targetId])` ➔ `setQueryData(['photoDetail', targetId])` + `['photos']`/`['analyticsStats']`/`['critiques']` 무효화, `usePhotoDetail.ts` 사진별 `reindexingPhotoIds`/`reindexingErrors`·요청 세대·`selectedPhotoId` 실시간 가드·편집 버퍼 보호, `PhotoAiAnalysisView.tsx` 진행 상태 및 사진별 인라인 오류 배너 연동, `TC-IDX-20` Node 테스트 `6 passed`·`tsc && vite build`·관련 `pytest` `69 passed, 1 deselected` PASS)
+- **Active 도메인**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) *(`DEFECT-16~17` 2건 해결 대기)*
+- **현재 단계 (Stage)**: `🩹 Debugging (01_indexing_storage DEFECT-16~17 해결 중)`
+- **직전 완료 작업**: [`01_indexing_storage`](./features/01_indexing_storage/README.md) `DEFECT-15` 해결 완료 (`src/utils/photoFavorite.ts` 신설로 모든 `['photos']` prefix·`['photoDetail', photoId]` 양방향 낙관적 갱신 및 서버 확정값 동기화, 사진별 직렬화 큐/`activeSeqs`/`confirmedFavorite`/롤백 스냅샷·`{ updatedAt }` 보존·초기 `pending` 보호·`is_favorite` 필터 무효화 적용, `usePhotoDetail.ts` `selectedFolder=null` 하드코딩 제거 및 `PhotoGallery.tsx` `useToggleFavoriteMutation` 통합, `TC-IDX-21` 포함 `node --test` `12 passed`·`tsc && vite build`·관련 `pytest` `69 passed, 1 deselected` PASS)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"01_indexing_storage 도메인의 DEFECT-15 티켓 해결해줘"` *(`systematic-debugger`로 순차 해결 계속)*
+  > `"01_indexing_storage 도메인의 DEFECT-16 티켓 해결해줘"` *(`systematic-debugger`로 순차 해결 계속)*
 
 ---
 
@@ -20,7 +20,7 @@
 | 도메인 (Bounded Context) | 생명주기 상태 | 구현 진척도 (Active Step 1~4) | QA 인수 통과율 | 미해결 티켓 (`🚨D` / `🧐R`) | 최근 작업 요약 |
 | :--- | :--- | :---: | :---: | :---: | :--- |
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `12/12 (100%)` | `0 / 0` | `DEFECT-01~11`·`REFACTOR-01` 전수 해결 완료(`save_binary_file` 경로 검증·`tauri.conf.json` CSP 적용), Sign-Off 복귀 |
-| 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `17/23 (74%)` | `3 / 0` | `DEFECT-14` 해결 완료(단건 재분석 React Query 캐시 동기화·사진 전환 격리·오류 표시), `DEFECT-15~17` 3건 해결 대기 |
+| 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `18/23 (78%)` | `2 / 0` | `DEFECT-15` 해결 완료(즐겨찾기 양방향 캐시 동기화·직렬화·롤백 통합), `DEFECT-16~17` 2건 해결 대기 |
 | 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `2/7 (29%)` | `0 / 0` | `REFACTOR-01` 해결 완료(SigLIP 폴백·`search.py` 로깅·`similar:` 버튼 연결), RRF·스마트 앨범 Step 1~4 대기 |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `15/15 (100%)` | `0 / 0` | `DEFECT-01~03`·`REFACTOR-01~08` 전수 해결 완료 (Headless MPS/MLX 가드·ADR-05 레거시 정리·300줄 이하 분할), Sign-Off 완료 |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 🛠️ Implementing | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 0` | `REFACTOR-01~02` 전수 해결 완료(`src/` 전역 `any` 0건·`api.ts`/훅/컴포넌트 타입 엄격화), 차트 드릴다운 Step 3~4 대기 |
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-18]` `[systematic-debugger]` [`01_indexing_storage`]**: `DEFECT-15` 결함 해결 완료 (`src/utils/photoFavorite.ts` 순수 오케스트레이터 신설 및 `usePhotosQuery.ts` `useToggleFavoriteMutation` 인자 의존성 제거로 모든 `['photos']` prefix 캐시·`['photoDetail', photoId]` 양방향 낙관적 갱신 및 서버 확정값 동기화, `QueryClient` 단위 사진별 직렬화 큐(`tailPromise`)·`activeSeqs`·`confirmedFavorite`·`baseline` 스냅샷·`{ updatedAt }` 보존·초기 `pending` 보호·`is_favorite` 필터 무효화를 적용하고, `usePhotoDetail.ts` `selectedFolder=null` 하드코딩 제거 및 `PhotoGallery.tsx` `handleToggleFavorite` 통합을 완료; `TC-IDX-21` 포함 `node --test tests/frontend/*.test.mjs` `12 passed`·`tsc && vite build`·관련 `pytest` `69 passed, 1 deselected` 전수 PASS).
 
 - **`[2026-11-18]` `[systematic-debugger]` [`01_indexing_storage`]**: `DEFECT-14` 결함 해결 완료 (`src/utils/photoReindex.ts` 순수 오케스트레이터 신설로 `cancelQueries(['photoDetail', targetId])` 후 `setQueryData(['photoDetail', targetId], updatedPhoto)` 및 `['photos']`·`['analyticsStats']`·`['critiques']` 무효화를 사진 전환·언마운트와 무관하게 확정 반영하고, `src/hooks/usePhotoDetail.ts`의 단일 `reindexing` 불리언을 사진별 `reindexingPhotoIds(Set)`·`reindexingErrors(Record)`·`inFlightReindexIdsRef`·`reindexRequestSeqRef`·`isMountedRef`(StrictMode 대응)·`useAppStore.getState().selectedPhotoId` 실시간 가드 및 `shouldSyncPhotoEditFields`로 전환해 사진 전환 시 타 사진 편집 버퍼 오염·중복 클릭·오류 누수·편집 중 백그라운드 덮어쓰기를 차단했으며, `DetailPanel.tsx`·`PhotoAiAnalysisView.tsx`에 `재분석 중...` 상태·재분석 중 `[편집]`/`[저장]` 비활성화·사진별 인라인 오류 배너/닫기를 연동; `TC-IDX-20` Node 단위/회귀 테스트 `6 passed`·`tsc && vite build`·관련 `pytest` `69 passed, 1 deselected` 전수 PASS).
 

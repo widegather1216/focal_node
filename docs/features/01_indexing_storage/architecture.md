@@ -47,6 +47,7 @@ src/
 ├── components/
 │   ├── ActionBar.tsx                  # [기존] 다중 선택 사진 일괄 내보내기 플로팅 액션바 컨테이너
 │   ├── DetailPanel.tsx                # [기존] 우측 사진 상세 패널 컨테이너 (EXIF, AI 분석/재분석, 비평 연동)
+│   ├── PhotoGallery.tsx               # [기존] 가상 스크롤 사진 그리드 및 즐겨찾기/선택 트리거
 │   ├── actionbar/
 │   │   └── ExportActionControls.tsx   # [기존] 내보내기 테마/상태 배지 및 기본·복구 액션 버튼
 │   ├── detail/
@@ -61,12 +62,14 @@ src/
 ├── hooks/
 │   ├── useIndexingStatus.ts           # [기존] 인덱싱 진행 상태 Polling 커스텀 훅
 │   ├── usePhotoDetail.ts              # [기존] 상세 패널 상태·사진별 재분석/비평 오케스트레이션 훅
-│   └── usePhotoExport.ts              # [기존] SSE 사진 내보내기 실행, AbortController 및 결과 피드백 훅
+│   ├── usePhotoExport.ts              # [기존] SSE 사진 내보내기 실행, AbortController 및 결과 피드백 훅
+│   └── usePhotosQuery.ts              # [기존] 사진 즐겨찾기 토글 Mutation 훅 (`photoFavorite.ts` 위임)
 ├── services/api.ts                    # [기존] exportPhotos SSE 스트림 클라이언트 및 AbortSignal 지원
 ├── store/useAppStore.ts               # [기존] selectedPhotoIds 원자적 선택/부분 해제(deselectPhotoIds) 상태 관리
 └── utils/
     ├── exportStream.ts                # [기존] WHATWG SSE 청크 파서, ExportResult 정규화 및 내보내기 결과 판정 순수 유틸리티
-    └── photoReindex.ts                # [신설] 사진별 재분석 상태 전이, React Query 캐시 동기화 및 사진 전환 격리 오케스트레이터
+    ├── photoFavorite.ts               # [신설] 즐겨찾기 토글 직렬화 큐, `['photos']`/`['photoDetail']` 양방향 캐시 동기화 및 롤백 오케스트레이터
+    └── photoReindex.ts                # [기존] 사진별 재분석 상태 전이, React Query 캐시 동기화 및 사진 전환 격리 오케스트레이터
 ```
 
 ---

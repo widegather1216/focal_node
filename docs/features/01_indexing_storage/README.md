@@ -1,8 +1,8 @@
 # 💾 [01_indexing_storage] Indexing Pipeline, Storage & RAW Media
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-15~17 해결 대기)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-16~17 해결 대기)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 3건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 2건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -22,8 +22,8 @@
   - 📂 구현: [`image.py`](../../../backend/app/utils/image.py), [`photo.py`](../../../backend/app/services/photo.py), [`photo_reindex.py`](../../../backend/app/services/photo_reindex.py) | 🧪 테스트: [`test_api_photos.py`](../../../backend/tests/test_api_photos.py) (`PASS`)
 - [x] SigLIP 2 768차원 임베딩/제로샷 힌트 추출, Gemma 4 캡션/태그 생성 및 ChromaDB + SQLite WAL 보상 트랜잭션
   - 📂 구현: [`pipeline.py`](../../../backend/app/services/pipeline.py), [`taxonomy.py`](../../../backend/app/services/taxonomy.py), [`atomic_transaction.py`](../../../backend/app/repositories/atomic_transaction.py) | 🧪 테스트: [`test_siglip_zero_shot.py`](../../../backend/tests/test_siglip_zero_shot.py) (`PASS`)
-- [x] RAW 원본 인메모리 스트리밍(`MAX_CONCURRENT_DECODES=3`), 단일 사진 재분석(`POST /api/photos/{id}/reindex`) 및 다중 사진 SSE 내보내기
-  - 📂 구현: [`photos.py`](../../../backend/app/api/photos.py), [`photoReindex.ts`](../../../src/utils/photoReindex.ts), [`usePhotoDetail.ts`](../../../src/hooks/usePhotoDetail.ts), [`DetailPanel.tsx`](../../../src/components/DetailPanel.tsx), [`PhotoAiAnalysisView.tsx`](../../../src/components/detail/PhotoAiAnalysisView.tsx), [`exportStream.ts`](../../../src/utils/exportStream.ts), [`usePhotoExport.ts`](../../../src/hooks/usePhotoExport.ts), [`ActionBar.tsx`](../../../src/components/ActionBar.tsx), [`ExportActionControls.tsx`](../../../src/components/actionbar/ExportActionControls.tsx), [`Sidebar.tsx`](../../../src/components/Sidebar.tsx) | 🧪 테스트: [`test_api_photos.py`](../../../backend/tests/test_api_photos.py), [`test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py), [`photoReindex.test.mjs`](../../../tests/frontend/photoReindex.test.mjs) (`PASS`)
+- [x] RAW 원본 인메모리 스트리밍(`MAX_CONCURRENT_DECODES=3`), 단일 사진 재분석(`POST /api/photos/{id}/reindex`), 즐겨찾기 양방향 캐시 동기화 및 다중 사진 SSE 내보내기
+  - 📂 구현: [`photos.py`](../../../backend/app/api/photos.py), [`photoReindex.ts`](../../../src/utils/photoReindex.ts), [`photoFavorite.ts`](../../../src/utils/photoFavorite.ts), [`usePhotosQuery.ts`](../../../src/hooks/usePhotosQuery.ts), [`usePhotoDetail.ts`](../../../src/hooks/usePhotoDetail.ts), [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx), [`DetailPanel.tsx`](../../../src/components/DetailPanel.tsx), [`PhotoAiAnalysisView.tsx`](../../../src/components/detail/PhotoAiAnalysisView.tsx), [`exportStream.ts`](../../../src/utils/exportStream.ts), [`usePhotoExport.ts`](../../../src/hooks/usePhotoExport.ts), [`ActionBar.tsx`](../../../src/components/ActionBar.tsx), [`ExportActionControls.tsx`](../../../src/components/actionbar/ExportActionControls.tsx), [`Sidebar.tsx`](../../../src/components/Sidebar.tsx) | 🧪 테스트: [`test_api_photos.py`](../../../backend/tests/test_api_photos.py), [`test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py), [`photoReindex.test.mjs`](../../../tests/frontend/photoReindex.test.mjs), [`photoFavorite.test.mjs`](../../../tests/frontend/photoFavorite.test.mjs) (`PASS`)
 
 ### 🚀 Active Iteration: 스마트 오프라인, SHA-256 Relocation & 2-Pass 점진적 인덱싱 `[To-Be]`
 - [ ] **Step 1 [DB & Types]**: `models.py`의 `Image`에 `is_offline: Boolean` 컬럼/마이그레이션 추가, `IndexingStatusResponse`에 `phase: "fast_preview" | "ai_enrichment"` 추가 및 `src/types/photo.ts` 동기화
@@ -35,9 +35,11 @@
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-11-18 / systematic-debugger / 01_indexing_storage DEFECT-14 해결 및 회귀 검증 완료`
+- **직전 완료 작업**: `2026-11-18 / systematic-debugger / 01_indexing_storage DEFECT-15 해결 및 회귀 검증 완료`
 - **Working Tree State**: 🟢 Clean (No uncommitted changes)
 - **Recent Commits (2026-11-18)**:
+  - `2e3fa8b` - `fix(ui): synchronize photos and photoDetail caches on favorite toggle`
+  - `4cef585` - `docs(indexing): mark DEFECT-14 resolved and update UI module tree`
   - `f7a783d` - `fix(ui): sync photoDetail cache and isolate reindex state per photo`
   - `51dc5b0` - `docs(indexing): mark DEFECT-13 resolved and sync path helper architecture`
   - `bfe3444` - `fix(storage): match subfolders and NFD/NFC paths in PhotoRepository.list_photos`
@@ -59,6 +61,7 @@
   - `6ffe113` - `fix(indexing): propagate batch commit errors and isolate run lifecycle`
   - `6cba0eb` - `fix(ui): surface indexing errors in tauri bridge and progress card`
 - **해결된 결함 (Resolved Defect)**:
+  - `DEFECT-15`: 순수 즐겨찾기 캐시 오케스트레이터 [`src/utils/photoFavorite.ts`](../../../src/utils/photoFavorite.ts)를 신설하고 [`src/hooks/usePhotosQuery.ts`](../../../src/hooks/usePhotosQuery.ts)의 `useToggleFavoriteMutation` 인자 의존성을 제거해 모든 `['photos']` prefix 캐시와 `['photoDetail', photoId]`를 양방향 낙관적 갱신·서버 확정값(`response.is_favorite`) 반영으로 동기화함. `QueryClient` 단위 사진별 직렬화 큐(`tailPromise`)·`activeSeqs`·`confirmedFavorite`·`baseline` 스냅샷으로 연속 더블클릭 부분 실패/성공 레이스를 방지하고, `{ updatedAt }` 보존·초기 `pending` 쿼리 `cancelQueries` 제외·`is_favorite` 필터 활성 쿼리 안전 무효화를 적용했으며 [`src/hooks/usePhotoDetail.ts`](../../../src/hooks/usePhotoDetail.ts)의 `selectedFolder=null` 하드코딩 제거 및 [`src/components/PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx) `handleToggleFavorite` 통합을 완료함(신규 단위/회귀 테스트 `TC-IDX-21` [`tests/frontend/photoFavorite.test.mjs`](../../../tests/frontend/photoFavorite.test.mjs) 6종 포함 `12 passed`·`tsc && vite build`·관련 `pytest` `69 passed, 1 deselected` PASS).
   - `DEFECT-14`: 순수 재분석 오케스트레이터 [`src/utils/photoReindex.ts`](../../../src/utils/photoReindex.ts)를 신설해 `cancelQueries(['photoDetail', targetId])` 후 `setQueryData(['photoDetail', targetId], updatedPhoto)` 및 `['photos']`·`['analyticsStats']`·`['critiques']` 무효화를 사진 전환·언마운트와 무관하게 확정 반영하도록 교정함. [`src/hooks/usePhotoDetail.ts`](../../../src/hooks/usePhotoDetail.ts)에서 단일 `reindexing` 불리언을 사진별 `reindexingPhotoIds(Set)`·`reindexingErrors(Record)`로 격리하고 `inFlightReindexIdsRef`·`reindexRequestSeqRef`·`isMountedRef`(StrictMode 대응)·`useAppStore.getState().selectedPhotoId` 실시간 가드·`shouldSyncPhotoEditFields`를 적용해 사진 전환 시 편집 버퍼 오염과 중복 클릭·오류 누수·편집 중 백그라운드 덮어쓰기를 차단했으며, [`src/components/DetailPanel.tsx`](../../../src/components/DetailPanel.tsx) 및 [`src/components/detail/PhotoAiAnalysisView.tsx`](../../../src/components/detail/PhotoAiAnalysisView.tsx)에 `재분석 중...` 상태, 재분석 중 `[편집]`/`[저장]` 비활성화, 사진별 인라인 오류 배너/닫기 버튼을 연동함(신규 단위/회귀 테스트 `TC-IDX-20` [`tests/frontend/photoReindex.test.mjs`](../../../tests/frontend/photoReindex.test.mjs) `6 passed`·`tsc && vite build`·관련 `pytest` `69 passed, 1 deselected` PASS).
   - `DEFECT-13`: 단방향 계층 의존성을 유지하도록 [`backend/app/utils/path.py`](../../../backend/app/utils/path.py)를 신설해 `folder_manager.py`와 공유하는 리프 심볼릭 링크 비확장 NFC/대소문자/말단슬래시 정규화 및 slash-bounded 접두어 매칭 유틸리티를 분리함. [`backend/app/repositories/photo_repository.py`](../../../backend/app/repositories/photo_repository.py)의 `list_photos`가 `parent_dir` 지정 시 `capture_date DESC NULLS LAST, id ASC` 정렬된 `(id, parent_dir)` 경량 투영을 디렉터리 캐시 기반 `_filter_matching_photo_ids`로 필터링하고 `offset:offset+limit` 슬라이스 ID만 `get_by_ids`로 복원하도록 교정해 하위 폴더·NFD/NFC 불일치 누락, 형제 폴더 오매칭 및 페이지네이션 왜곡을 해소함(신규 회귀 테스트 `TC-IDX-19`·전체 백엔드 `169 passed, 1 deselected`·`tsc && vite build` PASS).
   - `DEFECT-12`: `backend/app/services/indexing_state.py`에 `_in_flight_run_id`·`active_run_in_flight`·`_active_folder_deletions` 상호 배제 슬롯·`rollback_preempted_start`를 도입하고, `run_indexing_background`가 `initialize_background_run(..., track_execution=True)`로 진입한 뒤 `cancel()` 호출 시 인플라이트 워커 종료 전까지 `"cancelling"` 드레인 상태(2연타 멱등 `True`, 미실행 테스트/호출은 즉시 `"cancelled"` 유지)를 유지하다가 `finalize_run` 시점에만 `"cancelled"` 및 `active_run_in_flight=False`로 해제하도록 교정함. `folder_manager.py`(`execute_folder_deletion` ↔ `try_start_indexing` 상호배제 `409`/`400`), `pipeline.py`(스텝별 취소 가드), `indexing_service.py`(`_ACTIVE_RUN_ID_CTX` 전파·`_commit_batch_with_retry` 재시도 취소 중단·스캔 후 취소 로그 차단), `api/indexing.py`(`rollback_preempted_start`), 프론트엔드(`src/types/system.ts`, `src/store/useAppStore.ts`, `src/hooks/useIndexingStatus.ts`, `src/hooks/useTauriEvents.ts`, `src/components/sidebar/IndexingProgressCard.tsx`)의 `'cancelling'` 잠금/500ms 폴링/Tauri-Polling `terminalEventSeq` 역전 차단을 연동함(신규 회귀 테스트 `TC-IDX-18` 3종·전체 백엔드 `168 passed, 1 deselected`·`tsc && vite build` PASS).
@@ -76,9 +79,9 @@
 - **잔여 우선순위 리팩토링 (Open REFACTOR Logs)**: `없음 (0건)`
   - `REFACTOR-02` (`🟢 RESOLVED`): `folder_manager.py`(333줄)·`photo_reindex.py`(167줄) SRP 분리 및 `indexing_service.py`(494줄) 위임 래퍼 유지, `_commit_batch_with_retry`/`run_indexing_background`/`_stream_export_events` 헬퍼 분할, `usePhotoExport.ts`(148줄)·`ExportActionControls.tsx`(211줄)·`ActionBar.tsx`(62줄) 및 `SidebarViewTabs.tsx`(91줄)·`SidebarSearchControls.tsx`(98줄)·`SidebarFolderActions.tsx`(138줄)·`Sidebar.tsx`(86줄) 분할, `IndexingProgressCard.tsx`·`SidebarFolderActions.tsx` `unknown` 예외 처리 및 `exportStream.ts#L69` `console.debug` 로깅 추가.
 - **검증 완료된 테스트 실행 명령어**:
-  - `node --test tests/frontend/photoReindex.test.mjs` (`6 passed`)
+  - `node --test tests/frontend/*.test.mjs` (`12 passed`: `photoFavorite.test.mjs` 6 + `photoReindex.test.mjs` 6)
   - `npx tsc --noEmit && npm run build` (`PASS`, `0 Errors`)
   - `./venv/bin/pytest backend/tests/test_api_photos.py backend/tests/test_api_folders.py backend/tests/test_api_search.py backend/tests/test_backend_hardening.py backend/tests/test_concurrency_hardening.py -k "not test_base_keep_alive_model_lifecycle" -v` (`69 passed, 1 deselected`)
   - `python3 -B ~/.gemini/config/skills/interactive-feature-planner/scripts/check_wiki_health.py docs` (`exit 0`)
 - **다음 세션 포커스 및 추천 프롬프트**:
-  - `DEFECT-15~17` 순차 해결 (`systematic-debugger`): `"01_indexing_storage 도메인의 DEFECT-15 티켓 해결해줘"`
+  - `DEFECT-16~17` 순차 해결 (`systematic-debugger`): `"01_indexing_storage 도메인의 DEFECT-16 티켓 해결해줘"`

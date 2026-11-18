@@ -1,8 +1,8 @@
 # 🧪 [01_indexing_storage] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-15~17 해결 대기)`
+- **검증 상태**: `🩹 Debugging (DEFECT-16~17 해결 대기)`
 - **인수 조건 통과율**: `1 / 4 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 3건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 2건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -63,7 +63,7 @@
 | **Boundary**| `TC-IDX-18` | 인덱싱 취소 직후 폴더 삭제 및 재시작 동시성 격리 | 워커 스레드 실행 중 cancel ➔ delete/start | 인플라이트 워커 종료 전 삭제/재시작 차단 및 좀비 방지 | `PASS (Fixed in DEFECT-12)` |
 | **Happy** | `TC-IDX-19` | 폴더 필터 조회 시 하위 디렉터리 및 NFD/NFC 정규화 | 하위 폴더/한글 NFD 포함 폴더 선택 | 하위 디렉터리 및 NFD/NFC 사진 정상 조회 | `PASS (Fixed in DEFECT-13)` |
 | **Boundary**| `TC-IDX-20` | 단일 사진 재분석 캐시 동기화 및 사진 전환 격리 | 상세 재분석 중 타 사진 선택 또는 완료 대기 | `photoDetail` 캐시 즉시 갱신 및 전환 후 버퍼 오염 차단 | `PASS (Fixed in DEFECT-14)` |
-| **Boundary**| `TC-IDX-21` | 상세 패널/갤러리 즐겨찾기 토글 양방향 캐시 동기화 | 폴더 선택 중 상세 패널 하트 토글 | `photos` 및 `photoDetail` 캐시 모두 서버 상태와 일치 | `FAIL (DEFECT-15)` |
+| **Boundary**| `TC-IDX-21` | 상세 패널/갤러리 즐겨찾기 토글 양방향 캐시 동기화 | 폴더 선택 중 상세 패널 하트 토글 | `photos` 및 `photoDetail` 캐시 모두 서버 상태와 일치 | `PASS (Fixed in DEFECT-15)` |
 | **Boundary**| `TC-IDX-22` | 내보내기 중 전체 선택 해제 시 피드백 누수 차단 | SSE 내보내기 진행 중 선택 해제 후 새 사진 선택 | 진행 중 요청 중단 및 이전 실패/완료 배너 잔류 차단 | `FAIL (DEFECT-16)` |
 | **Boundary**| `TC-IDX-23` | 초장축 세로 파노라마 썸네일 JPEG 65,500px 상한 방어 | 10x5000 또는 100x20000 이미지 썸네일 생성 | libjpeg 65,500px 초과 OSError 없이 썸네일 생성 | `FAIL (DEFECT-17)` |
 
@@ -126,10 +126,11 @@
   - **회귀 테스트 결과**: `node --test tests/frontend/photoReindex.test.mjs` (`6 passed`), `npx tsc --noEmit && npm run build` (`PASS`, `0 Errors`), `./venv/bin/pytest backend/tests/test_api_photos.py backend/tests/test_api_folders.py backend/tests/test_api_search.py backend/tests/test_backend_hardening.py backend/tests/test_concurrency_hardening.py -k "not test_base_keep_alive_model_lifecycle" -v` (`69 passed, 1 deselected`)
 
 ### [DEFECT-15] `useToggleFavoriteMutation`의 `selectedFolder=null` 하드코딩 및 `photoDetail` 캐시 미동기화로 인한 하트 상태 불일치
-- **현재 상태**: 🟡 OPEN
-- **심각도**: 🟠 P1 High (Query Key Mismatch / Cache Split-Brain)
-- **발생 위치**: [`src/hooks/usePhotoDetail.ts#L29,L260-L267`](../../../src/hooks/usePhotoDetail.ts#L29), [`src/hooks/usePhotosQuery.ts#L8-L53`](../../../src/hooks/usePhotosQuery.ts#L8-L53), [`src/components/PhotoGallery.tsx#L100-L121`](../../../src/components/PhotoGallery.tsx#L100-L121)
-- **증상 및 재현**: 상세 패널 훅이 `selectedFolder`를 `null`로 고정하고, 갤러리·상세 양쪽 모두 `['photoDetail', photoId]` 캐시를 갱신하지 않아 폴더 뷰/상세 뷰에서 하트 토글 상태가 반영되지 않음 (`✅ Empirical Probe Reproduced`).
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 및 신설 파일**: [`src/utils/photoFavorite.ts`](../../../src/utils/photoFavorite.ts), [`src/hooks/usePhotosQuery.ts`](../../../src/hooks/usePhotosQuery.ts), [`src/hooks/usePhotoDetail.ts`](../../../src/hooks/usePhotoDetail.ts), [`src/components/PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx), [`tests/frontend/photoFavorite.test.mjs`](../../../tests/frontend/photoFavorite.test.mjs)
+  - **원인 및 조치**: Devil's Advocate 검증을 반영해 순수 즐겨찾기 캐시 오케스트레이터 [`src/utils/photoFavorite.ts`](../../../src/utils/photoFavorite.ts)를 신설하고, `useToggleFavoriteMutation`에서 `selectedFolder`/`searchQuery`/`searchFilters` 인자 의존성을 제거해 모든 `['photos']` prefix 캐시(폴더 뷰·전체 뷰·검색 뷰)와 `['photoDetail', photoId]`를 양방향 낙관적 갱신 및 `onSuccess` 서버 확정값(`response.is_favorite`) 반영으로 동기화함. `QueryClient` 단위 `WeakMap` 기반 사진별 직렬화 큐(`tailPromise`)·`activeSeqs`·`confirmedFavorite`·`baseline` 스냅샷으로 연속 더블클릭 부분 실패/성공 레이스를 방지하고, `setQueryData` 시 `{ updatedAt }` 보존 및 미포함 쿼리 스킵으로 `getActivePhotoList`의 `dataUpdatedAt` 하이재킹을 차단했으며, `data === undefined` 초기 `pending` 쿼리 `cancelQueries` 제외 및 `is_favorite` 필터 활성 쿼리 안전 무효화를 적용함. [`src/hooks/usePhotoDetail.ts`](../../../src/hooks/usePhotoDetail.ts)의 `selectedFolder=null` 하드코딩과 미사용 `searchQuery`/`searchFilters`를 정리하고 [`src/components/PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx) `handleToggleFavorite`도 `useToggleFavoriteMutation`으로 통합함(`analyticsStats`는 `is_favorite` 미사용 확인으로 무효화 제외).
+  - **회귀 테스트 결과**: `node --test tests/frontend/*.test.mjs` (`12 passed`: `photoFavorite.test.mjs` 6 + `photoReindex.test.mjs` 6), `npx tsc --noEmit && npm run build` (`PASS`, `0 Errors`), `./venv/bin/pytest backend/tests/test_api_photos.py backend/tests/test_api_folders.py backend/tests/test_api_search.py backend/tests/test_backend_hardening.py backend/tests/test_concurrency_hardening.py -k "not test_base_keep_alive_model_lifecycle" -v` (`69 passed, 1 deselected`)
 
 ### [DEFECT-16] 내보내기 진행 중 전체 선택 해제 시 `usePhotoExport`의 완료/실패 피드백이 이후 새 선택에 잔류
 - **현재 상태**: 🟡 OPEN
