@@ -12,6 +12,8 @@ import {
   bindGalleryContainerResize,
   buildGalleryQueryContextKey,
   computeGalleryColumnCount,
+  createSafeObserveElementOffset,
+  observeGalleryElementOffset,
   resetVirtualizerScrollPosition,
   syncVirtualizerOnContainerMount,
 } from '../../src/utils/galleryLayout.ts';
@@ -393,4 +395,235 @@ test('TC-SRC-18.5: PhotoGallery wires queryContextKey, pre-render virtualizer re
   assert.equal(sourceText.includes('resetVirtualizerScrollPosition('), true);
   assert.equal(sourceText.includes('syncVirtualizerOnContainerMount('), true);
   assert.equal(sourceText.includes('useLayoutEffect('), true);
+});
+
+function createFakeTimerWindow() {
+  let currentTimeMs = 0;
+  let nextTimerId = 1;
+  const scheduledTimers = new Map();
+
+  return {
+    setTimeout(callback, delayMs = 0) {
+      const timerId = nextTimerId++;
+      scheduledTimers.set(timerId, {
+        fireAtMs: currentTimeMs + delayMs,
+        callback,
+      });
+      return timerId;
+    },
+    clearTimeout(timerId) {
+      scheduledTimers.delete(timerId);
+    },
+    getPendingTimerCount() {
+      return scheduledTimers.size;
+    },
+    advanceBy(deltaMs) {
+      const targetTimeMs = currentTimeMs + deltaMs;
+      while (true) {
+        let earliestTimerId = null;
+        let earliestTimer = null;
+        for (const [timerId, timerEntry] of scheduledTimers.entries()) {
+          if (
+            timerEntry.fireAtMs <= targetTimeMs &&
+            (!earliestTimer || timerEntry.fireAtMs < earliestTimer.fireAtMs)
+          ) {
+            earliestTimerId = timerId;
+            earliestTimer = timerEntry;
+          }
+        }
+        if (!earliestTimer || earliestTimerId === null) {
+          break;
+        }
+        scheduledTimers.delete(earliestTimerId);
+        currentTimeMs = earliestTimer.fireAtMs;
+        earliestTimer.callback();
+      }
+      currentTimeMs = targetTimeMs;
+    },
+  };
+}
+
+function createTimedVirtualScrollContainer(fakeWindow, initialRowCount = 50) {
+  const container = createFakeVirtualScrollContainer(initialRowCount);
+  container.ownerDocument = { defaultView: fakeWindow };
+  return container;
+}
+
+function createTimedVirtualizerHarness(fakeWindow, offsetObserver, initialRowCount = 50) {
+  let activeContainer = createTimedVirtualScrollContainer(fakeWindow, initialRowCount);
+
+  const virtualizer = new Virtualizer({
+    count: initialRowCount,
+    getScrollElement: () => activeContainer,
+    estimateSize: () => 220,
+    overscan: 3,
+    observeElementRect: (_instance, onRectChange) => {
+      onRectChange({ width: 1000, height: 800 });
+      return () => {};
+    },
+    observeElementOffset: offsetObserver,
+    scrollToFn: elementScroll,
+  });
+
+  const unmountDidMount = virtualizer._didMount();
+  virtualizer._willUpdate();
+
+  return {
+    virtualizer,
+    getContainer: () => activeContainer,
+    setContainer: (nextContainer) => {
+      activeContainer = nextContainer;
+    },
+    updateCount: (nextCount) => {
+      virtualizer.setOptions({ ...virtualizer.options, count: nextCount });
+    },
+    cleanup: () => {
+      unmountDidMount();
+    },
+  };
+}
+
+test('TC-SRC-19.1: blocks stale 150ms fallback debounce timer after <150ms unmount/remount while reproducing unfixed Red failure', () => {
+  // Red baseline with raw observeElementOffset:
+  // t=0ms scroll(3000) -> t=30ms unmount/cleanup -> t=60ms remount(scrollTop=0) -> t=150ms stale timer resurrects scrollOffset=3000
+  const unfixedWindow = createFakeTimerWindow();
+  const unfixed = createTimedVirtualizerHarness(unfixedWindow, observeElementOffset, 50);
+  unfixed.getContainer().emitScroll(3000);
+  assert.equal(unfixed.virtualizer.scrollOffset, 3000);
+
+  unfixedWindow.advanceBy(30);
+  unfixed.setContainer(null);
+  syncVirtualizerOnContainerMount(unfixed.virtualizer, null);
+  unfixed.updateCount(0);
+  unfixed.virtualizer._willUpdate();
+  assert.equal(unfixed.virtualizer.scrollOffset, 0);
+
+  unfixedWindow.advanceBy(30);
+  const unfixedRemounted = createTimedVirtualScrollContainer(unfixedWindow, 5);
+  unfixed.setContainer(unfixedRemounted);
+  unfixed.updateCount(5);
+  unfixed.virtualizer._willUpdate();
+  assert.deepEqual(
+    unfixed.virtualizer.getVirtualItems().map((item) => item.index),
+    [0, 1, 2, 3, 4],
+  );
+
+  unfixedWindow.advanceBy(90);
+  assert.equal(unfixed.virtualizer.scrollOffset, 3000);
+  assert.deepEqual(
+    unfixed.virtualizer.getVirtualItems().map((item) => item.index),
+    [1, 2, 3, 4],
+  );
+  unfixed.cleanup();
+
+  // Green fix with observeGalleryElementOffset:
+  // Stale timer at t=150ms is blocked by isDisposed guard; scrollOffset=0 and row 0 stay intact
+  const fixedWindow = createFakeTimerWindow();
+  const fixed = createTimedVirtualizerHarness(fixedWindow, observeGalleryElementOffset, 50);
+  fixed.getContainer().emitScroll(3000);
+  assert.equal(fixed.virtualizer.scrollOffset, 3000);
+  assert.equal(fixed.virtualizer.isScrolling, true);
+
+  fixedWindow.advanceBy(30);
+  fixed.setContainer(null);
+  syncVirtualizerOnContainerMount(fixed.virtualizer, null);
+  fixed.updateCount(0);
+  fixed.virtualizer._willUpdate();
+  assert.equal(fixed.virtualizer.scrollOffset, 0);
+
+  fixedWindow.advanceBy(30);
+  const fixedRemounted = createTimedVirtualScrollContainer(fixedWindow, 5);
+  fixed.setContainer(fixedRemounted);
+  fixed.updateCount(5);
+  fixed.virtualizer._willUpdate();
+  syncVirtualizerOnContainerMount(fixed.virtualizer, fixedRemounted);
+  assert.deepEqual(
+    fixed.virtualizer.getVirtualItems().map((item) => item.index),
+    [0, 1, 2, 3, 4],
+  );
+
+  fixedWindow.advanceBy(90);
+  assert.equal(fixed.virtualizer.scrollOffset, 0);
+  assert.equal(fixed.virtualizer.isScrolling, false);
+  assert.equal(fixedRemounted.scrollTop, 0);
+  assert.deepEqual(
+    fixed.virtualizer.getVirtualItems().map((item) => item.index),
+    [0, 1, 2, 3, 4],
+  );
+  fixed.cleanup();
+});
+
+test('TC-SRC-19.2: preserves post-remount scrolling/debounce completion and safely handles missing cleanup or repeated dispose', () => {
+  const fakeWindow = createFakeTimerWindow();
+  const harness = createTimedVirtualizerHarness(fakeWindow, observeGalleryElementOffset, 50);
+
+  harness.getContainer().emitScroll(3000);
+  fakeWindow.advanceBy(30);
+  harness.setContainer(null);
+  syncVirtualizerOnContainerMount(harness.virtualizer, null);
+  harness.updateCount(0);
+  harness.virtualizer._willUpdate();
+
+  fakeWindow.advanceBy(30);
+  const remountedContainer = createTimedVirtualScrollContainer(fakeWindow, 50);
+  harness.setContainer(remountedContainer);
+  harness.updateCount(50);
+  harness.virtualizer._willUpdate();
+
+  // Wait past old t=150ms timer, then scroll the newly mounted container
+  fakeWindow.advanceBy(100);
+  assert.equal(harness.virtualizer.scrollOffset, 0);
+
+  remountedContainer.emitScroll(1540);
+  assert.equal(harness.virtualizer.scrollOffset, 1540);
+  assert.equal(harness.virtualizer.isScrolling, true);
+
+  fakeWindow.advanceBy(150);
+  assert.equal(harness.virtualizer.scrollOffset, 1540);
+  assert.equal(harness.virtualizer.isScrolling, false);
+  harness.cleanup();
+
+  // Base observer returning undefined (e.g., null scrollElement) and double-cleanup idempotency
+  const emittedEvents = [];
+  let lateCallback = null;
+  let baseCleanupCalls = 0;
+
+  const noCleanupObserver = createSafeObserveElementOffset((_instance, onOffsetChange) => {
+    lateCallback = onOffsetChange;
+    return undefined;
+  });
+  const missingCleanup = noCleanupObserver({}, (offset, isScrolling) => {
+    emittedEvents.push([offset, isScrolling]);
+  });
+  assert.equal(missingCleanup, undefined);
+  lateCallback?.(999, false);
+  assert.deepEqual(emittedEvents, []);
+
+  const normalObserver = createSafeObserveElementOffset((_instance, onOffsetChange) => {
+    onOffsetChange(120, true);
+    lateCallback = onOffsetChange;
+    return () => {
+      baseCleanupCalls += 1;
+    };
+  });
+  const dispose = normalObserver({}, (offset, isScrolling) => {
+    emittedEvents.push([offset, isScrolling]);
+  });
+  assert.equal(typeof dispose, 'function');
+  dispose?.();
+  dispose?.();
+  lateCallback?.(240, false);
+  assert.equal(baseCleanupCalls, 1);
+  assert.deepEqual(emittedEvents, [[120, true]]);
+});
+
+test('TC-SRC-19.3: PhotoGallery passes observeGalleryElementOffset to useVirtualizer', () => {
+  const gallerySourcePath = path.resolve(process.cwd(), 'src/components/PhotoGallery.tsx');
+  const sourceText = fs.readFileSync(gallerySourcePath, 'utf8');
+
+  assert.equal(sourceText.includes('observeGalleryElementOffset'), true);
+  assert.equal(
+    /observeElementOffset\s*:\s*observeGalleryElementOffset/.test(sourceText),
+    true,
+  );
 });

@@ -11,6 +11,7 @@ import {
   type VirtualizerScrollState,
   bindGalleryContainerResize,
   buildGalleryQueryContextKey,
+  observeGalleryElementOffset,
   resetVirtualizerScrollPosition,
   syncVirtualizerOnContainerMount,
 } from '../utils/galleryLayout';
@@ -94,6 +95,7 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
     getScrollElement: () => scrollElementRef.current,
     estimateSize: () => 220,
     overscan: 3,
+    observeElementOffset: observeGalleryElementOffset,
   });
   virtualizerRef.current = virtualizer;
 

@@ -1,3 +1,7 @@
+import {
+  observeElementOffset,
+  type Virtualizer,
+} from '@tanstack/react-virtual';
 import type { SearchFilters } from '../types/photo.ts';
 import { sanitizeSearchFilters } from './searchFilters.ts';
 
@@ -159,4 +163,68 @@ export function syncVirtualizerOnContainerMount(
   ) {
     resetVirtualizerScrollPosition(virtualizer, null);
   }
+}
+
+export type OffsetObserverCallback = (
+  offset: number,
+  isScrolling: boolean,
+) => void;
+
+export type ElementOffsetObserver<
+  TScrollElement extends Element = Element,
+  TItemElement extends Element = Element,
+> = (
+  instance: Virtualizer<TScrollElement, TItemElement>,
+  onOffsetChange: OffsetObserverCallback,
+) => void | (() => void);
+
+/**
+ * Wraps @tanstack/virtual-core's observeElementOffset so any pending 150ms
+ * debounce fallback timer cannot resurrect a stale scrollOffset after cleanup.
+ */
+export function createSafeObserveElementOffset<
+  TScrollElement extends Element = Element,
+  TItemElement extends Element = Element,
+>(
+  baseObserver: ElementOffsetObserver<
+    TScrollElement,
+    TItemElement
+  > = observeElementOffset as ElementOffsetObserver<
+    TScrollElement,
+    TItemElement
+  >,
+): ElementOffsetObserver<TScrollElement, TItemElement> {
+  return (instance, onOffsetChange) => {
+    let isDisposed = false;
+    const baseCleanup = baseObserver(instance, (offset, isScrolling) => {
+      if (isDisposed) return;
+      onOffsetChange(offset, isScrolling);
+    });
+    if (typeof baseCleanup !== 'function') {
+      isDisposed = true;
+      return undefined;
+    }
+    return () => {
+      if (isDisposed) return;
+      isDisposed = true;
+      baseCleanup();
+    };
+  };
+}
+
+/**
+ * Gallery offset observer preserving RTL/horizontal/scrollend behavior while
+ * blocking stale 150ms fallback timer callbacks after container cleanup.
+ */
+export function observeGalleryElementOffset<
+  TScrollElement extends Element,
+  TItemElement extends Element = Element,
+>(
+  instance: Virtualizer<TScrollElement, TItemElement>,
+  onOffsetChange: OffsetObserverCallback,
+): void | (() => void) {
+  return createSafeObserveElementOffset<TScrollElement, TItemElement>()(
+    instance,
+    onOffsetChange,
+  );
 }
