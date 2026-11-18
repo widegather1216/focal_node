@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { SearchFilters } from '../types/photo';
+import { countActiveSearchFilters, sanitizeSearchFilters } from '../utils/searchFilters';
 import { SlidersHorizontal, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { FilterRangeInput } from './filter/FilterRangeInput';
@@ -18,10 +19,7 @@ export function SearchFilterMenu() {
   const [localFilters, setLocalFilters] = useState<SearchFilters>(searchFilters);
 
   const handleApply = () => {
-    const cleaned: SearchFilters = Object.fromEntries(
-      Object.entries(localFilters).filter(([_, v]) => v !== undefined && v !== '' && !Number.isNaN(v))
-    );
-    setSearchFilters(cleaned);
+    setSearchFilters(sanitizeSearchFilters(localFilters));
     setIsOpen(false);
   };
 
@@ -31,13 +29,13 @@ export function SearchFilterMenu() {
     setIsOpen(false);
   };
 
-  const activeFilterCount = Object.keys(searchFilters).length;
+  const activeFilterCount = countActiveSearchFilters(searchFilters);
 
   return (
     <div style={{ position: 'relative' }}>
       <motion.button
         onClick={() => {
-          setLocalFilters(searchFilters);
+          setLocalFilters(sanitizeSearchFilters(searchFilters));
           setIsOpen(!isOpen);
         }}
         whileHover={{ scale: 1.05 }}

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { api, ApiHttpError } from '../services/api';
 import { SearchFilters } from '../types/photo';
 import { IndexingLifecycleState } from '../types/system';
+import { sanitizeSearchFilters } from '../utils/searchFilters';
 
 export type { SearchFilters };
 
@@ -119,7 +120,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSearchQuery: (query) => set({ searchQuery: query }),
 
   searchFilters: {},
-  setSearchFilters: (filters) => set({ searchFilters: filters }),
+  setSearchFilters: (filters) => set({ searchFilters: sanitizeSearchFilters(filters) }),
   clearSearchFilters: () => set({ searchFilters: {} }),
   findSimilarPhotos: (photoId) => set({
     searchQuery: `similar:${photoId}`,

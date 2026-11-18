@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { Heart, Search } from 'lucide-react';
 import { SearchFilters } from '../../types/photo';
+import { toggleFavoriteFilter } from '../../utils/searchFilters';
 import { SearchFilterMenu } from '../SearchFilterMenu';
 
 interface SidebarSearchControlsProps {
@@ -54,10 +55,7 @@ export function SidebarSearchControls({
 
       <motion.button
         onClick={() => {
-          onSearchFiltersChange({
-            ...searchFilters,
-            is_favorite: isFavoriteActive ? undefined : true,
-          });
+          onSearchFiltersChange(toggleFavoriteFilter(searchFilters));
         }}
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.92 }}

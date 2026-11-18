@@ -5,6 +5,7 @@ import { useAppStore } from '../store/useAppStore';
 import { api } from '../services/api';
 import { useDebounce } from '../hooks/useDebounce';
 import { useToggleFavoriteMutation } from '../hooks/usePhotosQuery';
+import { hasActiveSearchFilters } from '../utils/searchFilters';
 import { PhotoCard } from './gallery/PhotoCard';
 import { LoadingSpinner } from './common/LoadingSpinner';
 import { Loader2, SearchX } from 'lucide-react';
@@ -55,13 +56,12 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
     queryKey: ['photos', selectedFolder, effectiveSearchQuery, searchFilters],
     queryFn: async ({ pageParam = 0 }) => {
       if (!apiPort) return [];
-      const hasFilters = searchFilters && Object.keys(searchFilters).length > 0;
-      const hasQuery = effectiveSearchQuery && effectiveSearchQuery.trim() !== '';
+      const hasFilters = hasActiveSearchFilters(searchFilters);
+      const hasQuery = Boolean(effectiveSearchQuery && effectiveSearchQuery.trim() !== '');
       if (hasQuery || hasFilters) {
         return api.searchPhotos(effectiveSearchQuery, searchFilters, 50, (pageParam as number) * 50, selectedFolder);
-      } else {
-        return api.fetchPhotos(50, (pageParam as number) * 50, selectedFolder);
       }
+      return api.fetchPhotos(50, (pageParam as number) * 50, selectedFolder);
     },
     getNextPageParam: (lastPage, allPages) => {
       if (lastPage.length < 50) return undefined;
