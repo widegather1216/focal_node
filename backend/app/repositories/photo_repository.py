@@ -1,4 +1,5 @@
 from datetime import datetime
+import math
 from typing import Any, List, Optional
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_, func
@@ -9,6 +10,56 @@ from utils.path import (
     normalize_path_preserving_leaf_symlink,
     to_slash_bounded_prefix,
 )
+
+CHROMA_ID_CHUNK_SIZE = 900
+
+
+def _escape_like_pattern(raw_pattern: str) -> str:
+    """Escapes SQL LIKE/ILIKE wildcards (\\, %, _) for literal substring matching."""
+    return raw_pattern.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _normalize_text_filter(raw_value: Any) -> Optional[str]:
+    """Strips whitespace from optional text filters, returning None for blank strings."""
+    if not isinstance(raw_value, str):
+        return None
+    stripped = raw_value.strip()
+    return stripped or None
+
+
+def _normalize_naive_datetime(raw_dt: Any) -> Optional[datetime]:
+    """Normalizes datetime values to naive UTC-less instances for safe sorting."""
+    if not isinstance(raw_dt, datetime):
+        return None
+    return raw_dt.replace(tzinfo=None) if raw_dt.tzinfo is not None else raw_dt
+
+
+def _sort_desc_nulls_last(rows: list[tuple], key_fn) -> list[tuple]:
+    """Sorts rows descending by key_fn while keeping None keys at the end."""
+    present_rows = [row for row in rows if key_fn(row) is not None]
+    missing_rows = [row for row in rows if key_fn(row) is None]
+    present_rows.sort(key=key_fn, reverse=True)
+    return present_rows + missing_rows
+
+
+def _sort_critique_rows(rows: list[tuple], sort_by: str) -> list[tuple]:
+    """Applies SQLite-equivalent DESC NULLS LAST ordering across chunked critique rows."""
+    sorted_rows = _sort_desc_nulls_last(
+        rows,
+        lambda row: _normalize_naive_datetime(row[0].critique_updated_at),
+    )
+    if sort_by not in ("overall_score", "iaa_score"):
+        return sorted_rows
+
+    score_attr = "overall_score" if sort_by == "overall_score" else "iaa_score"
+
+    def extract_finite_score(row: tuple) -> Optional[float]:
+        score_value = getattr(row[0], score_attr, None)
+        if score_value is None or not math.isfinite(score_value):
+            return None
+        return float(score_value)
+
+    return _sort_desc_nulls_last(sorted_rows, extract_finite_score)
 
 
 def _resolve_date_filter_bound(raw_value: Any, *, end_of_day: bool) -> Any:
@@ -31,30 +82,32 @@ class PhotoRepository:
     def get_by_ids(self, photo_ids: List[str]) -> List[models.Image]:
         if not photo_ids:
             return []
-        if len(photo_ids) > 900:
+        unique_ids = list(dict.fromkeys(photo_ids))
+        if len(unique_ids) > CHROMA_ID_CHUNK_SIZE:
             results = []
-            for i in range(0, len(photo_ids), 900):
-                chunk = photo_ids[i:i+900]
+            for start_idx in range(0, len(unique_ids), CHROMA_ID_CHUNK_SIZE):
+                chunk = unique_ids[start_idx : start_idx + CHROMA_ID_CHUNK_SIZE]
                 rows = self.db.query(models.Image).options(joinedload(models.Image.metadata_rel)).filter(models.Image.id.in_(chunk)).all()
                 results.extend(rows)
             return results
-        return self.db.query(models.Image).options(joinedload(models.Image.metadata_rel)).filter(models.Image.id.in_(photo_ids)).all()
+        return self.db.query(models.Image).options(joinedload(models.Image.metadata_rel)).filter(models.Image.id.in_(unique_ids)).all()
 
     @staticmethod
     def _filter_matching_photo_ids(
         ordered_rows: list[tuple[str, str]],
         target_root: str,
         bounded_prefix: str,
+        dir_match_cache: Optional[dict[str, bool]] = None,
     ) -> List[str]:
         """Filters ordered (id, parent_dir) rows using a per-directory normalization cache."""
-        dir_match_cache: dict[str, bool] = {}
+        match_cache = dir_match_cache if dir_match_cache is not None else {}
         matching_ids: List[str] = []
         for photo_id, row_parent_dir in ordered_rows:
             cache_key = row_parent_dir or ""
-            is_match = dir_match_cache.get(cache_key)
+            is_match = match_cache.get(cache_key)
             if is_match is None:
                 is_match = is_path_within_folder(cache_key, target_root, bounded_prefix)
-                dir_match_cache[cache_key] = is_match
+                match_cache[cache_key] = is_match
             if is_match:
                 matching_ids.append(photo_id)
         return matching_ids
@@ -121,7 +174,7 @@ class PhotoRepository:
         Performs full-text search against captions and tags in AIAnalysis table.
         Returns list of matching image IDs safely handling SQL LIKE wildcards.
         """
-        escaped = query_str.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        escaped = _escape_like_pattern(query_str)
         text_search_q = self.db.query(models.AIAnalysis.image_id).filter(
             or_(
                 models.AIAnalysis.tags.ilike(f"%{escaped}%", escape="\\"),
@@ -130,38 +183,34 @@ class PhotoRepository:
         )
         if limit and limit > 0:
             text_search_q = text_search_q.limit(limit)
-        return [r[0] for r in text_search_q.all()]
+        return [row[0] for row in text_search_q.all()]
 
     @staticmethod
     def _has_active_filters(filters: Any) -> bool:
         if not filters:
             return False
-        filter_fields = (
-            "is_favorite", "camera_model", "lens_model", "iso_min", "iso_max",
+        text_fields = ("camera_model", "lens_model")
+        if any(_normalize_text_filter(getattr(filters, field_name, None)) is not None for field_name in text_fields):
+            return True
+        scalar_fields = (
+            "is_favorite", "iso_min", "iso_max",
             "f_number_min", "f_number_max", "focal_length_min", "focal_length_max",
-            "date_from", "date_to"
+            "date_from", "date_to",
         )
-        return any(getattr(filters, f, None) is not None for f in filter_fields)
-
-    @staticmethod
-    def _build_chroma_id_filter(query, photo_ids: List[str]):
-        chunk_size = 900
-        if len(photo_ids) > chunk_size:
-            conditions = [
-                models.Image.id.in_(photo_ids[i : i + chunk_size])
-                for i in range(0, len(photo_ids), chunk_size)
-            ]
-            return query.filter(or_(*conditions))
-        return query.filter(models.Image.id.in_(photo_ids))
+        return any(getattr(filters, field_name, None) is not None for field_name in scalar_fields)
 
     @staticmethod
     def _apply_exif_filters(query, filters: Any):
         if getattr(filters, "is_favorite", None) is not None:
             query = query.filter(models.Image.is_favorite == filters.is_favorite)
-        if getattr(filters, "camera_model", None):
-            query = query.filter(models.ImageMetadata.camera_model.ilike(f"%{filters.camera_model}%"))
-        if getattr(filters, "lens_model", None):
-            query = query.filter(models.ImageMetadata.lens_model.ilike(f"%{filters.lens_model}%"))
+        camera_model = _normalize_text_filter(getattr(filters, "camera_model", None))
+        if camera_model is not None:
+            escaped_camera = _escape_like_pattern(camera_model)
+            query = query.filter(models.ImageMetadata.camera_model.ilike(f"%{escaped_camera}%", escape="\\"))
+        lens_model = _normalize_text_filter(getattr(filters, "lens_model", None))
+        if lens_model is not None:
+            escaped_lens = _escape_like_pattern(lens_model)
+            query = query.filter(models.ImageMetadata.lens_model.ilike(f"%{escaped_lens}%", escape="\\"))
 
         range_mappings = [
             ("iso_min", models.ImageMetadata.iso, lambda col, val: col >= val),
@@ -188,28 +237,39 @@ class PhotoRepository:
             return self._apply_exif_filters(query, filters)
         return query
 
-    def _paginate_by_chroma_order(
+    def _query_chunk_matching_ids(
         self,
-        query,
-        photo_ids: List[str],
-        offset: int,
-        limit: int,
-        folder_bounds: Optional[tuple[str, str]] = None,
-    ) -> List[models.Image]:
-        """Filters candidate IDs by SQLite/folder bounds while preserving vector/text rank order."""
+        base_query,
+        id_chunk: List[str],
+        folder_bounds: Optional[tuple[str, str]],
+        dir_match_cache: dict[str, bool],
+    ) -> List[str]:
+        """Evaluates EXIF and optional folder bounds for a single <=900 ID chunk."""
+        chunk_query = base_query.filter(models.Image.id.in_(id_chunk))
         if folder_bounds is None:
-            matching_id_rows = query.with_entities(models.Image.id).all()
-            matching_ids = {row[0] for row in matching_id_rows}
-        else:
-            target_root, bounded_prefix = folder_bounds
-            candidate_rows = query.with_entities(models.Image.id, models.Image.parent_dir).all()
-            matching_ids = set(self._filter_matching_photo_ids(candidate_rows, target_root, bounded_prefix))
+            return [row[0] for row in chunk_query.with_entities(models.Image.id).all()]
+        target_root, bounded_prefix = folder_bounds
+        candidate_rows = chunk_query.with_entities(models.Image.id, models.Image.parent_dir).all()
+        return self._filter_matching_photo_ids(
+            candidate_rows, target_root, bounded_prefix, dir_match_cache
+        )
 
-        sorted_pids = [pid for pid in photo_ids if pid in matching_ids]
-        page_pids = sorted_pids[offset : offset + limit]
-        if not page_pids:
-            return []
-        return self._fetch_ordered_images_by_ids(page_pids)
+    def _collect_matching_candidate_ids(
+        self,
+        base_query,
+        unique_photo_ids: List[str],
+        folder_bounds: Optional[tuple[str, str]],
+    ) -> set[str]:
+        """Collects matching photo IDs across 900-item SQLite IN chunks to avoid variable limits."""
+        matching_ids: set[str] = set()
+        dir_match_cache: dict[str, bool] = {}
+        for start_idx in range(0, len(unique_photo_ids), CHROMA_ID_CHUNK_SIZE):
+            id_chunk = unique_photo_ids[start_idx : start_idx + CHROMA_ID_CHUNK_SIZE]
+            chunk_matches = self._query_chunk_matching_ids(
+                base_query, id_chunk, folder_bounds, dir_match_cache
+            )
+            matching_ids.update(chunk_matches)
+        return matching_ids
 
     def _filter_candidate_ids(
         self,
@@ -221,19 +281,21 @@ class PhotoRepository:
         limit: int,
     ) -> List[models.Image]:
         """Applies optional EXIF/folder scoping over candidate IDs, fast-pathing when unscoped."""
-        if not photo_ids:
+        if not photo_ids or limit <= 0:
             return []
+        safe_offset = max(0, offset)
+        unique_photo_ids = list(dict.fromkeys(photo_ids))
         if not has_active_filters and folder_bounds is None:
-            page_pids = photo_ids[offset : offset + limit]
-            if not page_pids:
-                return []
-            return self._fetch_ordered_images_by_ids(page_pids)
+            page_pids = unique_photo_ids[safe_offset : safe_offset + limit]
+            return self._fetch_ordered_images_by_ids(page_pids) if page_pids else []
 
-        query = self._build_chroma_id_filter(
-            self._build_filtered_image_query(filters, has_active_filters),
-            photo_ids,
+        base_query = self._build_filtered_image_query(filters, has_active_filters)
+        matching_ids = self._collect_matching_candidate_ids(
+            base_query, unique_photo_ids, folder_bounds
         )
-        return self._paginate_by_chroma_order(query, photo_ids, offset, limit, folder_bounds)
+        ordered_pids = [pid for pid in unique_photo_ids if pid in matching_ids]
+        page_pids = ordered_pids[safe_offset : safe_offset + limit]
+        return self._fetch_ordered_images_by_ids(page_pids) if page_pids else []
 
     def filter_and_paginate(
         self,
@@ -266,7 +328,7 @@ class PhotoRepository:
 
         return (
             base_query.options(joinedload(models.Image.metadata_rel))
-            .order_by(models.ImageMetadata.capture_date.desc())
+            .order_by(models.ImageMetadata.capture_date.desc().nullslast(), models.Image.id)
             .offset(safe_offset)
             .limit(limit)
             .all()
@@ -342,6 +404,27 @@ class PhotoRepository:
         self.db.commit()
         return ai_record
 
+    @staticmethod
+    def _apply_critique_sql_order(query, sort_by: str):
+        if sort_by == "overall_score":
+            return query.order_by(
+                models.AIAnalysis.overall_score.desc().nullslast(),
+                models.AIAnalysis.critique_updated_at.desc().nullslast(),
+            )
+        if sort_by == "iaa_score":
+            return query.order_by(
+                models.AIAnalysis.iaa_score.desc().nullslast(),
+                models.AIAnalysis.critique_updated_at.desc().nullslast(),
+            )
+        return query.order_by(models.AIAnalysis.critique_updated_at.desc().nullslast())
+
+    def _fetch_critique_rows_chunked(self, base_query, unique_photo_ids: List[str], sort_by: str) -> List[tuple]:
+        aggregated_rows: list[tuple] = []
+        for start_idx in range(0, len(unique_photo_ids), CHROMA_ID_CHUNK_SIZE):
+            id_chunk = unique_photo_ids[start_idx : start_idx + CHROMA_ID_CHUNK_SIZE]
+            aggregated_rows.extend(base_query.filter(models.Image.id.in_(id_chunk)).all())
+        return _sort_critique_rows(aggregated_rows, sort_by)
+
     def list_critiques(
         self,
         sort_by: str = "recent",
@@ -354,7 +437,7 @@ class PhotoRepository:
         - 'overall_score': ordered by overall_score DESC, then critique_updated_at DESC
         - 'iaa_score': ordered by iaa_score DESC, then critique_updated_at DESC
         """
-        query = (
+        base_query = (
             self.db.query(models.AIAnalysis, models.Image, models.ImageMetadata)
             .join(models.Image, models.AIAnalysis.image_id == models.Image.id)
             .outerjoin(models.ImageMetadata, models.Image.id == models.ImageMetadata.image_id)
@@ -362,18 +445,12 @@ class PhotoRepository:
             .filter(models.AIAnalysis.critique != "")
         )
         if photo_ids:
-            query = self._build_chroma_id_filter(query, photo_ids)
-        if sort_by == "overall_score":
-            return query.order_by(
-                models.AIAnalysis.overall_score.desc().nullslast(),
-                models.AIAnalysis.critique_updated_at.desc().nullslast(),
-            ).all()
-        if sort_by == "iaa_score":
-            return query.order_by(
-                models.AIAnalysis.iaa_score.desc().nullslast(),
-                models.AIAnalysis.critique_updated_at.desc().nullslast(),
-            ).all()
-        return query.order_by(models.AIAnalysis.critique_updated_at.desc().nullslast()).all()
+            unique_photo_ids = list(dict.fromkeys(photo_ids))
+            if len(unique_photo_ids) > CHROMA_ID_CHUNK_SIZE:
+                return self._fetch_critique_rows_chunked(base_query, unique_photo_ids, sort_by)
+            base_query = base_query.filter(models.Image.id.in_(unique_photo_ids))
+
+        return self._apply_critique_sql_order(base_query, sort_by).all()
 
     def delete_critique(self, photo_id: str) -> bool:
         """

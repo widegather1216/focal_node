@@ -603,5 +603,164 @@ def test_tc_src_11_parent_dir_nfd_symlink_whitespace_and_text_pool_boundaries(cl
 
     assert client.post("/api/search", json={"query": "harbor", "parent_dir": "   ", "limit": 10, "offset": 0}).json() == []
     assert len(client.post("/api/search", json={"query": "harbor", "parent_dir": "", "limit": 10, "offset": 0}).json()) == 4
-    assert client.post("/api/search", json={"query": "harbor", "parent_dir": root_nfc, "limit": -1, "offset": 0}).json() == []
-    assert len(client.post("/api/search", json={"query": "harbor", "parent_dir": root_nfc, "limit": 10, "offset": -5}).json()) == 2
+    assert client.post("/api/search", json={"query": "harbor", "parent_dir": root_nfc, "limit": -1, "offset": 0}).status_code == 422
+    assert client.post("/api/search", json={"query": "harbor", "parent_dir": root_nfc, "limit": 10, "offset": -5}).status_code == 422
+
+    repo = PhotoRepository(db_session)
+    assert repo.filter_and_paginate(["ko_root", "ko_sub"], None, 0, -1, parent_dir=root_nfc) == []
+    assert len(repo.filter_and_paginate(["ko_root", "ko_sub"], None, -5, 10, parent_dir=root_nfc)) == 2
+
+
+def test_tc_src_15_chunked_35k_candidate_ids_preserve_rank_pagination_and_folder_scope(db_session):
+    _seed_scoped_photo(db_session, "rank_first", "/album_a", "1.jpg", "Sunset", '["sunset"]', iso=200)
+    _seed_scoped_photo(db_session, "rank_second_wrong_iso", "/album_a", "2.jpg", "Sunset", '["sunset"]', iso=1600)
+    _seed_scoped_photo(db_session, "rank_third_wrong_folder", "/album_b", "3.jpg", "Sunset", '["sunset"]', iso=200)
+    _seed_scoped_photo(db_session, "rank_fourth", "/album_a/sub", "4.jpg", "Sunset", '["sunset"]', iso=200)
+
+    candidate_ids = (
+        [f"ghost_head_{idx}" for idx in range(18000)]
+        + ["rank_first", "rank_first", "rank_second_wrong_iso", "rank_third_wrong_folder"]
+        + [f"ghost_mid_{idx}" for idx in range(17000)]
+        + ["rank_fourth"]
+    )
+    assert len(candidate_ids) > 35000
+
+    repo = PhotoRepository(db_session)
+    exif_filter = SimpleNamespace(iso_min=100, iso_max=400)
+
+    all_matches = repo.filter_and_paginate(candidate_ids, exif_filter, offset=0, limit=10, parent_dir="/album_a")
+    assert [img.id for img in all_matches] == ["rank_first", "rank_fourth"]
+
+    second_page = repo.filter_and_paginate(candidate_ids, exif_filter, offset=1, limit=1, parent_dir="/album_a")
+    assert [img.id for img in second_page] == ["rank_fourth"]
+
+    unscoped_matches = repo.filter_and_paginate(candidate_ids, exif_filter, offset=0, limit=10)
+    assert [img.id for img in unscoped_matches] == ["rank_first", "rank_third_wrong_folder", "rank_fourth"]
+
+
+def test_tc_src_15_list_critiques_over_35k_ids_avoids_sqlite_limit_and_preserves_order(db_session):
+    _seed_photo(db_session, "crt_low", "low.jpg", "Low", '["a"]')
+    _seed_photo(db_session, "crt_high_old", "high_old.jpg", "High old", '["a"]')
+    _seed_photo(db_session, "crt_high_new", "high_new.jpg", "High new", '["a"]')
+    _seed_photo(db_session, "crt_null_score", "null.jpg", "Null", '["a"]')
+
+    repo = PhotoRepository(db_session)
+    repo.upsert_critique("crt_low", "Critique low", datetime(2026, 1, 3, 12, 0, 0), overall_score=0.0)
+    repo.upsert_critique("crt_high_old", "Critique high old", datetime(2026, 1, 1, 12, 0, 0), overall_score=90.0)
+    repo.upsert_critique("crt_high_new", "Critique high new", datetime(2026, 1, 2, 12, 0, 0), overall_score=90.0)
+    repo.upsert_critique("crt_null_score", "Critique null", datetime(2026, 1, 4, 12, 0, 0), overall_score=None)
+
+    bulk_ids = [f"missing_{idx}" for idx in range(35000)] + [
+        "crt_low",
+        "crt_high_old",
+        "crt_high_old",
+        "crt_high_new",
+        "crt_null_score",
+    ]
+    rows = repo.list_critiques(sort_by="overall_score", photo_ids=bulk_ids)
+    assert [img.id for _, img, _ in rows] == ["crt_high_new", "crt_high_old", "crt_low", "crt_null_score"]
+
+
+def test_tc_src_15_negative_and_out_of_range_pagination_validation(client, db_session):
+    _seed_photo(db_session, "page_guard_1", "guard1.jpg", "Sunset", '["sunset"]')
+    _seed_photo(db_session, "page_guard_2", "guard2.jpg", "Sunset", '["sunset"]')
+
+    invalid_payloads = [
+        {"query": "sunset", "limit": -1, "offset": 0},
+        {"query": "sunset", "limit": 0, "offset": 0},
+        {"query": "sunset", "limit": 501, "offset": 0},
+        {"query": "sunset", "limit": 10, "offset": -1},
+    ]
+    for payload in invalid_payloads:
+        resp = client.post("/api/search", json=payload)
+        assert resp.status_code == 422
+        assert isinstance(resp.json()["detail"], list)
+
+        similar_resp = client.post(
+            "/api/search/similar",
+            json={"photo_id": "page_guard_1", "limit": payload["limit"], "offset": payload["offset"]},
+        )
+        assert similar_resp.status_code == 422
+        assert isinstance(similar_resp.json()["detail"], list)
+
+    repo = PhotoRepository(db_session)
+    assert repo.filter_and_paginate(None, None, offset=0, limit=0) == []
+    assert repo.filter_and_paginate(None, None, offset=0, limit=-10) == []
+    direct_results = repo.filter_and_paginate(None, None, offset=-5, limit=10)
+    assert {img.id for img in direct_results} == {"page_guard_1", "page_guard_2"}
+
+
+def test_tc_src_15_exif_ilike_wildcard_escape_whitespace_and_deterministic_tie_breaker(client, db_session):
+    same_timestamp = datetime(2026, 5, 10, 12, 0, 0)
+    samples = [
+        ("burst_c", "c.jpg", "NIKON Z6_2", "NIKKOR 24_70mm 100%", same_timestamp),
+        ("burst_a", "a.jpg", "Z6_2", "RF 50% Macro", same_timestamp),
+        ("burst_b", "b.jpg", "Z6X2", "RF 500 Macro", same_timestamp),
+        ("null_z", "z.jpg", "Z6_2", "Prime", None),
+        ("null_d", "d.jpg", "Z6_2", "Prime", None),
+    ]
+    for photo_id, file_name, camera_model, lens_model, capture_dt in samples:
+        db_session.add(
+            Image(
+                id=photo_id,
+                parent_dir="/burst",
+                file_path=f"/burst/{file_name}",
+                file_name=file_name,
+                file_size=100,
+                file_mtime=time.time(),
+                mime_type="image/jpeg",
+            )
+        )
+        db_session.add(
+            ImageMetadata(
+                image_id=photo_id,
+                camera_model=camera_model,
+                lens_model=lens_model,
+                capture_date=capture_dt,
+            )
+        )
+    db_session.commit()
+
+    underscore_resp = client.post(
+        "/api/search",
+        json={"filters": {"camera_model": "Z6_2"}, "limit": 10, "offset": 0},
+    )
+    assert underscore_resp.status_code == 200
+    assert [item["id"] for item in underscore_resp.json()] == [
+        "burst_a",
+        "burst_c",
+        "null_d",
+        "null_z",
+    ]
+
+    page_1 = client.post(
+        "/api/search",
+        json={"filters": {"camera_model": "Z6_2"}, "limit": 2, "offset": 0},
+    )
+    page_2 = client.post(
+        "/api/search",
+        json={"filters": {"camera_model": "Z6_2"}, "limit": 2, "offset": 2},
+    )
+    assert [item["id"] for item in page_1.json()] == ["burst_a", "burst_c"]
+    assert [item["id"] for item in page_2.json()] == ["null_d", "null_z"]
+
+    lens_percent_resp = client.post(
+        "/api/search",
+        json={"filters": {"lens_model": "50%"}, "limit": 10, "offset": 0},
+    )
+    assert [item["id"] for item in lens_percent_resp.json()] == ["burst_a"]
+
+    blank_filter_resp = client.post(
+        "/api/search",
+        json={"filters": {"camera_model": "   ", "lens_model": ""}, "limit": 10, "offset": 0},
+    )
+    assert blank_filter_resp.status_code == 200
+    assert len(blank_filter_resp.json()) == 5
+    assert [item["id"] for item in blank_filter_resp.json()] == [
+        "burst_a",
+        "burst_b",
+        "burst_c",
+        "null_d",
+        "null_z",
+    ]
+

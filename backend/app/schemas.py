@@ -1,7 +1,7 @@
 from datetime import date, datetime, time
 import re
 from typing import Any, List, Optional
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 _DATE_ONLY_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -127,15 +127,15 @@ class SearchRequest(BaseModel):
     query: Optional[str] = None
     filters: Optional[SearchFilter] = None
     parent_dir: Optional[str] = None
-    limit: int = 50
-    offset: int = 0
+    limit: int = Field(default=50, ge=1, le=500)
+    offset: int = Field(default=0, ge=0)
 
 class SimilarSearchRequest(BaseModel):
     photo_id: str
     filters: Optional[SearchFilter] = None
     parent_dir: Optional[str] = None
-    limit: int = 50
-    offset: int = 0
+    limit: int = Field(default=50, ge=1, le=500)
+    offset: int = Field(default=0, ge=0)
 
 class CritiqueRequest(BaseModel):
     photo_id: str

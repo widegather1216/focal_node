@@ -18,6 +18,7 @@ import {
   TriggerModelDownloadResponse,
 } from '../types/system';
 import { ExportResult, parseExportSseStream } from '../utils/exportStream';
+import { extractResponseErrorMessage } from '../utils/apiError';
 
 export type {
   CritiqueCancelResponse,
@@ -59,17 +60,8 @@ class ApiClient {
     return `http://127.0.0.1:${port}`;
   }
 
-  private async parseError(res: Response, defaultMsg: string): Promise<string> {
-    try {
-      const errorBody = await res.json();
-      if (errorBody?.detail) {
-        return String(errorBody.detail);
-      }
-      return res.statusText || defaultMsg;
-    } catch (error) {
-      console.debug('Failed to parse error response as JSON:', error);
-      return res.statusText || defaultMsg;
-    }
+  private async parseError(response: Response, defaultMessage: string): Promise<string> {
+    return extractResponseErrorMessage(response, defaultMessage);
   }
 
   async healthCheck(): Promise<HealthCheckResponse> {
