@@ -185,11 +185,11 @@ def _prepare_photo_models(image_data: dict, metadata_data: dict, ai_data: dict) 
     
     tags = ai_data.get("tags")
     if isinstance(tags, list):
-        ai_data["tags"] = json.dumps(tags)
+        ai_data["tags"] = json.dumps(tags, ensure_ascii=False)
     
     aesthetic_tags = ai_data.get("aesthetic_tags")
     if isinstance(aesthetic_tags, list):
-        ai_data["aesthetic_tags"] = json.dumps(aesthetic_tags)
+        ai_data["aesthetic_tags"] = json.dumps(aesthetic_tags, ensure_ascii=False)
         
     db_ai = DBAIAnalysis(image_id=image_id, **ai_data)
     return db_image, db_metadata, db_ai

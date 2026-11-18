@@ -61,8 +61,8 @@ def _update_ai_analysis_orm(db_session: Session, photo_id: str, ai_result: dict)
         db_ai = DBAIAnalysis(image_id=photo_id)
         db_session.add(db_ai)
     db_ai.caption = ai_result.get("caption", "")
-    db_ai.tags = json.dumps(ai_result.get("tags", []))
-    db_ai.aesthetic_tags = json.dumps(ai_result.get("aesthetic_tags", []))
+    db_ai.tags = json.dumps(ai_result.get("tags", []), ensure_ascii=False)
+    db_ai.aesthetic_tags = json.dumps(ai_result.get("aesthetic_tags", []), ensure_ascii=False)
     db_ai.is_user_edited = False
 
 

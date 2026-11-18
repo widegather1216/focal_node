@@ -228,7 +228,7 @@ class PhotoRepository:
             self.db.add(ai_record)
 
         ai_record.caption = caption
-        ai_record.tags = json.dumps(tags)
+        ai_record.tags = json.dumps(tags, ensure_ascii=False)
         ai_record.is_user_edited = True
         self.db.commit()
         self.db.refresh(ai_record)

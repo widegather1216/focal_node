@@ -1,3 +1,4 @@
+import json
 import logging
 import threading
 import time
@@ -5,8 +6,14 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import torch
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
+from database import Base, run_migrations
 from models import AIAnalysis, Image, ImageMetadata
+from repositories.photo_repository import PhotoRepository
+from services.photo import register_photos_batch_atomic
+from services.photo_reindex import _update_ai_analysis_orm
 from services.siglip_adapter import SigLIP2Adapter
 
 
@@ -216,3 +223,126 @@ def test_tc_src_08_search_photos_long_query_uses_siglip_truncation(client, db_se
     assert response.status_code == 200
     assert [item["id"] for item in response.json()] == ["long_query_match"]
     mock_collection.query.assert_called_once()
+
+
+def _build_batch_photo_item(photo_id: str, file_name: str, tags: list[str], aesthetic_tags: list[str]) -> dict:
+    return {
+        "image_data": {
+            "id": photo_id,
+            "parent_dir": "/test",
+            "file_path": f"/test/{file_name}",
+            "file_name": file_name,
+            "file_size": 1024,
+            "file_mtime": time.time(),
+            "mime_type": "image/jpeg",
+        },
+        "metadata_data": {
+            "iso": 200,
+            "f_number": 2.8,
+            "focal_length": 50.0,
+        },
+        "ai_data": {
+            "caption": "Coastal twilight scene",
+            "tags": tags,
+            "aesthetic_tags": aesthetic_tags,
+            "is_user_edited": False,
+        },
+        "embedding": None,
+    }
+
+
+def test_tc_src_09_korean_tags_sqlite_search_and_siglip_fallback(client, db_session, monkeypatch):
+    register_photos_batch_atomic(
+        db_session,
+        [_build_batch_photo_item("idx_ko_1", "indexed_ko.jpg", ["바다", "노을"], ["골든아워", "역광"])],
+    )
+
+    _seed_photo(
+        db_session,
+        photo_id="edit_ko_2",
+        file_name="edited_ko.jpg",
+        caption="Shoreline horizon",
+        tags_json='["ocean"]',
+    )
+    photo_repo = PhotoRepository(db_session)
+    patch_resp = client.patch(
+        "/api/photos/edit_ko_2/metadata",
+        json={"caption": "Shoreline horizon", "tags": ["바다", "노을"]},
+    )
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["ai_analysis"]["tags"] == ["바다", "노을"]
+
+    _seed_photo(
+        db_session,
+        photo_id="reindex_ko_3",
+        file_name="reindexed_ko.jpg",
+        caption="Evening waves",
+        tags_json='["ocean"]',
+    )
+    _update_ai_analysis_orm(
+        db_session,
+        "reindex_ko_3",
+        {"caption": "Evening waves", "tags": ["바다", "노을"], "aesthetic_tags": ["미니멀리즘"]},
+    )
+    db_session.commit()
+
+    for photo_id in ("idx_ko_1", "edit_ko_2", "reindex_ko_3"):
+        image_row = photo_repo.get_by_id(photo_id)
+        assert image_row is not None
+        assert "\\u" not in (image_row.ai_analysis_rel.tags or "")
+        detail = image_row.to_detail_dict()
+        assert detail["ai_analysis"]["tags"] == ["바다", "노을"]
+
+    indexed_row = photo_repo.get_by_id("idx_ko_1")
+    reindexed_row = photo_repo.get_by_id("reindex_ko_3")
+    assert "\\u" not in (indexed_row.ai_analysis_rel.aesthetic_tags or "")
+    assert "\\u" not in (reindexed_row.ai_analysis_rel.aesthetic_tags or "")
+    assert indexed_row.to_detail_dict()["ai_analysis"]["aesthetic_tags"] == ["골든아워", "역광"]
+    assert reindexed_row.to_detail_dict()["ai_analysis"]["aesthetic_tags"] == ["미니멀리즘"]
+
+    matched_ids = set(photo_repo.search_by_text("바다"))
+    assert matched_ids == {"idx_ko_1", "edit_ko_2", "reindex_ko_3"}
+
+    def raise_missing_model():
+        raise RuntimeError("SigLIP 2 model weights are not installed")
+
+    monkeypatch.setattr("services.search_service.get_siglip_adapter", raise_missing_model)
+    response = client.post("/api/search", json={"query": "바다", "limit": 10, "offset": 0})
+    assert response.status_code == 200
+    assert {item["id"] for item in response.json()} == {"idx_ko_1", "edit_ko_2", "reindex_ko_3"}
+
+
+def test_tc_src_09_run_migrations_normalizes_escaped_ai_tags_and_skips_malformed(caplog):
+    fresh_engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(bind=fresh_engine)
+    session_factory = sessionmaker(autocommit=False, autoflush=False, bind=fresh_engine)
+
+    escaped_tags = json.dumps(["바다", "노을"], ensure_ascii=True)
+    escaped_aesthetic = json.dumps(["골든아워", "역광"], ensure_ascii=True)
+    malformed_tags = '["\\ubc14\\ub2e4"'
+
+    with session_factory() as session:
+        _seed_photo(session, "legacy_ko_1", "legacy1.jpg", "Evening coast", escaped_tags)
+        analysis_1 = session.query(AIAnalysis).filter(AIAnalysis.image_id == "legacy_ko_1").first()
+        analysis_1.aesthetic_tags = escaped_aesthetic
+
+        _seed_photo(session, "legacy_bad_2", "legacy2.jpg", "Broken tags", malformed_tags)
+        analysis_2 = session.query(AIAnalysis).filter(AIAnalysis.image_id == "legacy_bad_2").first()
+        analysis_2.aesthetic_tags = json.dumps(["미니멀"], ensure_ascii=True)
+        session.commit()
+        assert PhotoRepository(session).search_by_text("바다") == []
+
+    with caplog.at_level(logging.WARNING, logger="database"):
+        run_migrations(fresh_engine)
+
+    with session_factory() as session:
+        migrated_1 = session.query(AIAnalysis).filter(AIAnalysis.image_id == "legacy_ko_1").first()
+        migrated_2 = session.query(AIAnalysis).filter(AIAnalysis.image_id == "legacy_bad_2").first()
+        assert migrated_1.tags == '["바다", "노을"]'
+        assert migrated_1.aesthetic_tags == '["골든아워", "역광"]'
+        assert migrated_2.tags == malformed_tags
+        assert migrated_2.aesthetic_tags == '["미니멀"]'
+        assert PhotoRepository(session).search_by_text("바다") == ["legacy_ko_1"]
+
+    assert "legacy_bad_2" in caplog.text
+    run_migrations(fresh_engine)

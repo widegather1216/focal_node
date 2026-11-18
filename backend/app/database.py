@@ -1,5 +1,7 @@
 """SQLAlchemy engine configuration, WAL pragmas, and non-destructive schema migrations."""
 
+import json
+import logging
 import os
 from typing import Callable, Optional
 
@@ -8,6 +10,8 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from config import CONFIG_DIR, DATABASE_URL
+
+logger = logging.getLogger(__name__)
 
 os.makedirs(CONFIG_DIR, exist_ok=True)
 
@@ -80,6 +84,7 @@ def run_migrations(bind_engine=None) -> None:
         _execute_migration_sql(target_engine, col_sql)
     _backfill_critique_scores(target_engine)
     _backfill_adaptive_overall_scores(target_engine)
+    _normalize_escaped_ai_tags(target_engine)
 
 
 def _resolve_scoreboard_parser() -> Optional[Callable]:
@@ -188,6 +193,64 @@ def _backfill_adaptive_overall_scores(target_engine) -> None:
                 print(f"[Database] Successfully backfilled adaptive overall_score for {update_count} critique records.", flush=True)
     except Exception as err:
         print(f"[Database] Warning: Failed to backfill adaptive overall scores: {err}", flush=True)
+
+
+def _normalize_tag_json_column(raw_value: Optional[str], image_id: str, column_name: str) -> Optional[str]:
+    """Decodes escaped \\uXXXX sequences in a JSON tag column into UTF-8 JSON."""
+    if not raw_value or "\\u" not in raw_value:
+        return None
+    try:
+        parsed_tags = json.loads(raw_value)
+        normalized = json.dumps(parsed_tags, ensure_ascii=False)
+        normalized.encode("utf-8")
+    except (json.JSONDecodeError, TypeError, ValueError, UnicodeEncodeError) as parse_err:
+        logger.warning(
+            "[Database] Skipping malformed %s JSON for image %s: %s",
+            column_name,
+            image_id,
+            parse_err,
+        )
+        return None
+    return normalized if normalized != raw_value else None
+
+
+def _apply_ai_tag_normalization_row(conn, row: tuple) -> bool:
+    image_id, raw_tags, raw_aesthetic_tags = row
+    updated_tags = _normalize_tag_json_column(raw_tags, image_id, "tags")
+    updated_aesthetic = _normalize_tag_json_column(raw_aesthetic_tags, image_id, "aesthetic_tags")
+    if updated_tags is None and updated_aesthetic is None:
+        return False
+    conn.execute(
+        text(
+            "UPDATE ai_analysis SET tags = :tags, aesthetic_tags = :aesthetic_tags "
+            "WHERE image_id = :image_id"
+        ),
+        {
+            "tags": raw_tags if updated_tags is None else updated_tags,
+            "aesthetic_tags": raw_aesthetic_tags if updated_aesthetic is None else updated_aesthetic,
+            "image_id": image_id,
+        },
+    )
+    return True
+
+
+def _normalize_escaped_ai_tags(target_engine) -> None:
+    """Normalizes legacy \\uXXXX-escaped JSON strings in ai_analysis tags columns."""
+    try:
+        with target_engine.begin() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT image_id, tags, aesthetic_tags FROM ai_analysis "
+                    "WHERE (tags IS NOT NULL AND instr(tags, :needle) > 0) "
+                    "OR (aesthetic_tags IS NOT NULL AND instr(aesthetic_tags, :needle) > 0)"
+                ),
+                {"needle": "\\u"},
+            ).fetchall()
+            update_count = sum(1 for row in rows if _apply_ai_tag_normalization_row(conn, row))
+            if update_count > 0:
+                logger.info("[Database] Normalized escaped AI tags for %d records.", update_count)
+    except Exception as err:
+        logger.warning("[Database] Failed to normalize escaped AI tags: %s", err)
 
 
 def get_db():
