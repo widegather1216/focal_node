@@ -1,8 +1,8 @@
 # 🧪 [01_indexing_storage] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-14~17 해결 대기)`
+- **검증 상태**: `🩹 Debugging (DEFECT-15~17 해결 대기)`
 - **인수 조건 통과율**: `1 / 4 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 4건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 3건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -62,7 +62,7 @@
 | **Security**| `TC-IDX-17` | 폴더 삭제 시 미등록 상위 경로 재귀 삭제 차단 | DELETE /api/folders?path=/ | 미등록 상위 경로 요청 거부 및 데이터 보호 | `PASS (Fixed in DEFECT-11)` |
 | **Boundary**| `TC-IDX-18` | 인덱싱 취소 직후 폴더 삭제 및 재시작 동시성 격리 | 워커 스레드 실행 중 cancel ➔ delete/start | 인플라이트 워커 종료 전 삭제/재시작 차단 및 좀비 방지 | `PASS (Fixed in DEFECT-12)` |
 | **Happy** | `TC-IDX-19` | 폴더 필터 조회 시 하위 디렉터리 및 NFD/NFC 정규화 | 하위 폴더/한글 NFD 포함 폴더 선택 | 하위 디렉터리 및 NFD/NFC 사진 정상 조회 | `PASS (Fixed in DEFECT-13)` |
-| **Boundary**| `TC-IDX-20` | 단일 사진 재분석 캐시 동기화 및 사진 전환 격리 | 상세 재분석 중 타 사진 선택 또는 완료 대기 | `photoDetail` 캐시 즉시 갱신 및 전환 후 버퍼 오염 차단 | `FAIL (DEFECT-14)` |
+| **Boundary**| `TC-IDX-20` | 단일 사진 재분석 캐시 동기화 및 사진 전환 격리 | 상세 재분석 중 타 사진 선택 또는 완료 대기 | `photoDetail` 캐시 즉시 갱신 및 전환 후 버퍼 오염 차단 | `PASS (Fixed in DEFECT-14)` |
 | **Boundary**| `TC-IDX-21` | 상세 패널/갤러리 즐겨찾기 토글 양방향 캐시 동기화 | 폴더 선택 중 상세 패널 하트 토글 | `photos` 및 `photoDetail` 캐시 모두 서버 상태와 일치 | `FAIL (DEFECT-15)` |
 | **Boundary**| `TC-IDX-22` | 내보내기 중 전체 선택 해제 시 피드백 누수 차단 | SSE 내보내기 진행 중 선택 해제 후 새 사진 선택 | 진행 중 요청 중단 및 이전 실패/완료 배너 잔류 차단 | `FAIL (DEFECT-16)` |
 | **Boundary**| `TC-IDX-23` | 초장축 세로 파노라마 썸네일 JPEG 65,500px 상한 방어 | 10x5000 또는 100x20000 이미지 썸네일 생성 | libjpeg 65,500px 초과 OSError 없이 썸네일 생성 | `FAIL (DEFECT-17)` |
@@ -119,10 +119,11 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_backend_hardening.py -k test_tc_idx_19 -v` (`1 passed`), `./venv/bin/pytest backend/tests/test_api_photos.py backend/tests/test_api_folders.py backend/tests/test_api_search.py backend/tests/test_backend_hardening.py -k "not test_base_keep_alive_model_lifecycle" -v` (`55 passed, 1 deselected`), `./venv/bin/pytest backend/tests/ -k "not test_base_keep_alive_model_lifecycle" -q` (`169 passed, 1 deselected`), `npx tsc --noEmit && npm run build` (`PASS`, `0 Errors`)
 
 ### [DEFECT-14] `usePhotoDetail.handleReindex`의 React Query `photoDetail` 캐시 미갱신 및 사진 전환 시 타 사진 편집 버퍼 오염
-- **현재 상태**: 🟡 OPEN
-- **심각도**: 🟠 P1 High (Stale Cache & Cross-Item State Corruption)
-- **발생 위치**: [`src/hooks/usePhotoDetail.ts#L246-L258`](../../../src/hooks/usePhotoDetail.ts#L246-L258), [`src/hooks/usePhotoDetailQuery.ts#L6-L18`](../../../src/hooks/usePhotoDetailQuery.ts#L6-L18)
-- **증상 및 재현**: 재분석 성공 시 `['photoDetail', targetId]` 캐시(`staleTime: 5m`) 및 `['photos']`를 갱신하지 않아 구 데이터가 유지되며, 비동기 대기 중 다른 사진 선택 시 새 사진의 편집 버퍼가 덮어쓰여짐 (`✅ Deterministic Trace Verified`).
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 및 신설 파일**: [`src/utils/photoReindex.ts`](../../../src/utils/photoReindex.ts), [`src/hooks/usePhotoDetail.ts`](../../../src/hooks/usePhotoDetail.ts), [`src/components/DetailPanel.tsx`](../../../src/components/DetailPanel.tsx), [`src/components/detail/PhotoAiAnalysisView.tsx`](../../../src/components/detail/PhotoAiAnalysisView.tsx), [`tests/frontend/photoReindex.test.mjs`](../../../tests/frontend/photoReindex.test.mjs)
+  - **원인 및 조치**: Devil's Advocate 검증을 반영해 순수 재분석 상태/캐시 오케스트레이터 [`src/utils/photoReindex.ts`](../../../src/utils/photoReindex.ts)를 신설하고, `executePhotoReindex`가 `cancelQueries(['photoDetail', targetId])` 선행 취소 후 `setQueryData(['photoDetail', targetId], updatedPhoto)` 및 `['photos']`·`['analyticsStats']`·`['critiques']` 무효화를 사진 전환·언마운트 여부와 무관하게 확정 반영하도록 교정함. [`src/hooks/usePhotoDetail.ts`](../../../src/hooks/usePhotoDetail.ts)의 단일 `reindexing` 불리언을 사진별 `reindexingPhotoIds(Set<string>)` 및 `reindexingErrors(Record<string, string>)`로 격리하고, `inFlightReindexIdsRef`·`reindexRequestSeqRef`·`isMountedRef`(StrictMode 대응) 및 `useAppStore.getState().selectedPhotoId` 실시간 조회 가드로 사진 전환 시 타 사진 편집 버퍼 오염과 중복 클릭·오류 누수를 차단했으며 `shouldSyncPhotoEditFields` 및 `selectedPhotoId` 변경 초기화로 편집 중 백그라운드 덮어쓰기를 방지함. [`src/components/detail/PhotoAiAnalysisView.tsx`](../../../src/components/detail/PhotoAiAnalysisView.tsx)에 `재분석 중...` 상태, 재분석 중 `[편집]`/`[저장]` 비활성화, 사진별 인라인 오류 배너(`reindexingError`) 및 닫기 버튼을 연동함.
+  - **회귀 테스트 결과**: `node --test tests/frontend/photoReindex.test.mjs` (`6 passed`), `npx tsc --noEmit && npm run build` (`PASS`, `0 Errors`), `./venv/bin/pytest backend/tests/test_api_photos.py backend/tests/test_api_folders.py backend/tests/test_api_search.py backend/tests/test_backend_hardening.py backend/tests/test_concurrency_hardening.py -k "not test_base_keep_alive_model_lifecycle" -v` (`69 passed, 1 deselected`)
 
 ### [DEFECT-15] `useToggleFavoriteMutation`의 `selectedFolder=null` 하드코딩 및 `photoDetail` 캐시 미동기화로 인한 하트 상태 불일치
 - **현재 상태**: 🟡 OPEN

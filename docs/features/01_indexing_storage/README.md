@@ -1,8 +1,8 @@
 # 💾 [01_indexing_storage] Indexing Pipeline, Storage & RAW Media
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-14~17 해결 대기)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-15~17 해결 대기)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 4건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 3건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -23,7 +23,7 @@
 - [x] SigLIP 2 768차원 임베딩/제로샷 힌트 추출, Gemma 4 캡션/태그 생성 및 ChromaDB + SQLite WAL 보상 트랜잭션
   - 📂 구현: [`pipeline.py`](../../../backend/app/services/pipeline.py), [`taxonomy.py`](../../../backend/app/services/taxonomy.py), [`atomic_transaction.py`](../../../backend/app/repositories/atomic_transaction.py) | 🧪 테스트: [`test_siglip_zero_shot.py`](../../../backend/tests/test_siglip_zero_shot.py) (`PASS`)
 - [x] RAW 원본 인메모리 스트리밍(`MAX_CONCURRENT_DECODES=3`), 단일 사진 재분석(`POST /api/photos/{id}/reindex`) 및 다중 사진 SSE 내보내기
-  - 📂 구현: [`photos.py`](../../../backend/app/api/photos.py), [`exportStream.ts`](../../../src/utils/exportStream.ts), [`usePhotoExport.ts`](../../../src/hooks/usePhotoExport.ts), [`ActionBar.tsx`](../../../src/components/ActionBar.tsx), [`ExportActionControls.tsx`](../../../src/components/actionbar/ExportActionControls.tsx), [`Sidebar.tsx`](../../../src/components/Sidebar.tsx) | 🧪 테스트: [`test_api_photos.py`](../../../backend/tests/test_api_photos.py), [`test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py) (`PASS`)
+  - 📂 구현: [`photos.py`](../../../backend/app/api/photos.py), [`photoReindex.ts`](../../../src/utils/photoReindex.ts), [`usePhotoDetail.ts`](../../../src/hooks/usePhotoDetail.ts), [`DetailPanel.tsx`](../../../src/components/DetailPanel.tsx), [`PhotoAiAnalysisView.tsx`](../../../src/components/detail/PhotoAiAnalysisView.tsx), [`exportStream.ts`](../../../src/utils/exportStream.ts), [`usePhotoExport.ts`](../../../src/hooks/usePhotoExport.ts), [`ActionBar.tsx`](../../../src/components/ActionBar.tsx), [`ExportActionControls.tsx`](../../../src/components/actionbar/ExportActionControls.tsx), [`Sidebar.tsx`](../../../src/components/Sidebar.tsx) | 🧪 테스트: [`test_api_photos.py`](../../../backend/tests/test_api_photos.py), [`test_backend_hardening.py`](../../../backend/tests/test_backend_hardening.py), [`photoReindex.test.mjs`](../../../tests/frontend/photoReindex.test.mjs) (`PASS`)
 
 ### 🚀 Active Iteration: 스마트 오프라인, SHA-256 Relocation & 2-Pass 점진적 인덱싱 `[To-Be]`
 - [ ] **Step 1 [DB & Types]**: `models.py`의 `Image`에 `is_offline: Boolean` 컬럼/마이그레이션 추가, `IndexingStatusResponse`에 `phase: "fast_preview" | "ai_enrichment"` 추가 및 `src/types/photo.ts` 동기화
@@ -35,9 +35,11 @@
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **직전 완료 작업**: `2026-11-17 / systematic-debugger / 01_indexing_storage DEFECT-13 해결 및 회귀 검증 완료`
+- **직전 완료 작업**: `2026-11-18 / systematic-debugger / 01_indexing_storage DEFECT-14 해결 및 회귀 검증 완료`
 - **Working Tree State**: 🟢 Clean (No uncommitted changes)
 - **Recent Commits (2026-11-18)**:
+  - `f7a783d` - `fix(ui): sync photoDetail cache and isolate reindex state per photo`
+  - `51dc5b0` - `docs(indexing): mark DEFECT-13 resolved and sync path helper architecture`
   - `bfe3444` - `fix(storage): match subfolders and NFD/NFC paths in PhotoRepository.list_photos`
   - `5983af5` - `docs(indexing): mark DEFECT-12 resolved and sync wiki handoff`
   - `6d2ca99` - `fix(ui): handle cancelling indexing state and prevent terminal event races`
@@ -57,6 +59,7 @@
   - `6ffe113` - `fix(indexing): propagate batch commit errors and isolate run lifecycle`
   - `6cba0eb` - `fix(ui): surface indexing errors in tauri bridge and progress card`
 - **해결된 결함 (Resolved Defect)**:
+  - `DEFECT-14`: 순수 재분석 오케스트레이터 [`src/utils/photoReindex.ts`](../../../src/utils/photoReindex.ts)를 신설해 `cancelQueries(['photoDetail', targetId])` 후 `setQueryData(['photoDetail', targetId], updatedPhoto)` 및 `['photos']`·`['analyticsStats']`·`['critiques']` 무효화를 사진 전환·언마운트와 무관하게 확정 반영하도록 교정함. [`src/hooks/usePhotoDetail.ts`](../../../src/hooks/usePhotoDetail.ts)에서 단일 `reindexing` 불리언을 사진별 `reindexingPhotoIds(Set)`·`reindexingErrors(Record)`로 격리하고 `inFlightReindexIdsRef`·`reindexRequestSeqRef`·`isMountedRef`(StrictMode 대응)·`useAppStore.getState().selectedPhotoId` 실시간 가드·`shouldSyncPhotoEditFields`를 적용해 사진 전환 시 편집 버퍼 오염과 중복 클릭·오류 누수·편집 중 백그라운드 덮어쓰기를 차단했으며, [`src/components/DetailPanel.tsx`](../../../src/components/DetailPanel.tsx) 및 [`src/components/detail/PhotoAiAnalysisView.tsx`](../../../src/components/detail/PhotoAiAnalysisView.tsx)에 `재분석 중...` 상태, 재분석 중 `[편집]`/`[저장]` 비활성화, 사진별 인라인 오류 배너/닫기 버튼을 연동함(신규 단위/회귀 테스트 `TC-IDX-20` [`tests/frontend/photoReindex.test.mjs`](../../../tests/frontend/photoReindex.test.mjs) `6 passed`·`tsc && vite build`·관련 `pytest` `69 passed, 1 deselected` PASS).
   - `DEFECT-13`: 단방향 계층 의존성을 유지하도록 [`backend/app/utils/path.py`](../../../backend/app/utils/path.py)를 신설해 `folder_manager.py`와 공유하는 리프 심볼릭 링크 비확장 NFC/대소문자/말단슬래시 정규화 및 slash-bounded 접두어 매칭 유틸리티를 분리함. [`backend/app/repositories/photo_repository.py`](../../../backend/app/repositories/photo_repository.py)의 `list_photos`가 `parent_dir` 지정 시 `capture_date DESC NULLS LAST, id ASC` 정렬된 `(id, parent_dir)` 경량 투영을 디렉터리 캐시 기반 `_filter_matching_photo_ids`로 필터링하고 `offset:offset+limit` 슬라이스 ID만 `get_by_ids`로 복원하도록 교정해 하위 폴더·NFD/NFC 불일치 누락, 형제 폴더 오매칭 및 페이지네이션 왜곡을 해소함(신규 회귀 테스트 `TC-IDX-19`·전체 백엔드 `169 passed, 1 deselected`·`tsc && vite build` PASS).
   - `DEFECT-12`: `backend/app/services/indexing_state.py`에 `_in_flight_run_id`·`active_run_in_flight`·`_active_folder_deletions` 상호 배제 슬롯·`rollback_preempted_start`를 도입하고, `run_indexing_background`가 `initialize_background_run(..., track_execution=True)`로 진입한 뒤 `cancel()` 호출 시 인플라이트 워커 종료 전까지 `"cancelling"` 드레인 상태(2연타 멱등 `True`, 미실행 테스트/호출은 즉시 `"cancelled"` 유지)를 유지하다가 `finalize_run` 시점에만 `"cancelled"` 및 `active_run_in_flight=False`로 해제하도록 교정함. `folder_manager.py`(`execute_folder_deletion` ↔ `try_start_indexing` 상호배제 `409`/`400`), `pipeline.py`(스텝별 취소 가드), `indexing_service.py`(`_ACTIVE_RUN_ID_CTX` 전파·`_commit_batch_with_retry` 재시도 취소 중단·스캔 후 취소 로그 차단), `api/indexing.py`(`rollback_preempted_start`), 프론트엔드(`src/types/system.ts`, `src/store/useAppStore.ts`, `src/hooks/useIndexingStatus.ts`, `src/hooks/useTauriEvents.ts`, `src/components/sidebar/IndexingProgressCard.tsx`)의 `'cancelling'` 잠금/500ms 폴링/Tauri-Polling `terminalEventSeq` 역전 차단을 연동함(신규 회귀 테스트 `TC-IDX-18` 3종·전체 백엔드 `168 passed, 1 deselected`·`tsc && vite build` PASS).
   - `DEFECT-11`: `backend/app/services/indexing_service.py` 및 `backend/app/api/folders.py`에서 빈/공백/상대/널바이트 경로를 `400`으로 사전 차단하고 `_resolve_path_without_leaf_symlink`·`_normalize_folder_deletion_path`로 리프 심볼릭 링크 확장 없이 NFC/NFD 및 말단 슬래시를 정규화한 뒤, 등록된 `IndexedFolder`와 **정확히 일치**하는 경우에만 삭제를 허용하도록 교정함(미등록 상위/루트/형제 경로 `FolderNotRegisteredError` -> `404`, 활성 인덱싱 중 삭제 `FolderDeletionConflictError` -> `409`, DB/ChromaDB 오류 롤백 후 재전파 -> `500`, 교차 파일 심볼릭 링크 및 형제 접두어 폴더 보존). 프론트엔드 `src/store/useAppStore.ts`(`removeFolder` 에러 전파·404 동기화), `src/components/sidebar/FolderList.tsx`(`isIndexing` 삭제 비활성화·실패 시 선택 유지 및 알림), `src/components/Sidebar.tsx`를 연동함(신규 회귀 테스트 `TC-IDX-17` 2종 및 `test_api_folders.py` 5종 포함 백엔드 151종·`tsc && vite build` 전수 통과).
@@ -73,9 +76,9 @@
 - **잔여 우선순위 리팩토링 (Open REFACTOR Logs)**: `없음 (0건)`
   - `REFACTOR-02` (`🟢 RESOLVED`): `folder_manager.py`(333줄)·`photo_reindex.py`(167줄) SRP 분리 및 `indexing_service.py`(494줄) 위임 래퍼 유지, `_commit_batch_with_retry`/`run_indexing_background`/`_stream_export_events` 헬퍼 분할, `usePhotoExport.ts`(148줄)·`ExportActionControls.tsx`(211줄)·`ActionBar.tsx`(62줄) 및 `SidebarViewTabs.tsx`(91줄)·`SidebarSearchControls.tsx`(98줄)·`SidebarFolderActions.tsx`(138줄)·`Sidebar.tsx`(86줄) 분할, `IndexingProgressCard.tsx`·`SidebarFolderActions.tsx` `unknown` 예외 처리 및 `exportStream.ts#L69` `console.debug` 로깅 추가.
 - **검증 완료된 테스트 실행 명령어**:
-  - `./venv/bin/pytest backend/tests/test_api_photos.py backend/tests/test_api_folders.py backend/tests/test_api_search.py backend/tests/test_backend_hardening.py -k "not test_base_keep_alive_model_lifecycle" -v` (`55 passed, 1 deselected`)
-  - `./venv/bin/pytest backend/tests/ -k "not test_base_keep_alive_model_lifecycle" -q` (`169 passed, 1 deselected`)
+  - `node --test tests/frontend/photoReindex.test.mjs` (`6 passed`)
   - `npx tsc --noEmit && npm run build` (`PASS`, `0 Errors`)
+  - `./venv/bin/pytest backend/tests/test_api_photos.py backend/tests/test_api_folders.py backend/tests/test_api_search.py backend/tests/test_backend_hardening.py backend/tests/test_concurrency_hardening.py -k "not test_base_keep_alive_model_lifecycle" -v` (`69 passed, 1 deselected`)
   - `python3 -B ~/.gemini/config/skills/interactive-feature-planner/scripts/check_wiki_health.py docs` (`exit 0`)
 - **다음 세션 포커스 및 추천 프롬프트**:
-  - `DEFECT-14~17` 순차 해결 (`systematic-debugger`): `"01_indexing_storage 도메인의 DEFECT-14 티켓 해결해줘"`
+  - `DEFECT-15~17` 순차 해결 (`systematic-debugger`): `"01_indexing_storage 도메인의 DEFECT-15 티켓 해결해줘"`
