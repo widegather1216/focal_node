@@ -1,8 +1,8 @@
 # 🧪 [02_search_curation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-01 해결 완료 — DEFECT-02~10 해결 대기)`
+- **검증 상태**: `🩹 Debugging (DEFECT-01~02 해결 완료 — DEFECT-03~10 해결 대기)`
 - **인수 조건 통과율**: `1 / 3 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 9건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 8건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -42,7 +42,7 @@
 | **Boundary**| `TC-SRC-06` | 무관한 검색어 거리 임계값 절삭 (`[To-Be]`) | 존재하지 않는 피사체 검색 (`d > 0.88`) | 무관한 하위 사진 절삭 및 빈 목록 반환 | `⏳ Pending` |
 | **Happy** | `TC-SRC-07` | 35mm 환산 화각 & 비평 점수 필터 (`[To-Be]`) | APS-C 23mm(환산 35mm) + IAA>=85 필터 | 크롭 바디 35mm 환산 사진 포함 반환 | `⏳ Pending` |
 | **Boundary**| `TC-SRC-08` | SigLIP 2 >64토큰 검색어 트런케이션 (`DEFECT-01`) | 64토큰 초과 한국어/영문 자연어 검색 | `ValueError` 없이 임베딩 추출 및 정상 검색 | `PASS (Fixed in DEFECT-01)` |
-| **Boundary**| `TC-SRC-09` | 비ASCII(한글) 태그 `ensure_ascii=False` 검색 (`DEFECT-02`) | 한글 태그 저장/수정 후 SQLite 폴백 검색 | `\uXXXX` 이스케이프 없이 한글 태그 정상 매칭 | `FAIL (DEFECT-02)` |
+| **Boundary**| `TC-SRC-09` | 비ASCII(한글) 태그 `ensure_ascii=False` 검색 (`DEFECT-02`) | 한글 태그 저장/수정 후 SQLite 폴백 검색 | `\uXXXX` 이스케이프 없이 한글 태그 정상 매칭 | `PASS (Fixed in DEFECT-02)` |
 | **Boundary**| `TC-SRC-10` | `date_to` 날짜 문자열 종료일 전체 포함 (`DEFECT-03`) | `date_from=2025-11-18`, `date_to=2025-11-18` + `14:30` 촬영 | 종료일 `23:59:59`까지 당일 사진 포함 반환 | `FAIL (DEFECT-03)` |
 | **Happy** | `TC-SRC-11` | 검색/필터/`similar:` 시 `selectedFolder` 스코프 유지 (`DEFECT-04`) | 특정 폴더 선택 후 검색어/필터/유사사진 실행 | 선택한 폴더(및 하위) 내부 사진만 반환 | `FAIL (DEFECT-04)` |
 | **Boundary**| `TC-SRC-12` | 즐겨찾기 필터 해제 시 `undefined` 잔존 키 제거 (`DEFECT-05`) | 하트 필터 ON ➔ OFF 토글 후 배지/목록 확인 | 배지 소멸 및 `fetchPhotos(..., selectedFolder)` 복귀 | `FAIL (DEFECT-05)` |
@@ -64,9 +64,11 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_api_search.py backend/tests/test_siglip_zero_shot.py -v` (`11 passed`), `./venv/bin/pytest backend/tests/ -q` (`175 passed`)
 
 ### [DEFECT-02] `tags`/`aesthetic_tags` `ensure_ascii=True` 직렬화로 인한 한글 태그 SQLite 검색 및 SigLIP 폴백 불능
-- **현재 상태**: 🟡 OPEN (`🔴 P0 Critical`)
-- **발생 위치**: [`photo.py`](../../../backend/app/services/photo.py#L186-L194), [`photo_repository.py`](../../../backend/app/repositories/photo_repository.py#L220-L235), [`photo_reindex.py`](../../../backend/app/services/photo_reindex.py#L63-L66), [`database.py`](../../../backend/app/database.py#L75-L83)
-- **원인 및 재현**: `json.dumps(tags)` 기본 `ensure_ascii=True`로 저장되어 `["바다"]`가 `'["\\ubc14\\ub2e4"]'`로 저장되며 `AIAnalysis.tags.ilike('%바다%')`가 0건을 반환함. `ensure_ascii=False` 적용 및 `run_migrations()` 내 기존 `\uXXXX` 데이터 정규화 백필 필요.
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`photo.py`](../../../backend/app/services/photo.py#L186-L194), [`photo_repository.py`](../../../backend/app/repositories/photo_repository.py#L220-L235), [`photo_reindex.py`](../../../backend/app/services/photo_reindex.py#L57-L66), [`database.py`](../../../backend/app/database.py#L77-L88), [`test_api_search.py`](../../../backend/tests/test_api_search.py#L228-L348)
+  - **원인 및 조치**: `_prepare_photo_models`, `PhotoRepository.update_caption_and_tags`, `_update_ai_analysis_orm`에서 `json.dumps(...)` 기본 `ensure_ascii=True`로 `tags`/`aesthetic_tags`를 직렬화해 `["바다", "노을"]`이 `'["\\ubc14\\ub2e4", "\\ub178\\uc744"]'`로 저장되면서 `AIAnalysis.tags.ilike('%바다%')`가 0건을 반환하던 결함을 확인함. `backend/app/` 내 태그/미학태그 JSON 직렬화 전수 경로에 `ensure_ascii=False`를 적용(`_parse_json_list` 및 `to_detail_dict` 호환 100% 유지)하고, `database.py` `run_migrations()`에 [`_normalize_escaped_ai_tags`](../../../backend/app/database.py#L198-L253) 비파괴 백필을 추가해 기존 SQLite `\uXXXX` 데이터를 UTF-8 JSON으로 정규화하며 잘못된 JSON은 수정 없이 경고 로깅 후 안전 스킵하도록 조치함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_api_search.py -v` (`8 passed`), `./venv/bin/pytest backend/tests/ -q` (`177 passed`)
 
 ### [DEFECT-03] `date_to` 날짜 필터 자정(`00:00:00`) 절삭으로 종료일 당일 촬영 사진 전량 누락
 - **현재 상태**: 🟡 OPEN (`🔴 P0 Critical`)

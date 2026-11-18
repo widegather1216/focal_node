@@ -7,11 +7,11 @@
 
 ## 🎯 1. Current Spotlight (현재 포커스 & 다음 추천 액션)
 
-- **Active 도메인**: [`02_search_curation`](./features/02_search_curation/README.md) *(`DEFECT-01` 해결 완료 — `DEFECT-02~10` 해결 대기)*
-- **현재 단계 (Stage)**: `🩹 Debugging (02_search_curation DEFECT-02~10 해결)`
-- **직전 완료 작업**: [`02_search_curation`](./features/02_search_curation/README.md) `DEFECT-01` 결함 해결 완료 (`SigLIP2Adapter` `SIGLIP_TEXT_MAX_LENGTH=64`·`_resolve_text_max_length()`·`truncation=True` 적용 및 `get_zero_shot_hints` `ndarray` 안전 가드 교정, `TC-SRC-08` 4종 포함 전체 `pytest` `175 passed`)
+- **Active 도메인**: [`02_search_curation`](./features/02_search_curation/README.md) *(`DEFECT-01~02` 해결 완료 — `DEFECT-03~10` 해결 대기)*
+- **현재 단계 (Stage)**: `🩹 Debugging (02_search_curation DEFECT-03~10 해결)`
+- **직전 완료 작업**: [`02_search_curation`](./features/02_search_curation/README.md) `DEFECT-02` 결함 해결 완료 (`photo.py`·`photo_repository.py`·`photo_reindex.py` `tags`/`aesthetic_tags` `ensure_ascii=False` 적용 및 `database.py` `run_migrations()` `\uXXXX` 안전 정규화 백필, `TC-SRC-09` 2종 포함 전체 `pytest` `177 passed`)
 - **👉 다음 추천 프롬프트 (복사해서 바로 실행)**:
-  > `"02_search_curation 도메인의 DEFECT-02 티켓 해결해줘"` *(`systematic-debugger`로 남은 P0 Critical 티켓 순차 해결)*
+  > `"02_search_curation 도메인의 DEFECT-03 티켓 해결해줘"` *(`systematic-debugger`로 남은 P0 Critical 티켓 순차 해결)*
 
 ---
 
@@ -21,7 +21,7 @@
 | :--- | :--- | :---: | :---: | :---: | :--- |
 | 🏛️ [`00_core_foundation`](./features/00_core_foundation/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `12/12 (100%)` | `0 / 0` | `DEFECT-01~11`·`REFACTOR-01` 전수 해결 완료(`save_binary_file` 경로 검증·`tauri.conf.json` CSP 적용), Sign-Off 복귀 |
 | 💾 [`01_indexing_storage`](./features/01_indexing_storage/README.md) | 🛠️ Implementing | `[□□□□] 0/4` | `20/23 (87%)` | `0 / 0` | `DEFECT-01~17`·`REFACTOR-01~02` 전수 해결 완료(초장축 세로 썸네일 JPEG 65,500px 상한·RGB 정규화 방어), 스마트 오프라인·Relocation Step 1~4 대기 |
-| 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `3/17 (18%)` | `9 / 0` | `DEFECT-01` 해결(SigLIP 64토큰 트런케이션/`ndarray` 가드); `DEFECT-02~10` 해결 대기 |
+| 🔍 [`02_search_curation`](./features/02_search_curation/README.md) | 🩹 Debugging | `[□□□□] 0/4` | `4/17 (24%)` | `8 / 0` | `DEFECT-01~02` 해결(SigLIP 64토큰 트런케이션·한글 태그 `ensure_ascii=False` 및 백필); `DEFECT-03~10` 해결 대기 |
 | 🤖 [`03_ai_critique`](./features/03_ai_critique/README.md) | 🟢 Sign-Off | `[■■■■] 4/4` | `15/15 (100%)` | `0 / 0` | `DEFECT-01~03`·`REFACTOR-01~08` 전수 해결 완료 (Headless MPS/MLX 가드·ADR-05 레거시 정리·300줄 이하 분할), Sign-Off 완료 |
 | 📊 [`04_studio_ui_analytics`](./features/04_studio_ui_analytics/README.md) | 🛠️ Implementing | `[■■□□] 2/4` | `3/4 (75%)` | `0 / 0` | `REFACTOR-01~02` 전수 해결 완료(`src/` 전역 `any` 0건·`api.ts`/훅/컴포넌트 타입 엄격화), 차트 드릴다운 Step 3~4 대기 |
 
@@ -31,6 +31,8 @@
 ---
 
 ## 🕒 3. 최근 세션 타임라인 (Recent Session Changelog)
+
+- **`[2026-11-18]` `[systematic-debugger]` [`02_search_curation`]**: `DEFECT-02` 결함 해결 완료 (`backend/app/services/photo.py` `_prepare_photo_models`·`backend/app/repositories/photo_repository.py` `update_caption_and_tags`·`backend/app/services/photo_reindex.py` `_update_ai_analysis_orm`의 `tags`/`aesthetic_tags` `json.dumps`에 `ensure_ascii=False`를 적용해 한글 태그 `\uXXXX` 이스케이프 저장을 제거하고, `backend/app/database.py` `run_migrations()`에 `_normalize_escaped_ai_tags` 비파괴 백필을 추가해 기존 `\uXXXX` 레코드를 UTF-8 JSON으로 정규화하되 손상 JSON은 경고 로깅 후 안전 스킵하도록 조치; `TC-SRC-09` 회귀 테스트 2종(`test_api_search.py` `8 passed`) 및 전체 `pytest` `177 passed` 전수 PASS).
 
 - **`[2026-11-18]` `[systematic-debugger]` [`02_search_curation`]**: `DEFECT-01` 결함 해결 완료 (`backend/app/services/siglip_adapter.py`에 `SIGLIP_TEXT_MAX_LENGTH = 64` 및 `_resolve_text_max_length()`를 도입해 `get_text_embedding`과 `_precompute_taxonomy_embeddings`의 `self.processor(...)` 호출에 `padding="max_length", truncation=True, max_length=max_length`를 적용하여 `tokenizer.model_max_length(10^30)` vs `max_position_embeddings(64)` 불일치 `ValueError`를 차단하고, `get_zero_shot_hints`의 `if not image_emb:` `np.ndarray` 모호 평가 결함을 `if image_emb is None or len(image_emb) == 0:` 안전 가드로 교정; `TC-SRC-08` 단위/API 회귀 테스트 4종(`test_siglip_zero_shot.py`·`test_api_search.py` `11 passed`) 및 전체 `pytest` `175 passed` 전수 PASS).
 

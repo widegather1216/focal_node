@@ -1,8 +1,8 @@
 # 🔍 [02_search_curation] Hybrid Search, K-NN Curation & Smart Albums
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-01 해결 완료 — DEFECT-02~10 해결 대기)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-01~02 해결 완료 — DEFECT-03~10 해결 대기)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 9건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 8건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -34,16 +34,19 @@ SigLIP 2 자연어 시맨틱 검색(코사인 거리 임계값 절삭)과 SQLite
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
 - **Recent Commits (2026-11-18)**:
+  - `4c9f74d` - `fix(search): serialize AI tags with ensure_ascii=False and normalize legacy rows`
+  - `51dfb8c` - `docs(search): mark DEFECT-01 resolved and sync control tower`
   - `96a6e23` - `fix(search): truncate SigLIP 2 text inputs to 64 tokens and guard ndarray hints`
-  - `ce4bbe8` - `docs(search): register DEFECT-01..10 from 3-lens deep bug hunt`
-- **Working Tree State**: 🟢 Clean (`DEFECT-01` 커밋 완료)
-- **직전 완료 작업**: `2026-11-18 / systematic-debugger / DEFECT-01 (SigLIP2Adapter 64토큰 초과 트런케이션 및 get_zero_shot_hints ndarray 가드) 해결 및 회귀 검증 완료`
+- **Working Tree State**: 🟢 Clean (`DEFECT-02` 커밋 완료)
+- **직전 완료 작업**: `2026-11-18 / systematic-debugger / DEFECT-02 (tags/aesthetic_tags ensure_ascii=False 직렬화 교정 및 run_migrations 기존 \uXXXX 백필) 해결 및 회귀 검증 완료`
 - **생성/수정된 핵심 파일**:
-  - `backend/app/services/siglip_adapter.py`: `SIGLIP_TEXT_MAX_LENGTH = 64` 상수·`_resolve_text_max_length()` 추가, `_precompute_taxonomy_embeddings` 및 `get_text_embedding`에 `padding="max_length", truncation=True, max_length=max_length` 적용, `get_zero_shot_hints` `if image_emb is None or len(image_emb) == 0:` 안전 가드 교정
-  - `backend/tests/test_siglip_zero_shot.py`: `TC-SRC-08` >64토큰 텍스트·taxonomy 트런케이션 및 `np.ndarray`/빈 입력 단위 테스트 3종 추가
-  - `backend/tests/test_api_search.py`: `TC-SRC-08` >64토큰 한국어/영문 질의 `/api/search` 회귀 테스트 추가
+  - `backend/app/services/photo.py`: `_prepare_photo_models` 내 `tags`/`aesthetic_tags` `json.dumps(..., ensure_ascii=False)` 적용
+  - `backend/app/repositories/photo_repository.py`: `update_caption_and_tags` 내 `tags` `json.dumps(..., ensure_ascii=False)` 적용
+  - `backend/app/services/photo_reindex.py`: `_update_ai_analysis_orm` 내 `tags`/`aesthetic_tags` `json.dumps(..., ensure_ascii=False)` 적용
+  - `backend/app/database.py`: `_normalize_tag_json_column`·`_apply_ai_tag_normalization_row`·`_normalize_escaped_ai_tags` 추가 및 `run_migrations()` 백필 연동(잘못된 JSON 안전 스킵+경고 로깅)
+  - `backend/tests/test_api_search.py`: `TC-SRC-09` 한글 태그 인덱싱·메타데이터 수정·재인덱싱 SQLite/SigLIP 폴백 검색 및 `run_migrations` 백필·손상 JSON 스킵 회귀 테스트 2종 추가
 - **검증 완료된 테스트 실행 명령어**:
-  - `./venv/bin/pytest backend/tests/test_api_search.py backend/tests/test_siglip_zero_shot.py -v` (`11 passed`)
-  - `./venv/bin/pytest backend/tests/ -q` (`175 passed`)
+  - `./venv/bin/pytest backend/tests/test_api_search.py -v` (`8 passed`)
+  - `./venv/bin/pytest backend/tests/ -q` (`177 passed`)
 - **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - 미해결 티켓 `DEFECT-02~10`(다음 타깃: `P0 Critical` `DEFECT-02` `tags`/`aesthetic_tags` `ensure_ascii=False` 한글 검색 복구) 순차 해결 후 Active Iteration Step 1 착수. Step 2 구현 시 `VectorRepository.query_similar_by_embedding`에서 `include=["distances"]`로 거리를 조회하여 `d <= max_distance`인 후보만 반환하도록 수정할 것.
+  - 미해결 티켓 `DEFECT-03~10`(다음 타깃: `P0 Critical` `DEFECT-03` `date_to` 날짜 필터 종료일 전체 포함 교정) 순차 해결 후 Active Iteration Step 1 착수. Step 2 구현 시 `VectorRepository.query_similar_by_embedding`에서 `include=["distances"]`로 거리를 조회하여 `d <= max_distance`인 후보만 반환하도록 수정할 것.
