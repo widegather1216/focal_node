@@ -1,8 +1,8 @@
 # 🧪 [02_search_curation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-01~03 해결 완료 — DEFECT-04~10 해결 대기)`
+- **검증 상태**: `🩹 Debugging (DEFECT-01~04 해결 완료 — DEFECT-05~10 해결 대기)`
 - **인수 조건 통과율**: `1 / 3 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 7건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 6건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -44,7 +44,7 @@
 | **Boundary**| `TC-SRC-08` | SigLIP 2 >64토큰 검색어 트런케이션 (`DEFECT-01`) | 64토큰 초과 한국어/영문 자연어 검색 | `ValueError` 없이 임베딩 추출 및 정상 검색 | `PASS (Fixed in DEFECT-01)` |
 | **Boundary**| `TC-SRC-09` | 비ASCII(한글) 태그 `ensure_ascii=False` 검색 (`DEFECT-02`) | 한글 태그 저장/수정 후 SQLite 폴백 검색 | `\uXXXX` 이스케이프 없이 한글 태그 정상 매칭 | `PASS (Fixed in DEFECT-02)` |
 | **Boundary**| `TC-SRC-10` | `date_to` 날짜 문자열 종료일 전체 포함 (`DEFECT-03`) | `date_from=2025-11-18`, `date_to=2025-11-18` + `14:30` 촬영 | 종료일 `23:59:59`까지 당일 사진 포함 반환 | `PASS (Fixed in DEFECT-03)` |
-| **Happy** | `TC-SRC-11` | 검색/필터/`similar:` 시 `selectedFolder` 스코프 유지 (`DEFECT-04`) | 특정 폴더 선택 후 검색어/필터/유사사진 실행 | 선택한 폴더(및 하위) 내부 사진만 반환 | `FAIL (DEFECT-04)` |
+| **Happy** | `TC-SRC-11` | 검색/필터/`similar:` 시 `selectedFolder` 스코프 유지 (`DEFECT-04`) | 특정 폴더 선택 후 검색어/필터/유사사진 실행 | 선택한 폴더(및 하위) 내부 사진만 반환 | `PASS (Fixed in DEFECT-04)` |
 | **Boundary**| `TC-SRC-12` | 즐겨찾기 필터 해제 시 `undefined` 잔존 키 제거 (`DEFECT-05`) | 하트 필터 ON ➔ OFF 토글 후 배지/목록 확인 | 배지 소멸 및 `fetchPhotos(..., selectedFolder)` 복귀 | `FAIL (DEFECT-05)` |
 | **Boundary**| `TC-SRC-13` | `PhotoGallery` 조건부 마운트 `ResizeObserver` 재결합 (`DEFECT-06`) | 초기 로딩/빈 결과 후 그리드 마운트 및 리사이즈 | `columnCount` 반응형 갱신 정상 동작 | `FAIL (DEFECT-06)` |
 | **Boundary**| `TC-SRC-14` | `SigLIP2Adapter` taxonomy 사전계산 `GPU_LOCK`/`self.lock` 보호 (`DEFECT-07`) | `_precompute_taxonomy_embeddings()` 동시 호출 | `.to(device)` 및 캐시가 락 경계 내에서만 실행 | `FAIL (DEFECT-07)` |
@@ -78,9 +78,11 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_api_search.py -v` (`10 passed`), `./venv/bin/pytest backend/tests/ -q` (`179 passed`), `npx tsc --noEmit` (`PASS`)
 
 ### [DEFECT-04] 검색·EXIF 필터·`similar:` 활성 시 `selectedFolder` 컨텍스트 전면 소실
-- **현재 상태**: 🟡 OPEN (`🟠 P1 High`)
-- **발생 위치**: [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx#L55-L65), [`api.ts`](../../../src/services/api.ts#L94-L133), [`schemas.py`](../../../backend/app/schemas.py#L90-L100), [`photo_repository.py`](../../../backend/app/repositories/photo_repository.py#L166-L204)
-- **원인 및 재현**: `hasQuery || hasFilters` 분기 시 `selectedFolder`가 API 및 백엔드 `SearchRequest`/`SimilarSearchRequest`/`filter_and_paginate`로 전달되지 않아 폴더 선택 상태에서도 전체 라이브러리를 검색함.
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx#L58-L65), [`api.ts`](../../../src/services/api.ts#L94-L131), [`schemas.py`](../../../backend/app/schemas.py#L126-L138), [`search_service.py`](../../../backend/app/services/search_service.py#L32-L121), [`photo_repository.py`](../../../backend/app/repositories/photo_repository.py#L68-L106), [`photo_repository.py`](../../../backend/app/repositories/photo_repository.py#L182-L273), [`test_api_search.py`](../../../backend/tests/test_api_search.py#L433-L607)
+  - **원인 및 조치**: `PhotoGallery` `hasQuery || hasFilters` 분기에서 `selectedFolder`를 `api.searchPhotos`로 전달하지 않고, `api.ts`·`SearchRequest`·`SimilarSearchRequest`·`SearchService`·`PhotoRepository.filter_and_paginate` 전 계층에 `parent_dir` 경로가 누락되어 폴더 선택 중에도 전체 라이브러리가 검색되던 결함을 확인함. `schemas.py`에 `parent_dir: Optional[str] = None`을 추가하고 `api.ts` `searchPhotos(..., folder?: string | null)`(`postJson` 헬퍼 분리) 및 `PhotoGallery`가 `selectedFolder`를 `/api/search`·`/api/search/similar`에 전달하도록 수정함. 또한 Devil's Advocate 검증에서 드러난 ① `parent_dir` 단독 활성 시 `_compute_search_limit` 및 `search_by_text(..., limit=500)` 글로벌 절단 기아, ② 공백 `"   "` `parent_dir` vs 빈 문자열 `""` 구분 모호성, ③ `limit <= 0`/`offset < 0` 음수 슬라이스 오염을 해소하기 위해 `SearchService`에서 `parent_dir` 활성 시 Chroma 후보 풀(`>=500`) 확장 및 `search_by_text(..., limit=None)` 무제한 조회를 적용하고, `PhotoRepository`에 `_resolve_folder_bounds`·`_paginate_ordered_folder_query`·`_filter_candidate_ids`를 신설해 `_list_photos_in_folder`와 100% 동일한 `utils/path.py`(`normalize_path_preserving_leaf_symlink`, `to_slash_bounded_prefix`, `is_path_within_folder`) 경계·NFD/NFC·리프 심볼릭 링크·공백(`"   "`➔`[]`)·`limit <= 0`/`offset < 0` 가드를 공유하도록 교정함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_api_search.py -v` (`12 passed`), `./venv/bin/pytest backend/tests/ -q` (`181 passed`), `npx tsc --noEmit && npm run build` (`PASS`), `node --test tests/frontend/*.test.mjs` (`19 passed`)
 
 ### [DEFECT-05] 즐겨찾기 필터 해제 시 `{ is_favorite: undefined }` 잔존 키로 인한 유령 배지(`1`) 및 폴더 스코프 붕괴
 - **현재 상태**: 🟡 OPEN (`🟠 P1 High`)

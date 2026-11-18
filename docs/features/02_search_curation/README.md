@@ -1,8 +1,8 @@
 # 🔍 [02_search_curation] Hybrid Search, K-NN Curation & Smart Albums
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-01~03 해결 완료 — DEFECT-04~10 해결 대기)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-01~04 해결 완료 — DEFECT-05~10 해결 대기)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 7건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 6건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -34,18 +34,21 @@ SigLIP 2 자연어 시맨틱 검색(코사인 거리 임계값 절삭)과 SQLite
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
 - **Recent Commits (2026-11-18)**:
-  - `4c9f74d` - `fix(search): serialize AI tags with ensure_ascii=False and normalize legacy rows`
-  - `51dfb8c` - `docs(search): mark DEFECT-01 resolved and sync control tower`
-  - `96a6e23` - `fix(search): truncate SigLIP 2 text inputs to 64 tokens and guard ndarray hints`
-- **Working Tree State**: 🟡 Modified (`DEFECT-03` 수정·검증 완료, 커밋 대기)
-- **직전 완료 작업**: `2026-11-18 / systematic-debugger / DEFECT-03 (date_to 날짜 전용 입력 종료 시각 23:59:59.999999 확장, 명시적 타임스탬프 경계 보존 및 Z/tz-aware SQLite naive 비교 호환) 해결 및 회귀 검증 완료`
+  - `f4c4ab4` - `fix(search): preserve selectedFolder parent_dir scope across search and similar queries`
+  - `f66d1d9` - `docs(search): mark DEFECT-03 resolved and sync control tower`
+  - `dd0731a` - `fix(search): expand date-only date_to filter to end of day`
+- **Working Tree State**: 🟢 Clean (`DEFECT-04` 커밋 완료)
+- **직전 완료 작업**: `2026-11-18 / systematic-debugger / DEFECT-04 (검색·EXIF 필터·similar: 활성 시 selectedFolder 스코프 유지, NFD/NFC·리프 심볼릭 링크·형제 접두어 차단 및 후보 풀 조기 절단 해소) 해결 및 회귀 검증 완료`
 - **생성/수정된 핵심 파일**:
-  - `backend/app/schemas.py`: `normalize_date_filter_bound()` 및 `SearchFilter` `date_from`/`date_to` `field_validator` 추가
-  - `backend/app/repositories/photo_repository.py`: `_resolve_date_filter_bound()` 추가 및 `_apply_exif_filters` `date_from`/`date_to` 경계 정규화 연동
-  - `backend/tests/test_api_search.py`: `TC-SRC-10` 단일 날짜 종일 포함·익일 제외·명시적 타임스탬프(`00:00:00`, `12:00:00`) 보존·`datetime.date`·UTC `Z` ISO 문자열·422 회귀 테스트 2종 추가
+  - `src/components/PhotoGallery.tsx` & `src/services/api.ts`: `selectedFolder`를 `searchPhotos(..., folder)` 및 `/api/search`, `/api/search/similar`의 `parent_dir`로 전달(`postJson` 헬퍼 분리)
+  - `backend/app/schemas.py`: `SearchRequest`, `SimilarSearchRequest`에 `parent_dir: Optional[str] = None` 추가
+  - `backend/app/services/search_service.py`: `parent_dir` 활성 시 Chroma 후보 풀 확장(`_compute_search_limit`)·`search_by_text(..., limit=None)` 기아 방지 및 `filter_and_paginate(..., parent_dir=request.parent_dir)` 연동
+  - `backend/app/repositories/photo_repository.py`: `_resolve_folder_bounds`, `_paginate_ordered_folder_query`, `_filter_candidate_ids` 도입으로 `_list_photos_in_folder`와 동일한 `utils/path.py` 폴더 경계·공백/음수 슬라이스 가드 공유
+  - `backend/tests/test_api_search.py`: `TC-SRC-11` 폴더 스코프(자연어·EXIF·필터 단독·`similar:`), NFD/NFC·리프 심볼릭 링크·형제 접두어·>500 텍스트 풀·공백/음수 경계 회귀 테스트 2종 추가
 - **검증 완료된 테스트 실행 명령어**:
-  - `./venv/bin/pytest backend/tests/test_api_search.py -v` (`10 passed`)
-  - `./venv/bin/pytest backend/tests/ -q` (`179 passed`)
-  - `npx tsc --noEmit` (`PASS`)
+  - `./venv/bin/pytest backend/tests/test_api_search.py -v` (`12 passed`)
+  - `./venv/bin/pytest backend/tests/ -q` (`181 passed`)
+  - `npx tsc --noEmit && npm run build` (`PASS`)
+  - `node --test tests/frontend/*.test.mjs` (`19 passed`)
 - **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - 미해결 티켓 `DEFECT-04~10`(다음 타깃: `P1 High` `DEFECT-04` 검색·필터·`similar:` 시 `selectedFolder` 스코프 유지) 순차 해결 후 Active Iteration Step 1 착수. Step 2 구현 시 `VectorRepository.query_similar_by_embedding`에서 `include=["distances"]`로 거리를 조회하여 `d <= max_distance`인 후보만 반환하도록 수정할 것.
+  - 미해결 티켓 `DEFECT-05~10`(다음 타깃: `P1 High` `DEFECT-05` 즐겨찾기 필터 해제 시 `{ is_favorite: undefined }` 잔존 키 제거) 순차 해결 후 Active Iteration Step 1 착수. Step 2 구현 시 `VectorRepository.query_similar_by_embedding`에서 `include=["distances"]`로 거리를 조회하여 `d <= max_distance`인 후보만 반환하도록 수정할 것.
