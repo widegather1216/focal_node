@@ -1,8 +1,8 @@
 # 🧪 [02_search_curation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-01~06 해결 완료 — DEFECT-07~10 해결 대기)`
+- **검증 상태**: `🩹 Debugging (DEFECT-01~07 해결 완료 — DEFECT-08~10 해결 대기)`
 - **인수 조건 통과율**: `1 / 3 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 4건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 3건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -47,7 +47,7 @@
 | **Happy** | `TC-SRC-11` | 검색/필터/`similar:` 시 `selectedFolder` 스코프 유지 (`DEFECT-04`) | 특정 폴더 선택 후 검색어/필터/유사사진 실행 | 선택한 폴더(및 하위) 내부 사진만 반환 | `PASS (Fixed in DEFECT-04)` |
 | **Boundary**| `TC-SRC-12` | 즐겨찾기 필터 해제 시 `undefined` 잔존 키 제거 (`DEFECT-05`) | 하트 필터 ON ➔ OFF 토글 후 배지/목록 확인 | 배지 소멸 및 `fetchPhotos(..., selectedFolder)` 복귀 | `PASS (Fixed in DEFECT-05)` |
 | **Boundary**| `TC-SRC-13` | `PhotoGallery` 조건부 마운트 `ResizeObserver` 재결합 (`DEFECT-06`) | 초기 로딩/빈 결과 후 그리드 마운트 및 리사이즈 | `columnCount` 반응형 갱신 정상 동작 | `PASS (Fixed in DEFECT-06)` |
-| **Boundary**| `TC-SRC-14` | `SigLIP2Adapter` taxonomy 사전계산 `GPU_LOCK`/`self.lock` 보호 (`DEFECT-07`) | `_precompute_taxonomy_embeddings()` 동시 호출 | `.to(device)` 및 캐시가 락 경계 내에서만 실행 | `FAIL (DEFECT-07)` |
+| **Boundary**| `TC-SRC-14` | `SigLIP2Adapter` taxonomy 사전계산 `GPU_LOCK`/`self.lock` 보호 (`DEFECT-07`) | `_precompute_taxonomy_embeddings()` 동시 호출 | `.to(device)` 및 캐시가 락 경계 내에서만 실행 | `PASS (Fixed in DEFECT-07)` |
 | **Boundary**| `TC-SRC-15` | 32,766 변수 초과·음수 `limit`/`offset`·`ILIKE` 이스케이프·정렬 tie-breaker (`DEFECT-08`) | 35k ID 필터, `limit=-1`, `Z6_2` 검색, 동시각 연사 | SQL 오류/전량 누출/와일드카드 누출/페이지 역전 차단 | `FAIL (DEFECT-08)` |
 | **Negative**| `TC-SRC-16` | `search_similar_photos` 빈 벡터 인덱스 `404` 일관성 (`DEFECT-09`) | `vector_count == 0` 상태에서 `POST /api/search/similar` | `200 OK []` 위장 없이 `404` 반환 | `FAIL (DEFECT-09)` |
 | **Boundary**| `TC-SRC-17` | `SearchService` 스레드 세션 격리 및 `AbortSignal` 전달 (`DEFECT-10`) | `to_thread` 취소 경합 및 빠른 검색어 전환 | `Session` 크로스 스레드 `close()` 경합 차단 및 fetch 취소 | `FAIL (DEFECT-10)` |
@@ -99,9 +99,11 @@
   - **회귀 테스트 결과**: `node --test tests/frontend/*.test.mjs` (`28 passed`, `TC-SRC-13` 5종 포함), `npx tsc --noEmit && npm run build` (`PASS`), `./venv/bin/pytest backend/tests/test_api_search.py -v` (`12 passed`)
 
 ### [DEFECT-07] `SigLIP2Adapter._precompute_taxonomy_embeddings()`의 `GPU_LOCK` 경계 밖 MPS 텐서 전송 및 락 경합
-- **현재 상태**: 🟡 OPEN (`🟠 P1 High`)
-- **발생 위치**: [`siglip_adapter.py`](../../../backend/app/services/siglip_adapter.py#L44-L72)
-- **원인 및 재현**: `_precompute_taxonomy_embeddings()` 62행에서 `.to(self.device)`를 `GPU_LOCK` 밖에서 호출하고 `self.lock` 없이 `cached_taxonomy_embeddings`를 초기화하여 MPS 동시 충돌 위험 존재.
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`siglip_adapter.py`](../../../backend/app/services/siglip_adapter.py#L30-L203), [`test_siglip_zero_shot.py`](../../../backend/tests/test_siglip_zero_shot.py#L139-L369)
+  - **원인 및 조치**: `_precompute_taxonomy_embeddings()`에서 `self.processor(...).to(self.device)`가 `GPU_LOCK` 밖에서 호출되어 타 MPS/MLX 워커와 충돌 위험이 있었고, `self.cached_taxonomy_embeddings` 읽기·할당·초기화 및 `_load_model()` 후속 호출이 `self.lock` 경계 밖에 있어 동시 초기화 시 중복 계산 및 미초기화 노출 레이스가 존재함을 확인함. Devil's Advocate 교차 검증을 거쳐 `_get_adapter_lock()`(`__new__` 스텁 호환 `nullcontext()` 폴백)과 단방향 `GPU_LOCK -> self.lock` 계층을 전 메서드에 정착시키고, `_load_model()`·`_load_model_and_taxonomy_locked()`·`_precompute_taxonomy_embeddings()`·`_precompute_taxonomy_embeddings_locked()`·`_run_taxonomy_inference_locked()`로 분리해 모델 로드 직후 동일 임계 구역 내에서 taxonomy 토크나이징·`.to(self.device)`·임베딩 캐시 할당 및 예외 로깅(`logger.exception`)을 1회 원자적으로 수행하도록 교정함. 또한 `get_image_embedding()`·`get_text_embedding()`의 `self.processor(...)` 및 `model`/`device` 참조를 `_encode_image_batch()`·`_encode_text_batch()`로 보호하고, `get_zero_shot_hints()`가 `_get_taxonomy_embeddings_snapshot()`으로 락 보호 스냅샷 및 영벡터 `0` 나눗셈 가드를 적용하도록 보강함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_siglip_zero_shot.py backend/tests/test_concurrency_hardening.py backend/tests/test_api_search.py -v` (`35 passed`, `TC-SRC-14` 4종 포함), `./venv/bin/pytest backend/tests/ -q` (`185 passed`)
 
 ### [DEFECT-08] `PhotoRepository` 32,766 변수 초과 크래시, 음수 `limit`/`offset`, `ILIKE` 미이스케이프·정렬 누락 및 `parseError` 422 직렬화 결함
 - **현재 상태**: 🟡 OPEN (`🟠 P1 High`)

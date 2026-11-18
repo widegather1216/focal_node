@@ -1,8 +1,8 @@
 # 🔍 [02_search_curation] Hybrid Search, K-NN Curation & Smart Albums
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-01~06 해결 완료 — DEFECT-07~10 해결 대기)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-01~07 해결 완료 — DEFECT-08~10 해결 대기)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 4건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 3건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -34,18 +34,16 @@ SigLIP 2 자연어 시맨틱 검색(코사인 거리 임계값 절삭)과 SQLite
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
 - **Recent Commits (2026-11-18)**:
+  - `aa99020` - `fix(search): guard SigLIP taxonomy precomputation and device transfers with GPU_LOCK`
+  - `e3333ed` - `docs(search): mark DEFECT-06 resolved and sync control tower`
   - `6e5771c` - `fix(search-ui): rebind ResizeObserver across conditional PhotoGallery mounts`
-  - `10838d6` - `docs(search): mark DEFECT-05 resolved and sync control tower`
-  - `dc85b6a` - `fix(search-ui): strip undefined filter keys when toggling favorite filter`
-- **Working Tree State**: 🟢 Clean (`DEFECT-06` 커밋 완료)
-- **직전 완료 작업**: `2026-11-18 / systematic-debugger / DEFECT-06 (PhotoGallery 조건부 마운트 시 ResizeObserver 영구 미등록 해소, 순수 유틸 galleryLayout.ts 분리 및 콜백 ref/scrollContainer 의존 재결합) 해결 및 회귀 검증 완료`
+- **Working Tree State**: 🟢 Clean (`DEFECT-07` 커밋 완료)
+- **직전 완료 작업**: `2026-11-18 / systematic-debugger / DEFECT-07 (SigLIP2Adapter._precompute_taxonomy_embeddings() GPU_LOCK -> self.lock 단방향 보호, _load_model() 원자적 taxonomy 초기화, get_image_embedding/get_text_embedding 스냅샷 보호 및 get_zero_shot_hints() 락 스냅샷·영벡터 가드) 해결 및 회귀 검증 완료`
 - **생성/수정된 핵심 파일**:
-  - `src/utils/galleryLayout.ts`: `DEFAULT_GALLERY_COLUMNS`, `computeGalleryColumnCount`, `bindGalleryContainerResize` 순수 유틸 신설
-  - `src/components/PhotoGallery.tsx`: `scrollElementRef`·`scrollContainer` 상태·`handleScrollContainerRef` 콜백 ref 및 `[scrollContainer]` 의존 `bindGalleryContainerResize` 적용 (`useVirtualizer` `getScrollElement` 재바인딩 포함)
-  - `tests/frontend/galleryLayout.test.mjs`: `TC-SRC-13` 5종(열 수 계산, `null` 가드, `pending -> success -> pending/empty -> success -> unmount` 재결합, 0px/미지원 환경 방어, `PhotoGallery.tsx` 정적 계약) 추가
+  - `backend/app/services/siglip_adapter.py`: `_get_adapter_lock`, `_load_model_and_taxonomy_locked`, `_precompute_taxonomy_embeddings_locked`, `_run_taxonomy_inference_locked`, `_get_taxonomy_embeddings_snapshot`, `_encode_image_batch`, `_encode_text_batch` SRP 분리 및 단방향 `GPU_LOCK -> self.lock` 경계·`logger.exception` 적용
+  - `backend/tests/test_siglip_zero_shot.py`: `TC-SRC-14` 4종(`_TrackedRLock` 락 순서 역전 검증, 8스레드 동시 `_precompute_taxonomy_embeddings()` 1회 실행 보장, 6스레드 동시 `_load_model()` 완료 보장, `get_zero_shot_hints()` 스냅샷 경합 및 외부 `GPU_LOCK` 상호배제) 추가
 - **검증 완료된 테스트 실행 명령어**:
-  - `node --test tests/frontend/*.test.mjs` (`28 passed`)
-  - `npx tsc --noEmit && npm run build` (`PASS`)
-  - `./venv/bin/pytest backend/tests/test_api_search.py -v` (`12 passed`)
+  - `./venv/bin/pytest backend/tests/test_siglip_zero_shot.py backend/tests/test_concurrency_hardening.py backend/tests/test_api_search.py -v` (`35 passed`)
+  - `./venv/bin/pytest backend/tests/ -q` (`185 passed`)
 - **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - 미해결 티켓 `DEFECT-07~10`(다음 타깃: `P1 High` `DEFECT-07` `SigLIP2Adapter._precompute_taxonomy_embeddings()` `GPU_LOCK`/`self.lock` 보호) 순차 해결 후 Active Iteration Step 1 착수. Step 2 구현 시 `VectorRepository.query_similar_by_embedding`에서 `include=["distances"]`로 거리를 조회하여 `d <= max_distance`인 후보만 반환하도록 수정할 것.
+  - 미해결 티켓 `DEFECT-08~10`(다음 타깃: `P1 High` `DEFECT-08` `PhotoRepository` 32,766 변수 초과·음수 `limit`/`offset`·`ILIKE` 미이스케이프·정렬 누락·`parseError` 422 직렬화 결함) 순차 해결 후 Active Iteration Step 1 착수. Step 2 구현 시 `VectorRepository.query_similar_by_embedding`에서 `include=["distances"]`로 거리를 조회하여 `d <= max_distance`인 후보만 반환하도록 수정할 것.
