@@ -1,8 +1,8 @@
 # 🔍 [02_search_curation] Hybrid Search, K-NN Curation & Smart Albums
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (딥버그 헌팅 완료 — DEFECT-01~10 해결 대기)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-01 해결 완료 — DEFECT-02~10 해결 대기)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 10건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 9건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -33,19 +33,17 @@ SigLIP 2 자연어 시맨틱 검색(코사인 거리 임계값 절삭)과 SQLite
 
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
-- **Recent Commits (2026-11-15)**:
-  - `f6dabef` - `feat(search-ui): wire similar photo lookup into detail panel`
-  - `2bf7ad9` - `refactor(search): fallback to sqlite on siglip errors and use logger`
-- **Working Tree State**: 🟢 Clean (Baseline 커밋 기준; 현재 `DEFECT-01~10` 티켓 등록)
-- **직전 완료 작업**: `2026-11-18 / deep-bug-hunter / 02_search_curation 3-Lens 딥버그 헌팅 및 실증 프로빙 완료 (DEFECT-01~10 등록)`
+- **Recent Commits (2026-11-18)**:
+  - `96a6e23` - `fix(search): truncate SigLIP 2 text inputs to 64 tokens and guard ndarray hints`
+  - `ce4bbe8` - `docs(search): register DEFECT-01..10 from 3-lens deep bug hunt`
+- **Working Tree State**: 🟢 Clean (`DEFECT-01` 커밋 완료)
+- **직전 완료 작업**: `2026-11-18 / systematic-debugger / DEFECT-01 (SigLIP2Adapter 64토큰 초과 트런케이션 및 get_zero_shot_hints ndarray 가드) 해결 및 회귀 검증 완료`
 - **생성/수정된 핵심 파일**:
-  - `backend/app/services/search_service.py`: `_extract_query_embedding_sync`, `_compute_search_limit`, `_query_vector_ids`, `_resolve_query_candidate_ids` 분할(`<=26줄`) 및 SigLIP/Chroma 예외 시 `logger.warning` 후 SQLite 폴백(`200 OK`) 적용
-  - `backend/app/api/search.py`: `traceback.print_exc()` 제거 및 `logger.exception(...)` 표준 로깅 전환
-  - `src/store/useAppStore.ts`, `src/components/PhotoGallery.tsx`, `src/components/DetailPanel.tsx`: `findSimilarPhotos` 원자적 액션, `similar:` 디바운스 우회 및 `[유사한 무드 사진 찾기]` 버튼 연결
-  - `backend/tests/test_api_search.py`: SigLIP 미설치/추론 실패 폴백 및 `similar` 자기 자신 제외 회귀 테스트 추가
+  - `backend/app/services/siglip_adapter.py`: `SIGLIP_TEXT_MAX_LENGTH = 64` 상수·`_resolve_text_max_length()` 추가, `_precompute_taxonomy_embeddings` 및 `get_text_embedding`에 `padding="max_length", truncation=True, max_length=max_length` 적용, `get_zero_shot_hints` `if image_emb is None or len(image_emb) == 0:` 안전 가드 교정
+  - `backend/tests/test_siglip_zero_shot.py`: `TC-SRC-08` >64토큰 텍스트·taxonomy 트런케이션 및 `np.ndarray`/빈 입력 단위 테스트 3종 추가
+  - `backend/tests/test_api_search.py`: `TC-SRC-08` >64토큰 한국어/영문 질의 `/api/search` 회귀 테스트 추가
 - **검증 완료된 테스트 실행 명령어**:
-  - `./venv/bin/pytest backend/tests/test_api_search.py backend/tests/test_concurrency_hardening.py -v` (`15 passed`)
-  - `./venv/bin/pytest backend/tests/ -q` (`154 passed`)
-  - `npx tsc --noEmit && npm run build` (`PASS`)
+  - `./venv/bin/pytest backend/tests/test_api_search.py backend/tests/test_siglip_zero_shot.py -v` (`11 passed`)
+  - `./venv/bin/pytest backend/tests/ -q` (`175 passed`)
 - **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - 미해결 티켓 0건으로 Active Iteration Step 1(`"02_search_curation 도메인 Step 1 개발 진행해줘"`) 착수 가능. Step 2 구현 시 `VectorRepository.query_similar_by_embedding`에서 `include=["distances"]`로 거리를 조회하여 `d <= max_distance`인 후보만 반환하도록 수정할 것.
+  - 미해결 티켓 `DEFECT-02~10`(다음 타깃: `P0 Critical` `DEFECT-02` `tags`/`aesthetic_tags` `ensure_ascii=False` 한글 검색 복구) 순차 해결 후 Active Iteration Step 1 착수. Step 2 구현 시 `VectorRepository.query_similar_by_embedding`에서 `include=["distances"]`로 거리를 조회하여 `d <= max_distance`인 후보만 반환하도록 수정할 것.

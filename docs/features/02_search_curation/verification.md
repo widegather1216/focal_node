@@ -1,8 +1,8 @@
 # 🧪 [02_search_curation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (딥버그 헌팅 완료 — DEFECT-01~10 등록, 해결 대기)`
+- **검증 상태**: `🩹 Debugging (DEFECT-01 해결 완료 — DEFECT-02~10 해결 대기)`
 - **인수 조건 통과율**: `1 / 3 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 10건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 9건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -41,7 +41,7 @@
 | **Negative**| `TC-SRC-05` | 조건 없는 빈 스마트 앨범 저장 (`[To-Be]`) | 검색어와 필터 모두 비운 채 요청 | UI 버튼 비활성화 및 백엔드 422 방어 | `⏳ Pending` |
 | **Boundary**| `TC-SRC-06` | 무관한 검색어 거리 임계값 절삭 (`[To-Be]`) | 존재하지 않는 피사체 검색 (`d > 0.88`) | 무관한 하위 사진 절삭 및 빈 목록 반환 | `⏳ Pending` |
 | **Happy** | `TC-SRC-07` | 35mm 환산 화각 & 비평 점수 필터 (`[To-Be]`) | APS-C 23mm(환산 35mm) + IAA>=85 필터 | 크롭 바디 35mm 환산 사진 포함 반환 | `⏳ Pending` |
-| **Boundary**| `TC-SRC-08` | SigLIP 2 >64토큰 검색어 트런케이션 (`DEFECT-01`) | 64토큰 초과 한국어/영문 자연어 검색 | `ValueError` 없이 임베딩 추출 및 정상 검색 | `FAIL (DEFECT-01)` |
+| **Boundary**| `TC-SRC-08` | SigLIP 2 >64토큰 검색어 트런케이션 (`DEFECT-01`) | 64토큰 초과 한국어/영문 자연어 검색 | `ValueError` 없이 임베딩 추출 및 정상 검색 | `PASS (Fixed in DEFECT-01)` |
 | **Boundary**| `TC-SRC-09` | 비ASCII(한글) 태그 `ensure_ascii=False` 검색 (`DEFECT-02`) | 한글 태그 저장/수정 후 SQLite 폴백 검색 | `\uXXXX` 이스케이프 없이 한글 태그 정상 매칭 | `FAIL (DEFECT-02)` |
 | **Boundary**| `TC-SRC-10` | `date_to` 날짜 문자열 종료일 전체 포함 (`DEFECT-03`) | `date_from=2025-11-18`, `date_to=2025-11-18` + `14:30` 촬영 | 종료일 `23:59:59`까지 당일 사진 포함 반환 | `FAIL (DEFECT-03)` |
 | **Happy** | `TC-SRC-11` | 검색/필터/`similar:` 시 `selectedFolder` 스코프 유지 (`DEFECT-04`) | 특정 폴더 선택 후 검색어/필터/유사사진 실행 | 선택한 폴더(및 하위) 내부 사진만 반환 | `FAIL (DEFECT-04)` |
@@ -57,9 +57,11 @@
 ## 🚨 3. 결함 리포트 (Defect Logs)
 
 ### [DEFECT-01] `SigLIP2Adapter` 64토큰 초과 검색어 `ValueError` 크래시 및 시맨틱 검색 전면 무력화
-- **현재 상태**: 🟡 OPEN (`🔴 P0 Critical`)
-- **발생 위치**: [`siglip_adapter.py`](../../../backend/app/services/siglip_adapter.py#L62-L115), [`search_service.py`](../../../backend/app/services/search_service.py#L20-L30)
-- **원인 및 재현**: `SiglipProcessor`의 `tokenizer.model_max_length`가 `10^30`인 반면 `max_position_embeddings`는 `64`인데 `truncation=True, max_length=64`가 누락되어 64토큰 초과 검색어(예: 한국어 3문장=83토큰) 시 `ValueError`가 발생하고 `SearchService`가 이를 `None`으로 폴백시켜 벡터 검색이 무력화됨 (`get_zero_shot_hints` `if not image_emb:` ndarray 평가 결함 포함).
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`siglip_adapter.py`](../../../backend/app/services/siglip_adapter.py#L9-L136), [`test_siglip_zero_shot.py`](../../../backend/tests/test_siglip_zero_shot.py#L99-L136), [`test_api_search.py`](../../../backend/tests/test_api_search.py#L165-L216)
+  - **원인 및 조치**: `SiglipProcessor`의 `tokenizer.model_max_length`가 `10^30`인 반면 `text_config.max_position_embeddings`가 `64`여서 64토큰 초과 질의 시 시퀀스 길이 초과 `ValueError`가 발생하고 `SearchService`가 `None` 폴백으로 벡터 검색이 무력화되는 결함 및 `get_zero_shot_hints`의 `if not image_emb:` `np.ndarray` 불리언 평가 결함을 확인함. `SIGLIP_TEXT_MAX_LENGTH = 64` 상수 및 모델 `text_config.max_position_embeddings` 연동 `_resolve_text_max_length()`를 신설해 `get_text_embedding`과 `_precompute_taxonomy_embeddings`의 `self.processor(..., padding="max_length", truncation=True, max_length=max_length, return_tensors="pt")`에 트런케이션을 적용하고, `get_zero_shot_hints`를 `if image_emb is None or len(image_emb) == 0:` 안전 가드로 교정함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_api_search.py backend/tests/test_siglip_zero_shot.py -v` (`11 passed`), `./venv/bin/pytest backend/tests/ -q` (`175 passed`)
 
 ### [DEFECT-02] `tags`/`aesthetic_tags` `ensure_ascii=True` 직렬화로 인한 한글 태그 SQLite 검색 및 SigLIP 폴백 불능
 - **현재 상태**: 🟡 OPEN (`🔴 P0 Critical`)
