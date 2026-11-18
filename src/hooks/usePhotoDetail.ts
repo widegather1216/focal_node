@@ -24,8 +24,6 @@ export function usePhotoDetail() {
     selectedPhotoId,
     setSelectedPhotoId,
     setSearchQuery,
-    searchQuery,
-    searchFilters,
     generatingCritiquePhotoIds,
     addGeneratingCritiquePhotoId,
     removeGeneratingCritiquePhotoId
@@ -34,7 +32,7 @@ export function usePhotoDetail() {
 
   const { data: photo, isLoading: loading } = usePhotoDetailQuery(selectedPhotoId);
   const updateMetadataMutation = useUpdatePhotoMetadataMutation();
-  const toggleFavoriteMutation = useToggleFavoriteMutation(null, searchQuery, searchFilters);
+  const toggleFavoriteMutation = useToggleFavoriteMutation();
 
   const [editing, setEditing] = useState(false);
   const [captionEdit, setCaptionEdit] = useState('');

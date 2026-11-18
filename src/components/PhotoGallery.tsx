@@ -1,10 +1,10 @@
 import { useRef, useEffect, useState, useCallback } from 'react';
-import { InfiniteData, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useAppStore } from '../store/useAppStore';
 import { api } from '../services/api';
-import { PhotoSummary } from '../types/photo';
 import { useDebounce } from '../hooks/useDebounce';
+import { useToggleFavoriteMutation } from '../hooks/usePhotosQuery';
 import { PhotoCard } from './gallery/PhotoCard';
 import { LoadingSpinner } from './common/LoadingSpinner';
 import { Loader2, SearchX } from 'lucide-react';
@@ -15,7 +15,7 @@ interface PhotoGalleryProps {
 
 export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
   const { apiPort, searchQuery, searchFilters, selectedPhotoIds, togglePhotoSelection, setSelectedPhotoId } = useAppStore();
-  const queryClient = useQueryClient();
+  const { mutateAsync: toggleFavoriteAsync } = useToggleFavoriteMutation();
   const parentRef = useRef<HTMLDivElement>(null);
   const [columnCount, setColumnCount] = useState(4);
   
@@ -100,25 +100,11 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
   const handleToggleFavorite = useCallback(async (photoId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      const res = await api.toggleFavorite(photoId);
-      queryClient.setQueryData<InfiniteData<PhotoSummary[]>>(
-        ['photos', selectedFolder, effectiveSearchQuery, searchFilters],
-        (oldData) => {
-          if (!oldData) return oldData;
-          return {
-            ...oldData,
-            pages: oldData.pages.map((page) =>
-              page.map((photo) =>
-                photo.id === photoId ? { ...photo, is_favorite: res.is_favorite } : photo
-              )
-            )
-          };
-        }
-      );
-    } catch (err) {
+      await toggleFavoriteAsync(photoId);
+    } catch (err: unknown) {
       console.error("Failed to toggle favorite:", err);
     }
-  }, [queryClient, selectedFolder, effectiveSearchQuery, searchFilters]);
+  }, [toggleFavoriteAsync]);
 
   if (status === 'pending') {
     return (
