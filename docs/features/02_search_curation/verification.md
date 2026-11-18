@@ -1,8 +1,8 @@
 # 🧪 [02_search_curation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (Round 3 교차 점검 완료 — DEFECT-12 등록, 해결 대기)`
+- **검증 상태**: `🟢 Baseline Passed (DEFECT-01~12 전수 해결 — Active Step 1 착수 대기)`
 - **인수 조건 통과율**: `1 / 3 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 1건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -52,7 +52,7 @@
 | **Negative**| `TC-SRC-16` | `search_similar_photos` 빈 벡터 인덱스 `404` 일관성 (`DEFECT-09`) | `vector_count == 0` 상태에서 `POST /api/search/similar` | `200 OK []` 위장 없이 `404` 반환 | `PASS (Fixed in DEFECT-09)` |
 | **Boundary**| `TC-SRC-17` | `SearchService` 스레드 세션 격리 및 `AbortSignal` 전달 (`DEFECT-10`) | `to_thread` 취소 경합 및 빠른 검색어 전환 | `Session` 크로스 스레드 `close()` 경합 차단 및 fetch 취소 | `PASS (Fixed in DEFECT-10)` |
 | **Boundary**| `TC-SRC-18` | `PhotoGallery` 검색/필터/폴더 전환 시 `useVirtualizer` `scrollOffset` 초기화 (`DEFECT-11`) | 하단 스크롤 후 소량/재마운트 검색 결과 전환 | 잔존 `scrollOffset` 초기화로 0번 행 누락 및 강제 하단 점프 차단 | `PASS (Fixed in DEFECT-11)` |
-| **Boundary**| `TC-SRC-19` | `useVirtualizer` 150ms 스크롤 디바운스 타이머 언마운트 후 잔존 `scrollOffset` 부활 차단 (`DEFECT-12`) | 스크롤 직후 150ms 이내 검색/폴더 전환 및 재마운트 | cleanup 후 만료된 `fallback` 타이머의 `cb(oldOffset, false)` 차단 | `FAIL (DEFECT-12)` |
+| **Boundary**| `TC-SRC-19` | `useVirtualizer` 150ms 스크롤 디바운스 타이머 언마운트 후 잔존 `scrollOffset` 부활 차단 (`DEFECT-12`) | 스크롤 직후 150ms 이내 검색/폴더 전환 및 재마운트 | cleanup 후 만료된 `fallback` 타이머의 `cb(oldOffset, false)` 차단 | `PASS (Fixed in DEFECT-12)` |
 
 ---
 
@@ -136,9 +136,11 @@
   - **회귀 테스트 결과**: `node --test tests/frontend/*.test.mjs` (`40 passed`, `TC-SRC-18` 5종 포함), `npx tsc --noEmit && npm run build` (`PASS`), `./venv/bin/pytest backend/tests/test_api_search.py -v` (`18 passed`)
 
 ### [DEFECT-12] `@tanstack/virtual-core` `observeElementOffset` 150ms 디바운스 타이머 cleanup 누락으로 인한 150ms 이내 전환 시 잔존 `scrollOffset` 부활
-- **현재 상태**: 🟡 OPEN (`🟠 P1 High`)
-- **발생 위치**: [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx#L92-L97), [`galleryLayout.ts`](../../../src/utils/galleryLayout.ts#L147-L162), `@tanstack/virtual-core` `observeOffset`
-- **원인 및 재현**: `@tanstack/virtual-core`의 기본 `observeElementOffset` cleanup이 `removeEventListener`만 호출하고 150ms `fallback` `debounce` 타이머를 취소하지 않아, 스크롤 직후 150ms 이내 쿼리/폴더 전환 및 새 컨테이너 마운트 완료 후 만료된 `fallback` 타이머가 `cb(oldOffset, false)`를 호출해 `scrollOffset`을 이전 값으로 덮어쓰고 0번 행 누락·조기 `fetchNextPage()`를 유발함.
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`galleryLayout.ts`](../../../src/utils/galleryLayout.ts#L168-L230), [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx#L9-L100), [`galleryLayout.test.mjs`](../../../tests/frontend/galleryLayout.test.mjs#L400-L629)
+  - **원인 및 조치**: `@tanstack/virtual-core`의 `observeOffset` 반환 cleanup이 `removeEventListener`만 호출하고 150ms `fallback` `debounce` 타이머(`targetWindow.setTimeout`)를 취소·차단하지 않아, 스크롤(`3000`) 직후 150ms 이내 쿼리/폴더 전환으로 컨테이너가 언마운트(`cleanup()`)되고 새 컨테이너(`scrollTop = 0`)가 마운트된 뒤 `t=150ms`에 만료된 타이머가 `cb(3000, false)`를 호출해 `virtualizer.scrollOffset`을 이전 값으로 부활시키고 0번 행을 누락시키던 결함을 확인함. [`galleryLayout.ts`](../../../src/utils/galleryLayout.ts#L185-L230)에 `@tanstack/react-virtual`의 `observeElementOffset`을 래핑하는 `createSafeObserveElementOffset`과 제네릭 `observeGalleryElementOffset`을 추가해 `isDisposed` 가드로 `cleanup()` 이후 만료된 `fallback` 타이머의 콜백 전달을 원천 차단하면서 RTL/`horizontal`/`useScrollendEvent` 동작을 100% 보존하고, [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx#L93-L99) `useVirtualizer({ ..., observeElementOffset: observeGalleryElementOffset })`에 연결함.
+  - **회귀 테스트 결과**: `node --test tests/frontend/*.test.mjs` (`43 passed`, `TC-SRC-19` 3종 Red ➔ Green 포함), `npx tsc --noEmit && npm run build` (`PASS`), `./venv/bin/pytest backend/tests/test_api_search.py -v` (`18 passed`)
 
 ---
 

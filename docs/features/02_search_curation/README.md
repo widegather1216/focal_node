@@ -1,8 +1,8 @@
 # 🔍 [02_search_curation] Hybrid Search, K-NN Curation & Smart Albums
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (Round 3 교차 점검 완료 — DEFECT-12 해결 대기)`
+- **현재 상태 (Lifecycle)**: `🛠️ Implementing`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 1건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 0건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -34,18 +34,18 @@ SigLIP 2 자연어 시맨틱 검색(코사인 거리 임계값 절삭)과 SQLite
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
 - **Recent Commits (2026-11-18)**:
-  - `6c2f314` - `fix(search-ui): reset virtualizer scrollOffset on PhotoGallery query and remount transitions`
-  - `4486306` - `docs(search): register DEFECT-11 from Round 2 deep bug hunt`
-  - `e2298a6` - `docs(search): mark DEFECT-10 resolved and restore Implementing status`
-- **Working Tree State**: 🟢 Clean (Round 3 교차 점검 — `DEFECT-12` 등록)
-- **직전 완료 작업**: `2026-11-18 / deep-bug-hunter / Round 3 검증 중 @tanstack/virtual-core observeElementOffset 150ms 디바운스 타이머 cleanup 누락에 의한 잔존 scrollOffset 부활 반례(DEFECT-12) 발견 및 등록`
+  - `044e2fb` - `fix(search-ui): guard virtualizer offset observer against stale 150ms fallback timers`
+  - `f218854` - `docs(search): register DEFECT-12 from Round 3 verification`
+  - `eab95e8` - `docs(search): mark DEFECT-11 resolved and restore Implementing status`
+- **Working Tree State**: 🟢 Clean (No uncommitted changes; `DEFECT-01~12` 전수 해결 완료)
+- **직전 완료 작업**: `2026-11-18 / systematic-debugger / DEFECT-12 해결 완료 (galleryLayout.ts createSafeObserveElementOffset·observeGalleryElementOffset 도입 및 PhotoGallery.tsx useVirtualizer 연동으로 cleanup 이후 150ms fallback 타이머의 잔존 scrollOffset 부활 차단)`
 - **생성/수정된 핵심 파일**:
-  - `src/utils/galleryLayout.ts`: `buildGalleryQueryContextKey`, `resetVirtualizerScrollPosition`, `syncVirtualizerOnContainerMount` 추가
-  - `src/components/PhotoGallery.tsx`: `handleScrollContainerRef` 마운트/언마운트 동기화, `getVirtualItems()` 직전 동기 리셋 및 `useLayoutEffect([queryContextKey])` `scrollTop` 초기화 연동 (`fetchNextPage` 스크롤 보존)
-  - `tests/frontend/galleryLayout.test.mjs`: `@tanstack/virtual-core` `Virtualizer` 실인스턴스 기반 `TC-SRC-18.1~18.5` 회귀 테스트 추가
+  - `src/utils/galleryLayout.ts`: `OffsetObserverCallback`, `ElementOffsetObserver`, `createSafeObserveElementOffset`, `observeGalleryElementOffset` 추가
+  - `src/components/PhotoGallery.tsx`: `useVirtualizer({ ..., observeElementOffset: observeGalleryElementOffset })` 연결
+  - `tests/frontend/galleryLayout.test.mjs`: 가짜 150ms 타이머 + `@tanstack/virtual-core` `Virtualizer` 실인스턴스 기반 `TC-SRC-19.1~19.3` Red ➔ Green 회귀 테스트 추가
 - **검증 완료된 테스트 실행 명령어**:
-  - `node --test tests/frontend/*.test.mjs` (`40 passed`)
+  - `node --test tests/frontend/*.test.mjs` (`43 passed`)
   - `npx tsc --noEmit && npm run build` (`PASS`)
   - `./venv/bin/pytest backend/tests/test_api_search.py -v` (`18 passed`)
 - **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - `DEFECT-01~11` 전수 해결 완료. 다음 단계로 Active Iteration Step 1(`models.py` `SmartAlbum` 테이블, `schemas.py` 및 `src/types/photo.ts` `use_35mm_equivalent`/`min_*_score`/`SmartAlbum` 정의) 착수. Step 2 구현 시 `VectorRepository.query_similar_by_embedding`에서 `include=["distances"]`로 거리를 조회하여 `d <= max_distance`인 후보만 반환하도록 수정할 것.
+  - `DEFECT-01~12` 전수 해결 완료. 다음 단계로 Active Iteration Step 1(`models.py` `SmartAlbum` 테이블, `schemas.py` 및 `src/types/photo.ts` `use_35mm_equivalent`/`min_*_score`/`SmartAlbum` 정의) 착수. Step 2 구현 시 `VectorRepository.query_similar_by_embedding`에서 `include=["distances"]`로 거리를 조회하여 `d <= max_distance`인 후보만 반환하도록 수정할 것.
