@@ -1,8 +1,8 @@
 # 🧪 [02_search_curation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-01~08 해결 완료 — DEFECT-09~10 해결 대기)`
+- **검증 상태**: `🩹 Debugging (DEFECT-01~09 해결 완료 — DEFECT-10 해결 대기)`
 - **인수 조건 통과율**: `1 / 3 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 2건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 1건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -49,7 +49,7 @@
 | **Boundary**| `TC-SRC-13` | `PhotoGallery` 조건부 마운트 `ResizeObserver` 재결합 (`DEFECT-06`) | 초기 로딩/빈 결과 후 그리드 마운트 및 리사이즈 | `columnCount` 반응형 갱신 정상 동작 | `PASS (Fixed in DEFECT-06)` |
 | **Boundary**| `TC-SRC-14` | `SigLIP2Adapter` taxonomy 사전계산 `GPU_LOCK`/`self.lock` 보호 (`DEFECT-07`) | `_precompute_taxonomy_embeddings()` 동시 호출 | `.to(device)` 및 캐시가 락 경계 내에서만 실행 | `PASS (Fixed in DEFECT-07)` |
 | **Boundary**| `TC-SRC-15` | 32,766 변수 초과·음수 `limit`/`offset`·`ILIKE` 이스케이프·정렬 tie-breaker (`DEFECT-08`) | 35k ID 필터, `limit=-1`, `Z6_2` 검색, 동시각 연사 | SQL 오류/전량 누출/와일드카드 누출/페이지 역전 차단 | `PASS (Fixed in DEFECT-08)` |
-| **Negative**| `TC-SRC-16` | `search_similar_photos` 빈 벡터 인덱스 `404` 일관성 (`DEFECT-09`) | `vector_count == 0` 상태에서 `POST /api/search/similar` | `200 OK []` 위장 없이 `404` 반환 | `FAIL (DEFECT-09)` |
+| **Negative**| `TC-SRC-16` | `search_similar_photos` 빈 벡터 인덱스 `404` 일관성 (`DEFECT-09`) | `vector_count == 0` 상태에서 `POST /api/search/similar` | `200 OK []` 위장 없이 `404` 반환 | `PASS (Fixed in DEFECT-09)` |
 | **Boundary**| `TC-SRC-17` | `SearchService` 스레드 세션 격리 및 `AbortSignal` 전달 (`DEFECT-10`) | `to_thread` 취소 경합 및 빠른 검색어 전환 | `Session` 크로스 스레드 `close()` 경합 차단 및 fetch 취소 | `FAIL (DEFECT-10)` |
 
 ---
@@ -113,9 +113,11 @@
   - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_api_search.py -v` (`16 passed`), `./venv/bin/pytest backend/tests/ -q` (`189 passed`), `node --test tests/frontend/*.test.mjs` (`31 passed`), `npx tsc --noEmit && npm run build` (`PASS`)
 
 ### [DEFECT-09] `SearchService.search_similar_photos` 빈 벡터 인덱스(`vector_count == 0`) 시 `200 OK []` 거짓 성공 위장
-- **현재 상태**: 🟡 OPEN (`🟠 P1 High`)
-- **발생 위치**: [`search_service.py`](../../../backend/app/services/search_service.py#L86-L97)
-- **원인 및 재현**: `vector_count > 0`일 때 임베딩 미존재는 `ValueError(404)`를 발생시키지만 `vector_count == 0`일 때는 `return []`(`200 OK`)으로 조기 반환해 임베딩 누락을 정상 빈 결과로 은폐함.
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`search_service.py`](../../../backend/app/services/search_service.py#L91-L116), [`test_api_search.py`](../../../backend/tests/test_api_search.py#L768-L802)
+  - **원인 및 조치**: `SearchService.search_similar_photos`가 `vector_repo.count() == 0`일 때 `return []`(`200 OK`)로 조기 반환하여 ChromaDB 미인덱싱/Self-Healing 초기화 직후 임베딩 누락을 정상 빈 결과로 은폐하고 `vector_count > 0` 임베딩 미존재(`ValueError` ➔ `404`)와 계약을 불일치시키던 결함을 확인함. `VectorRepository.get_embedding_by_id`가 내부 `_vector_lock` 하에서 `self.count() == 0` 시 `None`을 반환하므로 중복 `vector_repo.count()` 조기 반환 분기를 제거하고 `get_embedding_by_id` 단일 경로로 통합해 벡터 인덱스 공백 및 개별 임베딩 미존재 모두 `ValueError` ➔ `404 Not Found`로 일관되게 응답하며, 타깃 임베딩은 존재하나 동료 사진만 없는 경우는 기존과 동일하게 `200 OK []`를 반환하도록 교정함.
+  - **회귀 테스트 결과**: `./venv/bin/pytest backend/tests/test_api_search.py -v` (`17 passed`, `TC-SRC-16` Red ➔ Green 포함), `./venv/bin/pytest backend/tests/ -q` (`190 passed`)
 
 ### [DEFECT-10] `SearchService` 취소 시 스레드 간 `Session` 동시 `close()` 경합 및 `PhotoGallery` `AbortSignal` 미전달
 - **현재 상태**: 🟡 OPEN (`🟠 P1 High`)

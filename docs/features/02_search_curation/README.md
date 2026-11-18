@@ -1,8 +1,8 @@
 # 🔍 [02_search_curation] Hybrid Search, K-NN Curation & Smart Albums
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-01~08 해결 완료 — DEFECT-09~10 해결 대기)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-01~09 해결 완료 — DEFECT-10 해결 대기)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 2건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 1건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -34,20 +34,16 @@ SigLIP 2 자연어 시맨틱 검색(코사인 거리 임계값 절삭)과 SQLite
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
 - **Recent Commits (2026-11-18)**:
+  - `d128c27` - `fix(search): raise 404 for missing embeddings even when vector index is empty`
+  - `a297f8d` - `docs(search): mark DEFECT-08 resolved and sync control tower`
   - `64202b1` - `fix(search): chunk large candidate filters, validate pagination, escape EXIF ILIKE, and format 422 details`
-  - `1fb8c3c` - `docs(search): mark DEFECT-07 resolved and sync control tower`
-  - `aa99020` - `fix(search): guard SigLIP taxonomy precomputation and device transfers with GPU_LOCK`
-- **Working Tree State**: 🟢 Clean (`DEFECT-08` 커밋 완료)
-- **직전 완료 작업**: `2026-11-18 / systematic-debugger / DEFECT-08 (PhotoRepository 900청크 분할 조회 및 list_critiques 청크 정렬, SearchRequest/SimilarSearchRequest limit/offset 422 검증 및 repository 가드, _escape_like_pattern·_normalize_text_filter 적용·filter_and_paginate nullslast+Image.id 정렬 교정, apiError.ts Pydantic 422 배열 detail 직렬화 분리) 해결 및 회귀 검증 완료`
+- **Working Tree State**: 🟢 Clean (`DEFECT-09` 커밋 완료)
+- **직전 완료 작업**: `2026-11-18 / systematic-debugger / DEFECT-09 (SearchService.search_similar_photos의 vector_count == 0 조기 return [] 제거 및 VectorRepository.get_embedding_by_id 단일 경로 기반 404 Not Found 계약 일관화) 해결 및 회귀 검증 완료`
 - **생성/수정된 핵심 파일**:
-  - `backend/app/repositories/photo_repository.py`: `_escape_like_pattern`, `_normalize_text_filter`, `_query_chunk_matching_ids`, `_collect_matching_candidate_ids`, `_sort_critique_rows`, `_fetch_critique_rows_chunked` 도입 및 `filter_and_paginate` `nullslast(), models.Image.id` tie-breaker 교정
-  - `backend/app/schemas.py`: `SearchRequest`, `SimilarSearchRequest` `limit` (`ge=1, le=500`)·`offset` (`ge=0`) `Field` 검증 추가
-  - `src/utils/apiError.ts` & `src/services/api.ts`: `formatApiErrorDetail`·`extractResponseErrorMessage` 분리 및 `ApiClient.parseError` 연동
-  - `backend/tests/test_api_search.py` & `tests/frontend/apiError.test.mjs`: `TC-SRC-15` 백엔드 4종(35k ID·`list_critiques` 35k·음수/초과 422·`ILIKE` 이스케이프/공백/동시각·NULL 정렬) 및 프론트엔드 `parseError` 422 단위 테스트 3종 추가
+  - `backend/app/services/search_service.py`: `search_similar_photos`에서 중복 `vector_repo.count()` 조기 반환 분기를 제거하고 `get_embedding_by_id` 단일 경로로 `None` 시 `ValueError`(`404`) 전파 일관화
+  - `backend/tests/test_api_search.py`: `_build_mock_chroma_collection` 헬퍼 및 `test_tc_src_16_similar_search_returns_404_when_vector_index_empty_or_missing` 추가 (`vector_count == 0` ➔ `404`, 임베딩 누락 ➔ `404`, 단일 사진 동료 없음 ➔ `200 []`)
 - **검증 완료된 테스트 실행 명령어**:
-  - `./venv/bin/pytest backend/tests/test_api_search.py -v` (`16 passed`)
-  - `./venv/bin/pytest backend/tests/ -q` (`189 passed`)
-  - `node --test tests/frontend/*.test.mjs` (`31 passed`)
-  - `npx tsc --noEmit && npm run build` (`PASS`)
+  - `./venv/bin/pytest backend/tests/test_api_search.py -v` (`17 passed`)
+  - `./venv/bin/pytest backend/tests/ -q` (`190 passed`)
 - **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - 미해결 티켓 `DEFECT-09~10`(다음 타깃: `P1 High` `DEFECT-09` `SearchService.search_similar_photos` 빈 벡터 인덱스 `200 OK []` 위장) 순차 해결 후 Active Iteration Step 1 착수. Step 2 구현 시 `VectorRepository.query_similar_by_embedding`에서 `include=["distances"]`로 거리를 조회하여 `d <= max_distance`인 후보만 반환하도록 수정할 것.
+  - 미해결 티켓 `DEFECT-10`(`P1 High` `SearchService` 스레드 세션 격리 및 `PhotoGallery` `AbortSignal` 전달) 해결 후 Active Iteration Step 1 착수. Step 2 구현 시 `VectorRepository.query_similar_by_embedding`에서 `include=["distances"]`로 거리를 조회하여 `d <= max_distance`인 후보만 반환하도록 수정할 것.
