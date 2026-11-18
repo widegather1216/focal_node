@@ -1,8 +1,8 @@
 # 🔍 [02_search_curation] Hybrid Search, K-NN Curation & Smart Albums
 
-- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-01~05 해결 완료 — DEFECT-06~10 해결 대기)`
+- **현재 상태 (Lifecycle)**: `🩹 Debugging (DEFECT-01~06 해결 완료 — DEFECT-07~10 해결 대기)`
 - **구현 진척도**: `[□□□□] 0/4 Steps (Active Iteration)`
-- **미해결 티켓 현황**: `🚨 DEFECT: 5건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
+- **미해결 티켓 현황**: `🚨 DEFECT: 4건` | `🧐 REFACTOR: 0건` ([`verification.md`](./verification.md) 참조)
 - **관련 문서**: [`architecture.md`](./architecture.md) | [`spec.md`](./spec.md) | [`verification.md`](./verification.md) | [`decisions.md`](./decisions.md)
 
 ---
@@ -34,20 +34,18 @@ SigLIP 2 자연어 시맨틱 검색(코사인 거리 임계값 절삭)과 SQLite
 ## 🔄 3. Latest Session Handoff (최근 세션 인계 노트)
 
 - **Recent Commits (2026-11-18)**:
+  - `6e5771c` - `fix(search-ui): rebind ResizeObserver across conditional PhotoGallery mounts`
+  - `10838d6` - `docs(search): mark DEFECT-05 resolved and sync control tower`
   - `dc85b6a` - `fix(search-ui): strip undefined filter keys when toggling favorite filter`
-  - `4c96ff1` - `docs(search): mark DEFECT-04 resolved and sync control tower`
-  - `f4c4ab4` - `fix(search): preserve selectedFolder parent_dir scope across search and similar queries`
-- **Working Tree State**: 🟢 Clean (`DEFECT-05` 커밋 완료)
-- **직전 완료 작업**: `2026-11-18 / systematic-debugger / DEFECT-05 (즐겨찾기 필터 해제 시 { is_favorite: undefined } 잔존 키 제거, 스토어 필터 정규화 및 배지/fetchPhotos 라우팅 정상화) 해결 및 회귀 검증 완료`
+- **Working Tree State**: 🟢 Clean (`DEFECT-06` 커밋 완료)
+- **직전 완료 작업**: `2026-11-18 / systematic-debugger / DEFECT-06 (PhotoGallery 조건부 마운트 시 ResizeObserver 영구 미등록 해소, 순수 유틸 galleryLayout.ts 분리 및 콜백 ref/scrollContainer 의존 재결합) 해결 및 회귀 검증 완료`
 - **생성/수정된 핵심 파일**:
-  - `src/utils/searchFilters.ts`: `sanitizeSearchFilters`, `toggleFavoriteFilter`, `countActiveSearchFilters`, `hasActiveSearchFilters` 순수 유틸 신설
-  - `src/components/sidebar/SidebarSearchControls.tsx`: 즐겨찾기 토글 시 `toggleFavoriteFilter`로 `is_favorite` 키 완전 제거
-  - `src/store/useAppStore.ts`: `setSearchFilters`에서 `sanitizeSearchFilters` 적용으로 `undefined`/공백/`NaN` 오염 차단
-  - `src/components/SearchFilterMenu.tsx` & `src/components/PhotoGallery.tsx`: `Object.keys().length` 대신 `countActiveSearchFilters`/`hasActiveSearchFilters` 사용으로 유령 배지(`1`) 및 `api.searchPhotos` 오라우팅 해소
-  - `tests/frontend/searchFilters.test.mjs`: `TC-SRC-12` 단위/회귀 테스트 4종 추가
+  - `src/utils/galleryLayout.ts`: `DEFAULT_GALLERY_COLUMNS`, `computeGalleryColumnCount`, `bindGalleryContainerResize` 순수 유틸 신설
+  - `src/components/PhotoGallery.tsx`: `scrollElementRef`·`scrollContainer` 상태·`handleScrollContainerRef` 콜백 ref 및 `[scrollContainer]` 의존 `bindGalleryContainerResize` 적용 (`useVirtualizer` `getScrollElement` 재바인딩 포함)
+  - `tests/frontend/galleryLayout.test.mjs`: `TC-SRC-13` 5종(열 수 계산, `null` 가드, `pending -> success -> pending/empty -> success -> unmount` 재결합, 0px/미지원 환경 방어, `PhotoGallery.tsx` 정적 계약) 추가
 - **검증 완료된 테스트 실행 명령어**:
-  - `node --test tests/frontend/*.test.mjs` (`23 passed`)
+  - `node --test tests/frontend/*.test.mjs` (`28 passed`)
   - `npx tsc --noEmit && npm run build` (`PASS`)
   - `./venv/bin/pytest backend/tests/test_api_search.py -v` (`12 passed`)
 - **다음 세션 포커스 및 주의사항 (Caveats)**:
-  - 미해결 티켓 `DEFECT-06~10`(다음 타깃: `P1 High` `DEFECT-06` `PhotoGallery` 조건부 마운트 `ResizeObserver` 재결합) 순차 해결 후 Active Iteration Step 1 착수. Step 2 구현 시 `VectorRepository.query_similar_by_embedding`에서 `include=["distances"]`로 거리를 조회하여 `d <= max_distance`인 후보만 반환하도록 수정할 것.
+  - 미해결 티켓 `DEFECT-07~10`(다음 타깃: `P1 High` `DEFECT-07` `SigLIP2Adapter._precompute_taxonomy_embeddings()` `GPU_LOCK`/`self.lock` 보호) 순차 해결 후 Active Iteration Step 1 착수. Step 2 구현 시 `VectorRepository.query_similar_by_embedding`에서 `include=["distances"]`로 거리를 조회하여 `d <= max_distance`인 후보만 반환하도록 수정할 것.

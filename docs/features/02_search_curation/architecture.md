@@ -38,12 +38,14 @@ backend/app/
 
 src/
 ├── types/photo.ts                     # [수정대상] SearchFilters(use_35mm_equivalent, min_*_score), SmartAlbum 타입 정의
-├── utils/searchFilters.ts             # [기존/신설] 즐겨찾기 토글 키 제거, 필터 정규화 및 유효 필터 카운트 순수 유틸
+├── utils/
+│   ├── galleryLayout.ts               # [기존/신설] 반응형 갤러리 열 수 계산 및 ResizeObserver 재바인딩 순수 유틸
+│   └── searchFilters.ts               # [기존/신설] 즐겨찾기 토글 키 제거, 필터 정규화 및 유효 필터 카운트 순수 유틸
 ├── services/api.ts                    # [수정대상] searchPhotos, getSmartAlbums, createSmartAlbum, deleteSmartAlbum
 ├── store/useAppStore.ts               # [수정대상] 검색 필터 정규화 상태, 차트 드릴다운 및 스마트 앨범 원클릭 적용 액션
 ├── hooks/useDebounce.ts               # [기존] 검색어 입력 500ms 디바운스 훅
 └── components/
-    ├── PhotoGallery.tsx               # [기존] 유효 필터 여부 판정 및 갤러리 쿼리 라우팅
+    ├── PhotoGallery.tsx               # [기존] 유효 필터 판정, 갤러리 쿼리 라우팅 및 조건부 마운트 ResizeObserver/가상스크롤 바인딩
     ├── SearchFilterMenu.tsx           # [수정대상] 기종/렌즈/ISO/조리개/35mm화각/점수 필터 및 스마트 앨범 저장 트리거
     ├── Sidebar.tsx                    # [수정대상] Smart Albums 섹션 리스트 및 삭제 버튼
     ├── sidebar/SidebarSearchControls.tsx # [기존] 자연어 검색바 및 즐겨찾기 필터 토글

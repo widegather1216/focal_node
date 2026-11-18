@@ -1,8 +1,8 @@
 # 🧪 [02_search_curation] Verification & Ticket Logs
 
-- **검증 상태**: `🩹 Debugging (DEFECT-01~05 해결 완료 — DEFECT-06~10 해결 대기)`
+- **검증 상태**: `🩹 Debugging (DEFECT-01~06 해결 완료 — DEFECT-07~10 해결 대기)`
 - **인수 조건 통과율**: `1 / 3 (Baseline 100%)`
-- **미해결 티켓**: `🚨 DEFECT: 5건` | `🧐 REFACTOR: 0건`
+- **미해결 티켓**: `🚨 DEFECT: 4건` | `🧐 REFACTOR: 0건`
 
 ---
 
@@ -46,7 +46,7 @@
 | **Boundary**| `TC-SRC-10` | `date_to` 날짜 문자열 종료일 전체 포함 (`DEFECT-03`) | `date_from=2025-11-18`, `date_to=2025-11-18` + `14:30` 촬영 | 종료일 `23:59:59`까지 당일 사진 포함 반환 | `PASS (Fixed in DEFECT-03)` |
 | **Happy** | `TC-SRC-11` | 검색/필터/`similar:` 시 `selectedFolder` 스코프 유지 (`DEFECT-04`) | 특정 폴더 선택 후 검색어/필터/유사사진 실행 | 선택한 폴더(및 하위) 내부 사진만 반환 | `PASS (Fixed in DEFECT-04)` |
 | **Boundary**| `TC-SRC-12` | 즐겨찾기 필터 해제 시 `undefined` 잔존 키 제거 (`DEFECT-05`) | 하트 필터 ON ➔ OFF 토글 후 배지/목록 확인 | 배지 소멸 및 `fetchPhotos(..., selectedFolder)` 복귀 | `PASS (Fixed in DEFECT-05)` |
-| **Boundary**| `TC-SRC-13` | `PhotoGallery` 조건부 마운트 `ResizeObserver` 재결합 (`DEFECT-06`) | 초기 로딩/빈 결과 후 그리드 마운트 및 리사이즈 | `columnCount` 반응형 갱신 정상 동작 | `FAIL (DEFECT-06)` |
+| **Boundary**| `TC-SRC-13` | `PhotoGallery` 조건부 마운트 `ResizeObserver` 재결합 (`DEFECT-06`) | 초기 로딩/빈 결과 후 그리드 마운트 및 리사이즈 | `columnCount` 반응형 갱신 정상 동작 | `PASS (Fixed in DEFECT-06)` |
 | **Boundary**| `TC-SRC-14` | `SigLIP2Adapter` taxonomy 사전계산 `GPU_LOCK`/`self.lock` 보호 (`DEFECT-07`) | `_precompute_taxonomy_embeddings()` 동시 호출 | `.to(device)` 및 캐시가 락 경계 내에서만 실행 | `FAIL (DEFECT-07)` |
 | **Boundary**| `TC-SRC-15` | 32,766 변수 초과·음수 `limit`/`offset`·`ILIKE` 이스케이프·정렬 tie-breaker (`DEFECT-08`) | 35k ID 필터, `limit=-1`, `Z6_2` 검색, 동시각 연사 | SQL 오류/전량 누출/와일드카드 누출/페이지 역전 차단 | `FAIL (DEFECT-08)` |
 | **Negative**| `TC-SRC-16` | `search_similar_photos` 빈 벡터 인덱스 `404` 일관성 (`DEFECT-09`) | `vector_count == 0` 상태에서 `POST /api/search/similar` | `200 OK []` 위장 없이 `404` 반환 | `FAIL (DEFECT-09)` |
@@ -92,9 +92,11 @@
   - **회귀 테스트 결과**: `node --test tests/frontend/*.test.mjs` (`23 passed`, `TC-SRC-12` 4종 포함), `npx tsc --noEmit && npm run build` (`PASS`), `./venv/bin/pytest backend/tests/test_api_search.py -v` (`12 passed`)
 
 ### [DEFECT-06] `PhotoGallery` 조건부 마운트 `parentRef`에 대한 `useEffect(..., [])` `ResizeObserver` 영구 미등록
-- **현재 상태**: 🟡 OPEN (`🟠 P1 High`)
-- **발생 위치**: [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx#L29-L46), [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx#L109-L189)
-- **원인 및 재현**: 최초 마운트(`status === 'pending'`) 및 빈 결과 시 `<div ref={parentRef}>`가 미렌더링되어 `parentRef.current === null` 상태에서 `useEffect(..., [])`가 조기 반환하고 이후 재마운트 시 `ResizeObserver`가 영구 미등록됨.
+- **현재 상태**: 🟢 RESOLVED (수정 및 회귀 검증 완료)
+- **해결 내역**:
+  - **수정 파일**: [`galleryLayout.ts`](../../../src/utils/galleryLayout.ts#L1-L86), [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx#L9-L43), [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx#L73-L78), [`PhotoGallery.tsx`](../../../src/components/PhotoGallery.tsx#L183-L186), [`galleryLayout.test.mjs`](../../../tests/frontend/galleryLayout.test.mjs#L1-L169)
+  - **원인 및 조치**: 최초 마운트(`status === 'pending'`) 및 빈 결과(`allPhotos.length === 0`) 시 조기 반환으로 `<div ref={parentRef}>`가 DOM에 없어(`parentRef.current === null`) `useEffect(..., [])`가 즉시 반환된 뒤 이후 마운트/재마운트 시에도 `ResizeObserver`가 영구 미등록되던 결함을 확인함 (`@tanstack/react-virtual` v3.14.5 `useVirtualizer`는 `useIsomorphicLayoutEffect(() => instance._willUpdate())`로 `getScrollElement()` 전환마다 자동 `cleanup()` 및 재바인딩됨을 `virtual-core/src/index.ts#L754-L784`에서 실확인). 순수 유틸 [`galleryLayout.ts`](../../../src/utils/galleryLayout.ts#L1-L86)에 `DEFAULT_GALLERY_COLUMNS`, `computeGalleryColumnCount`, `bindGalleryContainerResize`를 분리하고, `PhotoGallery.tsx`에서 `scrollElementRef`·`scrollContainer` 상태·안정된 `useCallback` 콜백 ref(`handleScrollContainerRef`) 및 `[scrollContainer]` 의존 `useEffect`로 교체해 `pending -> success -> pending/empty -> success` 전환마다 `ResizeObserver`와 가상 스크롤러가 정확히 재결합·해제되도록 교정함.
+  - **회귀 테스트 결과**: `node --test tests/frontend/*.test.mjs` (`28 passed`, `TC-SRC-13` 5종 포함), `npx tsc --noEmit && npm run build` (`PASS`), `./venv/bin/pytest backend/tests/test_api_search.py -v` (`12 passed`)
 
 ### [DEFECT-07] `SigLIP2Adapter._precompute_taxonomy_embeddings()`의 `GPU_LOCK` 경계 밖 MPS 텐서 전송 및 락 경합
 - **현재 상태**: 🟡 OPEN (`🟠 P1 High`)
