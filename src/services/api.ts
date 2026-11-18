@@ -19,6 +19,11 @@ import {
 } from '../types/system';
 import { ExportResult, parseExportSseStream } from '../utils/exportStream';
 import { extractResponseErrorMessage } from '../utils/apiError';
+import {
+  buildSearchRequestSpec,
+  fetchPhotosRequest,
+  postJsonRequest,
+} from '../utils/searchRequest';
 
 export type {
   CritiqueCancelResponse,
@@ -70,30 +75,34 @@ class ApiClient {
     return res.json();
   }
 
-  async fetchPhotos(limit: number, offset: number, folder: string | null): Promise<PhotoSummary[]> {
-    let url = `${this.baseUrl}/api/photos?limit=${limit}&offset=${offset}`;
-    if (folder) {
-      url += `&parent_dir=${encodeURIComponent(folder)}`;
-    }
-    const res = await fetch(url);
-    if (!res.ok) {
-      const err = await this.parseError(res, "Failed to fetch photos");
-      throw new Error(err);
-    }
-    return res.json();
+  async fetchPhotos(
+    limit: number,
+    offset: number,
+    folder: string | null,
+    signal?: AbortSignal,
+  ): Promise<PhotoSummary[]> {
+    return fetchPhotosRequest({
+      baseUrl: this.baseUrl,
+      limit,
+      offset,
+      folder,
+      signal,
+    });
   }
 
-  private async postJson<T>(endpoint: string, payload: Record<string, unknown>, errorContext: string): Promise<T> {
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+  private async postJson<T>(
+    endpoint: string,
+    payload: Record<string, unknown>,
+    errorContext: string,
+    signal?: AbortSignal,
+  ): Promise<T> {
+    return postJsonRequest<T>({
+      baseUrl: this.baseUrl,
+      endpoint,
+      payload,
+      errorContext,
+      signal,
     });
-    if (!response.ok) {
-      const errorMessage = await this.parseError(response, errorContext);
-      throw new Error(errorMessage);
-    }
-    return response.json();
   }
 
   async searchPhotos(
@@ -102,23 +111,14 @@ class ApiClient {
     limit: number,
     offset: number,
     folder?: string | null,
+    signal?: AbortSignal,
   ): Promise<PhotoSummary[]> {
-    const cleanQuery = query ? query.trim() : undefined;
-    const folderPayload = folder ? { parent_dir: folder } : {};
-
-    if (cleanQuery && cleanQuery.startsWith('similar:')) {
-      const photoId = cleanQuery.slice('similar:'.length);
-      return this.postJson<PhotoSummary[]>(
-        '/api/search/similar',
-        { photo_id: photoId, filters, limit, offset, ...folderPayload },
-        'Failed to search similar photos',
-      );
-    }
-
+    const spec = buildSearchRequestSpec(query, filters, limit, offset, folder);
     return this.postJson<PhotoSummary[]>(
-      '/api/search',
-      { query: cleanQuery, filters, limit, offset, ...folderPayload },
-      'Failed to search photos',
+      spec.endpoint,
+      spec.payload,
+      spec.errorContext,
+      signal,
     );
   }
 

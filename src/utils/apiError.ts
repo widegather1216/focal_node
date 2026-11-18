@@ -67,6 +67,9 @@ export async function extractResponseErrorMessage(
     const formattedDetail = formatApiErrorDetail(errorBody?.detail);
     return formattedDetail ?? fallbackMessage;
   } catch (parseException) {
+    if (parseException instanceof Error && parseException.name === 'AbortError') {
+      throw parseException;
+    }
     console.debug('Failed to parse error response as JSON:', parseException);
     return fallbackMessage;
   }

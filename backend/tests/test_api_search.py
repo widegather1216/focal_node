@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date, datetime
 import json
 import logging
@@ -6,16 +7,21 @@ import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import httpx
+import pytest
 import torch
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
-from database import Base, run_migrations
+import database
+from database import Base, get_db, run_migrations
+from main import app
 from models import AIAnalysis, Image, ImageMetadata
 from repositories.photo_repository import PhotoRepository
-from schemas import SearchFilter
+from schemas import SearchFilter, SearchRequest, SimilarSearchRequest
 from services.photo import register_photos_batch_atomic
 from services.photo_reindex import _update_ai_analysis_orm
+from services.search_service import SearchService
 from services.siglip_adapter import SigLIP2Adapter
 
 
@@ -800,6 +806,167 @@ def test_tc_src_16_similar_search_returns_404_when_vector_index_empty_or_missing
     no_peers_resp = client.post("/api/search/similar", json=payload)
     assert no_peers_resp.status_code == 200
     assert no_peers_resp.json() == []
+
+
+def _create_wal_test_session_factory(tmp_path):
+    db_file = tmp_path / "search_isolation.db"
+    wal_engine = create_engine(
+        f"sqlite:///{db_file}",
+        connect_args={"check_same_thread": False, "timeout": 15},
+    )
+
+    @event.listens_for(wal_engine, "connect")
+    def _configure_wal(dbapi_conn, _conn_rec):
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL;")
+        cursor.execute("PRAGMA foreign_keys=ON;")
+        cursor.close()
+
+    Base.metadata.create_all(bind=wal_engine)
+    return wal_engine, sessionmaker(autocommit=False, autoflush=False, bind=wal_engine)
+
+
+def _seed_wal_search_photos(session_factory) -> None:
+    with session_factory() as seed_db:
+        for photo_id, file_name, caption in (
+            ("wal_a", "harbor_a.jpg", "Harbor sunset"),
+            ("wal_b", "harbor_b.jpg", "Harbor twilight"),
+        ):
+            seed_db.add_all([
+                Image(
+                    id=photo_id,
+                    parent_dir="/wal_photos",
+                    file_path=f"/wal_photos/{file_name}",
+                    file_name=file_name,
+                    file_size=2048,
+                    file_mtime=time.time(),
+                    mime_type="image/jpeg",
+                ),
+                ImageMetadata(
+                    image_id=photo_id,
+                    camera_model="ILCE-7M4",
+                    width=4000,
+                    height=3000,
+                    capture_date=datetime(2025, 11, 18, 12, 0, 0),
+                ),
+                AIAnalysis(image_id=photo_id, caption=caption, tags='["harbor"]'),
+            ])
+        seed_db.commit()
+
+
+def _build_tracked_session_factory(base_factory, session_records: list[dict]):
+    def _open_tracked_session():
+        session = base_factory()
+        record = {"open_tid": threading.get_ident(), "close_tid": None}
+        session_records.append(record)
+        orig_close = session.close
+
+        def _tracked_close():
+            record["close_tid"] = threading.get_ident()
+            return orig_close()
+
+        session.close = _tracked_close
+        return session
+
+    return _open_tracked_session
+
+
+@pytest.mark.asyncio
+async def test_tc_src_17_search_isolates_worker_sessions_on_cancellation_and_avoids_detached_errors(
+    tmp_path, monkeypatch
+):
+    wal_engine, wal_factory = _create_wal_test_session_factory(tmp_path)
+    _seed_wal_search_photos(wal_factory)
+    session_records: list[dict] = []
+    get_db_events: list[tuple[str, int]] = []
+
+    monkeypatch.setattr(database, "SessionLocal", _build_tracked_session_factory(wal_factory, session_records))
+    mock_siglip = MagicMock()
+    mock_siglip.get_text_embedding.return_value = [0.1] * 768
+    monkeypatch.setattr("services.search_service.get_siglip_adapter", lambda: mock_siglip)
+    collection = _build_mock_chroma_collection(count_val=2, embeddings=[[0.1] * 768], query_ids=["wal_a", "wal_b"])
+    monkeypatch.setattr("repositories.vector_repository.get_chroma_collection", lambda: collection)
+
+    def _forbidden_get_db():
+        get_db_events.append(("enter", threading.get_ident()))
+        db = wal_factory()
+        try:
+            yield db
+        finally:
+            get_db_events.append(("close", threading.get_ident()))
+            db.close()
+
+    app.dependency_overrides[get_db] = _forbidden_get_db
+    loop_tid = threading.get_ident()
+    worker_entered = threading.Event()
+    release_worker = threading.Event()
+    worker_done = threading.Event()
+    worker_errors: list[Exception] = []
+    orig_filter = PhotoRepository.filter_and_paginate
+
+    def _blocking_filter(self, *args, **kwargs):
+        worker_entered.set()
+        release_worker.wait(timeout=3.0)
+        try:
+            return orig_filter(self, *args, **kwargs)
+        except Exception as exc:
+            worker_errors.append(exc)
+            raise
+        finally:
+            worker_done.set()
+
+    try:
+        with monkeypatch.context() as scoped_patch:
+            scoped_patch.setattr(PhotoRepository, "filter_and_paginate", _blocking_filter)
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app),
+                base_url="http://testserver",
+            ) as async_client:
+                task = asyncio.create_task(
+                    async_client.post("/api/search", json={"query": "harbor", "limit": 10, "offset": 0})
+                )
+                assert await asyncio.to_thread(worker_entered.wait, 3.0)
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+
+                assert get_db_events == []
+                release_worker.set()
+                assert await asyncio.to_thread(worker_done.wait, 3.0)
+                assert worker_errors == []
+
+        assert len(session_records) >= 2
+        for record in session_records:
+            assert record["open_tid"] != loop_tid
+            assert record["close_tid"] == record["open_tid"]
+
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as async_client:
+            search_response = await async_client.post(
+                "/api/search", json={"query": "harbor", "limit": 10, "offset": 0}
+            )
+            similar_response = await async_client.post(
+                "/api/search/similar", json={"photo_id": "wal_a", "limit": 10, "offset": 0}
+            )
+        assert search_response.status_code == 200
+        assert similar_response.status_code == 200
+        assert search_response.json()[0]["camera_model"] == "ILCE-7M4"
+        assert similar_response.json()[0]["id"] == "wal_b"
+
+        direct_search = await SearchService().search_photos(SearchRequest(query="harbor", limit=10, offset=0))
+        direct_similar = await SearchService().search_similar_photos(
+            SimilarSearchRequest(photo_id="wal_a", limit=10, offset=0)
+        )
+        assert isinstance(direct_search[0], dict)
+        assert direct_search[0]["width"] == 4000
+        assert isinstance(direct_similar[0], dict)
+        assert direct_similar[0]["capture_date"] == "2025-11-18T12:00:00"
+    finally:
+        release_worker.set()
+        app.dependency_overrides.clear()
+        wal_engine.dispose()
 
 
 

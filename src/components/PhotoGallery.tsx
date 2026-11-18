@@ -50,14 +50,21 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
     status
   } = useInfiniteQuery({
     queryKey: ['photos', selectedFolder, effectiveSearchQuery, searchFilters],
-    queryFn: async ({ pageParam = 0 }) => {
+    queryFn: async ({ pageParam = 0, signal }) => {
       if (!apiPort) return [];
       const hasFilters = hasActiveSearchFilters(searchFilters);
       const hasQuery = Boolean(effectiveSearchQuery && effectiveSearchQuery.trim() !== '');
       if (hasQuery || hasFilters) {
-        return api.searchPhotos(effectiveSearchQuery, searchFilters, 50, (pageParam as number) * 50, selectedFolder);
+        return api.searchPhotos(
+          effectiveSearchQuery,
+          searchFilters,
+          50,
+          (pageParam as number) * 50,
+          selectedFolder,
+          signal,
+        );
       }
-      return api.fetchPhotos(50, (pageParam as number) * 50, selectedFolder);
+      return api.fetchPhotos(50, (pageParam as number) * 50, selectedFolder, signal);
     },
     getNextPageParam: (lastPage, allPages) => {
       if (lastPage.length < 50) return undefined;

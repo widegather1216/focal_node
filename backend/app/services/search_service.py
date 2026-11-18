@@ -1,9 +1,9 @@
 import asyncio
 import logging
-from typing import List, Optional
+from typing import Callable, List, Optional, Union
 from sqlalchemy.orm import Session
+import database
 import schemas
-import models
 from repositories.photo_repository import PhotoRepository
 from repositories.vector_repository import VectorRepository
 from services.ai_factory import get_siglip_adapter
@@ -12,10 +12,61 @@ logger = logging.getLogger(__name__)
 
 
 class SearchService:
-    def __init__(self, db: Session):
+    """Coordinates hybrid SQLite text/EXIF search and SigLIP 2/ChromaDB vector search."""
+
+    def __init__(
+        self,
+        db: Optional[Session] = None,
+        session_factory: Optional[Callable[[], Session]] = None,
+    ):
         self.db = db
-        self.photo_repo = PhotoRepository(db)
+        self._session_factory = session_factory
+        self.photo_repo = PhotoRepository(db) if db is not None else None
         self.vector_repo = VectorRepository()
+
+    def _open_thread_session(self) -> Session:
+        factory = self._session_factory or database.SessionLocal
+        return factory()
+
+    @staticmethod
+    def _serialize_photo_rows(images: list) -> List[dict]:
+        return [
+            img.to_list_response_dict() if hasattr(img, "to_list_response_dict") else img
+            for img in images
+        ]
+
+    def _search_by_text_sync(self, query_text: str, text_limit: Optional[int]) -> List[str]:
+        """Executes SQLite text search in an isolated worker-thread session when db is omitted."""
+        if self.photo_repo is not None:
+            return self.photo_repo.search_by_text(query_text, text_limit)
+        with self._open_thread_session() as thread_db:
+            return PhotoRepository(thread_db).search_by_text(query_text, text_limit)
+
+    def _filter_and_paginate_sync(
+        self,
+        candidate_ids: Optional[List[str]],
+        request: Union[schemas.SearchRequest, schemas.SimilarSearchRequest],
+    ) -> List[dict]:
+        """Filters, paginates, and serializes photos inside the worker session before close."""
+        if self.photo_repo is not None:
+            matched_images = self.photo_repo.filter_and_paginate(
+                candidate_ids,
+                request.filters,
+                request.offset,
+                request.limit,
+                parent_dir=request.parent_dir,
+            )
+            return self._serialize_photo_rows(matched_images)
+
+        with self._open_thread_session() as thread_db:
+            matched_images = PhotoRepository(thread_db).filter_and_paginate(
+                candidate_ids,
+                request.filters,
+                request.offset,
+                request.limit,
+                parent_dir=request.parent_dir,
+            )
+            return self._serialize_photo_rows(matched_images)
 
     def _extract_query_embedding_sync(self, query_text: str) -> Optional[List[float]]:
         """Extracts a SigLIP 2 text embedding, returning None on model or inference failure."""
@@ -65,11 +116,13 @@ class SearchService:
     ) -> List[str]:
         """Combines SQLite text matches and vector matches, prioritizing text hits."""
         text_limit = None if request.parent_dir else 500
-        text_search_ids = await asyncio.to_thread(self.photo_repo.search_by_text, query_text, text_limit)
+        text_search_ids = await asyncio.to_thread(
+            self._search_by_text_sync, query_text, text_limit
+        )
         chroma_ids = await self._query_vector_ids(query_text, request)
         return list(dict.fromkeys(text_search_ids + chroma_ids))
 
-    async def search_photos(self, request: schemas.SearchRequest) -> List[models.Image]:
+    async def search_photos(self, request: schemas.SearchRequest) -> List[dict]:
         """Executes hybrid search (SQLite text + SigLIP 2 vector + EXIF metadata filters)."""
         candidate_ids = None
         query_text = request.query.strip() if request.query else ""
@@ -80,15 +133,12 @@ class SearchService:
                 return []
 
         return await asyncio.to_thread(
-            self.photo_repo.filter_and_paginate,
+            self._filter_and_paginate_sync,
             candidate_ids,
-            request.filters,
-            request.offset,
-            request.limit,
-            parent_dir=request.parent_dir,
+            request,
         )
 
-    async def search_similar_photos(self, request: schemas.SimilarSearchRequest) -> List[models.Image]:
+    async def search_similar_photos(self, request: schemas.SimilarSearchRequest) -> List[dict]:
         """Executes K-NN reference search using existing ChromaDB embedding."""
         target_embedding = await asyncio.to_thread(self.vector_repo.get_embedding_by_id, request.photo_id)
         if target_embedding is None:
@@ -107,10 +157,7 @@ class SearchService:
             return []
 
         return await asyncio.to_thread(
-            self.photo_repo.filter_and_paginate,
+            self._filter_and_paginate_sync,
             similar_photo_ids,
-            request.filters,
-            request.offset,
-            request.limit,
-            parent_dir=request.parent_dir,
+            request,
         )
