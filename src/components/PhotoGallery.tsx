@@ -6,6 +6,10 @@ import { api } from '../services/api';
 import { useDebounce } from '../hooks/useDebounce';
 import { useToggleFavoriteMutation } from '../hooks/usePhotosQuery';
 import { hasActiveSearchFilters } from '../utils/searchFilters';
+import {
+  DEFAULT_GALLERY_COLUMNS,
+  bindGalleryContainerResize,
+} from '../utils/galleryLayout';
 import { PhotoCard } from './gallery/PhotoCard';
 import { LoadingSpinner } from './common/LoadingSpinner';
 import { Loader2, SearchX } from 'lucide-react';
@@ -17,8 +21,9 @@ interface PhotoGalleryProps {
 export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
   const { apiPort, searchQuery, searchFilters, selectedPhotoIds, togglePhotoSelection, setSelectedPhotoId } = useAppStore();
   const { mutateAsync: toggleFavoriteAsync } = useToggleFavoriteMutation();
-  const parentRef = useRef<HTMLDivElement>(null);
-  const [columnCount, setColumnCount] = useState(4);
+  const scrollElementRef = useRef<HTMLDivElement | null>(null);
+  const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(null);
+  const [columnCount, setColumnCount] = useState(DEFAULT_GALLERY_COLUMNS);
   
   const debouncedSearchQuery = useDebounce(searchQuery, 500);
   const trimmedSearchQuery = searchQuery.trim();
@@ -26,25 +31,16 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
     ? trimmedSearchQuery
     : debouncedSearchQuery;
 
-  // Measure container width and compute responsive column count (aiming for ~240px wide cards)
-  useEffect(() => {
-    const el = parentRef.current;
-    if (!el) return;
-
-    const updateColumns = () => {
-      const width = el.clientWidth;
-      if (width > 0) {
-        const cols = Math.max(2, Math.min(8, Math.floor(width / 230)));
-        setColumnCount(cols);
-      }
-    };
-
-    updateColumns();
-    const observer = new ResizeObserver(updateColumns);
-    observer.observe(el);
-
-    return () => observer.disconnect();
+  const handleScrollContainerRef = useCallback((containerElement: HTMLDivElement | null) => {
+    scrollElementRef.current = containerElement;
+    setScrollContainer(containerElement);
   }, []);
+
+  // Re-bind ResizeObserver whenever the scroll container mounts or remounts after pending/empty states.
+  useEffect(
+    () => bindGalleryContainerResize(scrollContainer, setColumnCount),
+    [scrollContainer],
+  );
 
   const {
     data,
@@ -76,7 +72,7 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
 
   const virtualizer = useVirtualizer({
     count: hasNextPage ? rowCount + 1 : rowCount,
-    getScrollElement: () => parentRef.current,
+    getScrollElement: () => scrollElementRef.current,
     estimateSize: () => 220,
     overscan: 3,
   });
@@ -186,7 +182,7 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
 
   return (
     <div 
-      ref={parentRef}
+      ref={handleScrollContainerRef}
       style={{
         flex: 1,
         overflow: 'auto',
