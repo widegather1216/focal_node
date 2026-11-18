@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useLayoutEffect, useState, useCallback } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useAppStore } from '../store/useAppStore';
@@ -8,7 +8,11 @@ import { useToggleFavoriteMutation } from '../hooks/usePhotosQuery';
 import { hasActiveSearchFilters } from '../utils/searchFilters';
 import {
   DEFAULT_GALLERY_COLUMNS,
+  type VirtualizerScrollState,
   bindGalleryContainerResize,
+  buildGalleryQueryContextKey,
+  resetVirtualizerScrollPosition,
+  syncVirtualizerOnContainerMount,
 } from '../utils/galleryLayout';
 import { PhotoCard } from './gallery/PhotoCard';
 import { LoadingSpinner } from './common/LoadingSpinner';
@@ -22,6 +26,7 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
   const { apiPort, searchQuery, searchFilters, selectedPhotoIds, togglePhotoSelection, setSelectedPhotoId } = useAppStore();
   const { mutateAsync: toggleFavoriteAsync } = useToggleFavoriteMutation();
   const scrollElementRef = useRef<HTMLDivElement | null>(null);
+  const virtualizerRef = useRef<VirtualizerScrollState | null>(null);
   const [scrollContainer, setScrollContainer] = useState<HTMLDivElement | null>(null);
   const [columnCount, setColumnCount] = useState(DEFAULT_GALLERY_COLUMNS);
   
@@ -30,9 +35,16 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
   const effectiveSearchQuery = trimmedSearchQuery.startsWith('similar:')
     ? trimmedSearchQuery
     : debouncedSearchQuery;
+  const queryContextKey = buildGalleryQueryContextKey(
+    selectedFolder,
+    effectiveSearchQuery,
+    searchFilters,
+  );
+  const prevQueryContextKeyRef = useRef<string>(queryContextKey);
 
   const handleScrollContainerRef = useCallback((containerElement: HTMLDivElement | null) => {
     scrollElementRef.current = containerElement;
+    syncVirtualizerOnContainerMount(virtualizerRef.current, containerElement);
     setScrollContainer(containerElement);
   }, []);
 
@@ -83,6 +95,20 @@ export function PhotoGallery({ selectedFolder }: PhotoGalleryProps) {
     estimateSize: () => 220,
     overscan: 3,
   });
+  virtualizerRef.current = virtualizer;
+
+  // Reset residual scrollOffset before getVirtualItems() so the initial commit after a query switch renders row 0.
+  if (prevQueryContextKeyRef.current !== queryContextKey) {
+    resetVirtualizerScrollPosition(virtualizer, null);
+  }
+
+  useLayoutEffect(() => {
+    if (prevQueryContextKeyRef.current === queryContextKey) {
+      return;
+    }
+    prevQueryContextKeyRef.current = queryContextKey;
+    resetVirtualizerScrollPosition(virtualizerRef.current, scrollElementRef.current);
+  }, [queryContextKey]);
 
   const virtualItems = virtualizer.getVirtualItems();
 

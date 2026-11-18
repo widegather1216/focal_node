@@ -1,7 +1,20 @@
+import type { SearchFilters } from '../types/photo.ts';
+import { sanitizeSearchFilters } from './searchFilters.ts';
+
 export const DEFAULT_GALLERY_COLUMNS = 4;
 export const MIN_GALLERY_COLUMNS = 2;
 export const MAX_GALLERY_COLUMNS = 8;
 export const GALLERY_CARD_TARGET_WIDTH_PX = 230;
+
+export interface ScrollableContainerElement {
+  scrollTop: number;
+}
+
+export interface VirtualizerScrollState {
+  scrollOffset: number | null;
+  scrollDirection: 'forward' | 'backward' | null;
+  isScrolling: boolean;
+}
 
 export interface ResizableContainerElement {
   readonly clientWidth: number;
@@ -83,4 +96,67 @@ export function bindGalleryContainerResize(
     isDisposed = true;
     observer.disconnect();
   };
+}
+
+/**
+ * Serializes folder, effective query, and active filters into a deterministic key
+ * so query context switches reset scroll position while pagination appends preserve it.
+ */
+export function buildGalleryQueryContextKey(
+  selectedFolder: string | null,
+  effectiveSearchQuery: string,
+  searchFilters: SearchFilters | null | undefined,
+): string {
+  const normalizedFilters = sanitizeSearchFilters(searchFilters);
+  const sortedFilterEntries = Object.keys(normalizedFilters)
+    .sort()
+    .map((filterKey) => [
+      filterKey,
+      normalizedFilters[filterKey as keyof SearchFilters],
+    ]);
+
+  return JSON.stringify([
+    selectedFolder ?? null,
+    effectiveSearchQuery ?? '',
+    sortedFilterEntries,
+  ]);
+}
+
+/**
+ * Clears Virtualizer residual scrollOffset (which Virtualizer.cleanup() preserves)
+ * and resets the DOM container scrollTop back to the top when provided.
+ */
+export function resetVirtualizerScrollPosition(
+  virtualizer: VirtualizerScrollState | null,
+  containerElement: ScrollableContainerElement | null,
+): void {
+  if (virtualizer) {
+    virtualizer.scrollOffset = 0;
+    virtualizer.scrollDirection = null;
+    virtualizer.isScrolling = false;
+  }
+  if (containerElement && containerElement.scrollTop !== 0) {
+    containerElement.scrollTop = 0;
+  }
+}
+
+/**
+ * Prevents Virtualizer._willUpdate() from scrolling a freshly mounted container
+ * (or an unmounted container awaiting remount) back to a stale scrollOffset.
+ */
+export function syncVirtualizerOnContainerMount(
+  virtualizer: VirtualizerScrollState | null,
+  containerElement: ScrollableContainerElement | null,
+): void {
+  if (!containerElement) {
+    resetVirtualizerScrollPosition(virtualizer, null);
+    return;
+  }
+  if (
+    containerElement.scrollTop === 0 &&
+    virtualizer &&
+    virtualizer.scrollOffset !== 0
+  ) {
+    resetVirtualizerScrollPosition(virtualizer, null);
+  }
 }
